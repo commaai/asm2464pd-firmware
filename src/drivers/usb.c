@@ -163,14 +163,14 @@ static const __code uint8_t ep_offset_table[8] = {
  */
 static void usb_ep_init_handler(void)
 {
-    /* Clear state variables */
-    REG_USB_TRANSFER_FLAG = 0;
+    /* Clear state variables in work area */
+    XDATA8(0x0B2E) = 0;  /* USB transfer flag */
 
     /* Clear IDATA[0x6A] */
     *(__idata uint8_t *)0x6A = 0;
 
-    /* Clear processing complete flag */
-    REG_STATE_FLAG_06E6 = 0;
+    /* Clear processing complete flag in work area */
+    XDATA8(0x06E6) = 0;  /* Processing complete flag */
 
     /* Original jumps to 0x039a which dispatches to 0xD810 (buffer handler) */
     /* TODO: Call buffer handler */

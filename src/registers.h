@@ -112,12 +112,6 @@
 #define REG_INT_SYSTEM          XDATA_REG8(0xC806)  // System interrupt status (RW)
 #define REG_INT_PCIE_NVME       XDATA_REG8(0xC80A)  // PCIe/NVMe interrupt status (RW)
 
-//=============================================================================
-// Event Flags and Loop State (internal XDATA)
-//=============================================================================
-#define REG_LOOP_STATE          XDATA_REG8(0x0A59)  // Main loop state flag (RW)
-#define REG_SYSTEM_STATE_0AE2   XDATA_REG8(0x0AE2)  // System state (RW)
-#define REG_EVENT_FLAGS         XDATA_REG8(0x09F9)  // Event flags (RW)
 
 //=============================================================================
 // NVMe Event Registers (0xEC00-0xEC0F)
@@ -125,12 +119,6 @@
 #define REG_NVME_EVENT_ACK      XDATA_REG8(0xEC04)  // NVMe event acknowledge (WO)
 #define REG_NVME_EVENT_STATUS   XDATA_REG8(0xEC06)  // NVMe event status (RO)
 
-//=============================================================================
-// System State Flags (internal RAM-like XDATA)
-// Used for firmware state tracking
-//=============================================================================
-#define REG_STATE_FLAG_06E6     XDATA_REG8(0x06E6)  // Processing complete flag
-#define REG_STATE_FLAG_0AE3     XDATA_REG8(0x0AE3)  // System state flag
 
 //=============================================================================
 // Power Management Registers (0x92C0-0x92C8)
@@ -426,12 +414,13 @@
 //=============================================================================
 // SCSI/Mass Storage DMA Registers (0xCE40-0xCE6E)
 //=============================================================================
-#define REG_SCSI_CTRL           XDATA_REG8(0x0171)  // SCSI control (RW)
 #define REG_SCSI_DMA_PARAM0     XDATA_REG8(0xCE40)  // DMA parameter 0 (RW)
 #define REG_SCSI_DMA_PARAM1     XDATA_REG8(0xCE41)  // DMA parameter 1 (RW)
 #define REG_SCSI_DMA_PARAM2     XDATA_REG8(0xCE42)  // DMA parameter 2 (RW)
 #define REG_SCSI_DMA_PARAM3     XDATA_REG8(0xCE43)  // DMA parameter 3 (RW)
 #define REG_SCSI_DMA_COMPL      XDATA_REG8(0xCE5C)  // DMA completion status (RW)
+#define REG_SCSI_DMA_TAG_COUNT  XDATA_REG8(0xCE66)  // Tag/command count (RO)
+#define REG_SCSI_DMA_QUEUE_STAT XDATA_REG8(0xCE67)  // Queue status (RO)
 #define REG_SCSI_DMA_STATUS     XDATA_REG16(0xCE6E) // DMA status (RW, 2 bytes)
 
 //=============================================================================
@@ -547,41 +536,11 @@
 #define CMD_TIMEOUT_FLAG        0x80
 
 //=============================================================================
-// System Registers
+// System Registers (Hardware registers >= 0x6000)
 //=============================================================================
-#define REG_SYSTEM_CTRL_0000    XDATA_REG8(0x0000)  // System control (RW)
-#define REG_DMA_MODE_SELECT     XDATA_REG8(0x0203)  // DMA mode select (RW)
-#define REG_DMA_PARAM1          XDATA_REG8(0x020D)  // DMA parameter 1 (RW)
-#define REG_DMA_PARAM2          XDATA_REG8(0x020E)  // DMA parameter 2 (RW)
-#define REG_BUF_BASE_HI         XDATA_REG8(0x021A)  // Buffer base address high (RW)
-#define REG_BUF_BASE_LO         XDATA_REG8(0x021B)  // Buffer base address low (RW)
-#define REG_REG_WAIT_BIT        XDATA_REG8(0x045E)  // Register wait bit (RW)
-#define REG_SYS_STATUS_PRIMARY  XDATA_REG8(0x0464)  // Primary status (RW)
-#define REG_SYS_STATUS_SECONDARY XDATA_REG8(0x0465) // Secondary status (R)
-#define REG_SYSTEM_CONFIG       XDATA_REG8(0x0466)  // Configuration (RW)
-#define REG_SYSTEM_STATE        XDATA_REG8(0x0467)  // State (RW)
-#define REG_DATA_PORT           XDATA_REG8(0x0468)  // Data port (RW)
-#define REG_INT_STATUS          XDATA_REG8(0x0469)  // Interrupt status (RW)
-#define REG_DMA_LOAD_PARAM1     XDATA_REG8(0x0472)  // DMA load parameter 1 (RW)
-#define REG_DMA_LOAD_PARAM2     XDATA_REG8(0x0473)  // DMA load parameter 2 (RW)
-#define REG_EP_CONFIG_BASE      XDATA_REG8(0x054B)  // EP config base (RW)
-#define REG_EP_CONFIG_ARRAY     XDATA_REG8(0x054E)  // EP config array (indexed *20, RW)
-#define REG_BUF_OFFSET_HI       XDATA_REG8(0x0568)  // Buffer offset result high (RW)
-#define REG_BUF_OFFSET_LO       XDATA_REG8(0x0569)  // Buffer offset result low (RW)
-#define REG_TRANSFER_SIZE       XDATA_REG32(0x05A8) // Transfer size (RW, 4 bytes)
-#define REG_TRANSFER_FLAGS      XDATA_REG8(0x05B4)  // Transfer flags (RW)
-#define REG_TRANSFER_CTRL       XDATA_REG8(0x05F8)  // Transfer control (RW)
-#define REG_SYS_FLAGS_BASE      XDATA_REG8(0x07E4)  // Flags base (RW)
-#define REG_TRANSFER_ACTIVE     XDATA_REG8(0x07E5)  // Transfer active flag (RW)
-#define REG_SYS_FLAGS           XDATA_REG32(0x07EC) // System flags (RW, 4 bytes)
-#define REG_USB_TRANSFER_FLAG   XDATA_REG8(0x0B2E)  // USB transfer flag (RW)
-#define REG_EP_DISPATCH_VAL1    XDATA_REG8(0x0A7B)  // Endpoint dispatch value 1 (RW)
-#define REG_EP_DISPATCH_VAL2    XDATA_REG8(0x0A7C)  // Endpoint dispatch value 2 (RW)
-#define REG_EP_DISPATCH_OFFSET  XDATA_REG8(0x0AF5)  // Endpoint dispatch offset (RW)
 #define REG_CRITICAL_CTRL       XDATA_REG8(0xEF4E)  // Critical control (RW)
 
 // System register aliases
-#define REG_SYSTEM_STATUS       REG_SYS_STATUS_PRIMARY
 #define REG_SYSTEM_CTRL         REG_CRITICAL_CTRL
 
 // System status bits

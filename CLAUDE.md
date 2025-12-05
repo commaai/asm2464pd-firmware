@@ -10,7 +10,7 @@ registers.h is some reverse engineer registers. They may be wrong.
 
 ghidra.c is ghidra's attempt at C disassembly of the functions, you are welcome to reference it. Note: all the names in there may be wrong.
 
-usb-to-pcie-re is an attempt to reverse engineer this chip.
+usb-to-pcie-re is an attempt to reverse engineer this chip. Read usb-to-pcie-re/ASM2x6x/doc/Notes.md
 
 usb.py is tinygrad's library that talks to this chip.
 
@@ -18,6 +18,6 @@ Every function you write should match one to one with a function in real firmwar
 
 Our firmware needs to have all the functionality of the real firmware, with all edge cases, state machines, and methods correctly implemented to match the behavior of the stock firmware.
 
-Do not write things like `XDATA8(0xC8B6)`, instead define that as a register in registers.h with a good name and use that register.
+Do not write things like `XDATA8(0xC8B6)`, instead define that as a register in registers.h with a good name with prefix "REG_" and use that register. Registers are addresses >= 0x6000, XDATA lower then this is global variables and shouldn't be in registers.h, put them in globals.h with the prefix "G_"
 
 Prioritize functions that you have already reversed the caller of.

@@ -11,6 +11,7 @@
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"
+#include "globals.h"
 
 /*
  * dma_clear_status - Clear DMA status flags
@@ -127,8 +128,9 @@ void dma_load_transfer_params(void)
 {
     uint8_t param1, param2;
 
-    param1 = REG_DMA_LOAD_PARAM1;
-    param2 = REG_DMA_LOAD_PARAM2;
+    /* Read transfer parameters from work area */
+    param1 = G_DMA_LOAD_PARAM1;
+    param2 = G_DMA_LOAD_PARAM2;
 
     /* TODO: Call flash_func_0c0f(0, BANK0_R3, param1, param2) */
     (void)param1;
@@ -233,19 +235,19 @@ void dma_setup_transfer(uint8_t r7_mode, uint8_t r5_param, uint8_t r3_param)
 {
     uint8_t status;
 
-    /* Write transfer parameters */
-    REG_DMA_MODE_SELECT = r7_mode;
-    REG_DMA_PARAM1 = r5_param;
-    REG_DMA_PARAM2 = r3_param;
+    /* Write transfer parameters to work area */
+    G_DMA_MODE_SELECT = r7_mode;
+    G_DMA_PARAM1 = r5_param;
+    G_DMA_PARAM2 = r3_param;
 
-    /* Set transfer active flag */
-    REG_TRANSFER_ACTIVE = 1;
+    /* Set transfer active flag in work area */
+    G_TRANSFER_ACTIVE = 1;
 
-    /* Check USB status */
+    /* Check USB status register */
     status = REG_USB_STATUS;
     if (!(status & 0x01)) {
-        /* Start transfer */
-        REG_BUFFER_XFER_START = 1;
+        /* Start transfer via buffer control */
+        G_BUF_XFER_START = 1;
         /* lcall 0x1bcb - TODO: implement */
     }
 }
@@ -298,6 +300,76 @@ uint8_t dma_check_scsi_status(uint8_t mode)
     }
 
     return 0;
+}
+
+/*
+ * dma_clear_state_counters - Clear state counter registers
+ * Address: 0x1795-0x179c (8 bytes)
+ *
+ * Clears 16-bit state counter at 0x0AA3-0x0AA4 to zero.
+ *
+ * Original disassembly:
+ *   1795: clr a
+ *   1796: mov dptr, #0x0aa3
+ *   1799: movx @dptr, a      ; XDATA[0x0AA3] = 0
+ *   179a: inc dptr
+ *   179b: movx @dptr, a      ; XDATA[0x0AA4] = 0
+ *   179c: ret
+ */
+void dma_clear_state_counters(void)
+{
+    /* Clear 16-bit state counter in work area */
+    XDATA8(0x0AA3) = 0;  /* State counter high */
+    XDATA8(0x0AA4) = 0;  /* State counter low */
+}
+
+/*
+ * dma_init_ep_queue - Initialize endpoint queue
+ * Address: 0x17a9-0x17b4 (12 bytes)
+ *
+ * Sets endpoint queue control to 0x08 and status to 0.
+ *
+ * Original disassembly:
+ *   17a9: clr a
+ *   17aa: mov dptr, #0x0565
+ *   17ad: movx @dptr, a      ; XDATA[0x0565] = 0
+ *   17ae: mov dptr, #0x0564
+ *   17b1: mov a, #0x08
+ *   17b3: movx @dptr, a      ; XDATA[0x0564] = 0x08
+ *   17b4: ret
+ */
+void dma_init_ep_queue(void)
+{
+    /* Initialize endpoint queue in work area */
+    XDATA8(0x0565) = 0;     /* Endpoint queue status */
+    XDATA8(0x0564) = 0x08;  /* Endpoint queue control */
+}
+
+/*
+ * scsi_get_tag_count_status - Get SCSI tag count and check threshold
+ * Address: 0x17b5-0x17c0 (12 bytes)
+ *
+ * Reads tag count from 0xCE66, masks to 5 bits, stores to IDATA 0x40,
+ * and returns carry set if count >= 16.
+ *
+ * Original disassembly:
+ *   17b5: mov dptr, #0xce66
+ *   17b8: movx a, @dptr      ; read tag count
+ *   17b9: anl a, #0x1f       ; mask to 5 bits (0-31)
+ *   17bb: mov 0x40, a        ; store to IDATA[0x40]
+ *   17bd: clr c
+ *   17be: subb a, #0x10      ; compare with 16
+ *   17c0: ret                ; carry set if count < 16
+ */
+uint8_t scsi_get_tag_count_status(void)
+{
+    uint8_t count;
+
+    count = REG_SCSI_DMA_TAG_COUNT & 0x1F;
+    *(__idata uint8_t *)0x40 = count;
+
+    /* Return 1 if count >= 16, 0 otherwise */
+    return (count >= 0x10) ? 1 : 0;
 }
 
 /* Additional DMA functions will be added as they are reversed */
