@@ -1,0 +1,157 @@
+# ASM2464PD Firmware Makefile
+#
+# Builds the firmware for the ASM2464PD USB4/Thunderbolt NVMe controller
+# using SDCC (Small Device C Compiler) for the 8051 architecture
+
+# Compiler and tools
+CC = sdcc
+AS = sdas8051
+LD = sdld
+PACKIHX = packihx
+OBJCOPY = sdobjcopy
+
+# Compiler flags
+CFLAGS = -mmcs51 --model-large --opt-code-size
+CFLAGS += --std-c99
+CFLAGS += -I$(SRC_DIR)
+CFLAGS += --no-xinit-opt
+
+# Memory model settings for ASM2464PD
+# CODE: 0x0000 - 0xFFFF (64KB)
+# XDATA: 0x0000 - 0xFFFF (64KB external RAM)
+# IDATA: 0x00 - 0xFF (256 bytes internal RAM)
+LDFLAGS = --code-loc 0x0000 --code-size 0x17F12
+LDFLAGS += --xram-loc 0x0000 --xram-size 0x10000
+LDFLAGS += --iram-size 0x100
+LDFLAGS += --stack-loc 0x72
+
+# Directories
+SRC_DIR = src
+BUILD_DIR = build
+OBJ_DIR = $(BUILD_DIR)/obj
+
+# Source files
+SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/uart.c
+OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.rel,$(SRCS))
+
+# Output files
+TARGET = $(BUILD_DIR)/firmware
+HEX = $(TARGET).ihx
+BIN = $(TARGET).bin
+
+# Original firmware for comparison
+ORIGINAL_FW = fw.bin
+
+.PHONY: all clean compare disasm hex
+
+all: $(BIN)
+
+# Create directories
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+# Compile C files to relocatable object files
+$(OBJ_DIR)/%.rel: $(SRC_DIR)/%.c | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Link object files to Intel HEX
+$(HEX): $(OBJS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $@
+
+# Convert Intel HEX to binary
+$(BIN): $(HEX)
+	@echo "Converting HEX to BIN..."
+	@if command -v objcopy > /dev/null 2>&1; then \
+		objcopy -I ihex -O binary $< $@; \
+	elif command -v sdobjcopy > /dev/null 2>&1; then \
+		sdobjcopy -I ihex -O binary $< $@; \
+	else \
+		python3 -c "import sys; \
+data = bytearray(0x18000); \
+for line in open('$<'): \
+    if line[0] != ':': continue; \
+    n = int(line[1:3], 16); \
+    addr = int(line[3:7], 16); \
+    t = int(line[7:9], 16); \
+    if t == 0: \
+        for i in range(n): \
+            data[addr+i] = int(line[9+i*2:11+i*2], 16); \
+open('$@', 'wb').write(bytes(data[:sum(1 for b in data if b)]))"; \
+	fi
+	@echo "Built: $@"
+
+# Add ASM2464 firmware wrapper (body_len + body + magic + checksum + crc)
+$(BUILD_DIR)/firmware_wrapped.bin: $(BIN)
+	@echo "Wrapping firmware with ASM2464 header..."
+	@python3 -c "\
+import zlib; \
+body = open('$<', 'rb').read(); \
+body_len = len(body).to_bytes(4, 'little'); \
+checksum = bytes([sum(body) & 0xFF]); \
+crc = zlib.crc32(body).to_bytes(4, 'little'); \
+magic = bytes([0xA5]); \
+open('$@', 'wb').write(body_len + body + magic + checksum + crc)"
+	@echo "Built: $@"
+
+# Create wrapped firmware for flashing
+wrapped: $(BUILD_DIR)/firmware_wrapped.bin
+
+# Compare with original firmware
+compare: $(BIN)
+	@echo "Comparing with original firmware..."
+	@if [ -f $(ORIGINAL_FW) ]; then \
+		echo "Original size: $$(stat -c %s $(ORIGINAL_FW)) bytes"; \
+		echo "Built size: $$(stat -c %s $(BIN)) bytes"; \
+		echo "Diff (first 256 bytes):"; \
+		xxd $(ORIGINAL_FW) | head -16 > /tmp/orig.hex; \
+		xxd $(BIN) | head -16 > /tmp/built.hex; \
+		diff /tmp/orig.hex /tmp/built.hex || true; \
+	else \
+		echo "Original firmware $(ORIGINAL_FW) not found"; \
+	fi
+
+# Disassemble the built firmware
+disasm: $(BIN)
+	@echo "Disassembling built firmware..."
+	@r2 -a 8051 -q -c 'aaa; pdf @ 0' $(BIN) 2>/dev/null || \
+		echo "radare2 not available for disassembly"
+
+# Show hex dump of built firmware
+hex: $(BIN)
+	xxd $(BIN) | head -64
+
+# Clean build artifacts
+clean:
+	rm -rf $(BUILD_DIR)
+	rm -f $(SRC_DIR)/*.asm $(SRC_DIR)/*.lst $(SRC_DIR)/*.sym
+	rm -f $(SRC_DIR)/*.rel $(SRC_DIR)/*.rst $(SRC_DIR)/*.map
+	rm -f *.lk *.mem *.map
+
+# Show help
+help:
+	@echo "ASM2464PD Firmware Build System"
+	@echo ""
+	@echo "Targets:"
+	@echo "  all      - Build firmware binary (default)"
+	@echo "  wrapped  - Build firmware with ASM2464 header for flashing"
+	@echo "  compare  - Compare built firmware with original"
+	@echo "  disasm   - Disassemble built firmware"
+	@echo "  hex      - Show hex dump of built firmware"
+	@echo "  clean    - Remove build artifacts"
+	@echo "  help     - Show this help message"
+	@echo ""
+	@echo "Requirements:"
+	@echo "  - SDCC (Small Device C Compiler)"
+	@echo "  - Python 3 (for firmware wrapping)"
+	@echo "  - radare2 (optional, for disassembly)"
+
+# Debug: show variables
+debug:
+	@echo "CC: $(CC)"
+	@echo "CFLAGS: $(CFLAGS)"
+	@echo "LDFLAGS: $(LDFLAGS)"
+	@echo "SRCS: $(SRCS)"
+	@echo "OBJS: $(OBJS)"
