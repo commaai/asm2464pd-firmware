@@ -1,16 +1,124 @@
 /*
  * ASM2464PD Firmware - PCIe Driver
  *
- * PCIe interface controller for USB4/Thunderbolt to NVMe bridge
- * Handles PCIe TLP transactions, configuration space access, and link management
+ * PCIe interface controller for USB4/Thunderbolt to NVMe bridge.
+ * This driver handles PCIe Transaction Layer Packet (TLP) operations
+ * for communicating with the downstream NVMe device.
  *
- * PCIe registers are at 0xB200-0xB4FF
+ * ============================================================================
+ * ARCHITECTURE OVERVIEW
+ * ============================================================================
+ *
+ * The ASM2464PD acts as a USB4/Thunderbolt to PCIe bridge. The 8051 firmware
+ * controls PCIe transactions through memory-mapped registers at 0xB200-0xB4FF.
+ *
+ * Data Flow:
+ *   USB Host <-> USB Controller <-> DMA Engine <-> PCIe Controller <-> NVMe SSD
+ *
+ * The PCIe controller handles:
+ *   1. Configuration space access (device enumeration, BAR setup)
+ *   2. Memory read/write TLPs (NVMe register access, doorbell writes)
+ *   3. Completion handling (receiving data from NVMe)
+ *
+ * ============================================================================
+ * TLP (TRANSACTION LAYER PACKET) TYPES
+ * ============================================================================
+ *
+ * The driver supports these PCIe TLP format/type codes:
+ *
+ *   Config Space Access:
+ *     0x04 - Type 0 Configuration Read  (local device)
+ *     0x05 - Type 1 Configuration Read  (downstream device)
+ *     0x44 - Type 0 Configuration Write (local device)
+ *     0x45 - Type 1 Configuration Write (downstream device)
+ *
+ *   Memory Access:
+ *     0x00 - Memory Read Request (32-bit address)
+ *     0x40 - Memory Write Request (32-bit address)
+ *
+ * ============================================================================
+ * REGISTER MAP (0xB200-0xB4FF)
+ * ============================================================================
+ *
+ *   0xB210 - REG_PCIE_FMT_TYPE    : TLP format/type byte
+ *   0xB213 - REG_PCIE_TLP_CTRL    : TLP control (set to 0x01 to enable)
+ *   0xB216 - REG_PCIE_TLP_LENGTH  : TLP length/mode (usually 0x20)
+ *   0xB217 - REG_PCIE_BYTE_EN     : Byte enable mask (0x0F for all bytes)
+ *   0xB218 - REG_PCIE_ADDR_0      : Address byte 0 (bits 7:0)
+ *   0xB219 - REG_PCIE_ADDR_1      : Address byte 1 (bits 15:8)
+ *   0xB21A - REG_PCIE_ADDR_2      : Address byte 2 (bits 23:16)
+ *   0xB21B - REG_PCIE_ADDR_3      : Address byte 3 (bits 31:24)
+ *   0xB220 - REG_PCIE_DATA        : Data register (4 bytes)
+ *   0xB22A - REG_PCIE_LINK_STATUS : Link status (speed in bits 7:5)
+ *   0xB22B - REG_PCIE_CPL_STATUS  : Completion status code
+ *   0xB22C - REG_PCIE_CPL_DATA    : Completion data
+ *   0xB254 - REG_PCIE_TRIGGER     : Transaction trigger (write 0x0F)
+ *   0xB296 - REG_PCIE_STATUS      : Status register
+ *                                   Bit 0: Error flag
+ *                                   Bit 1: Complete flag
+ *                                   Bit 2: Busy flag
+ *
+ * ============================================================================
+ * TRANSACTION SEQUENCE
+ * ============================================================================
+ *
+ * A typical PCIe transaction follows this sequence:
+ *
+ *   1. Setup TLP:
+ *      - Write format/type to REG_PCIE_FMT_TYPE
+ *      - Write 0x01 to REG_PCIE_TLP_CTRL (enable)
+ *      - Write byte enables to REG_PCIE_BYTE_EN
+ *      - Write address to REG_PCIE_ADDR_0..3
+ *      - For writes: write data to REG_PCIE_DATA
+ *
+ *   2. Trigger:
+ *      - Call pcie_clear_and_trigger() which:
+ *        - Writes 0x01, 0x02, 0x04 to REG_PCIE_STATUS (clear flags)
+ *        - Writes 0x0F to REG_PCIE_TRIGGER (start transaction)
+ *
+ *   3. Poll for completion:
+ *      - Loop calling pcie_get_completion_status() until non-zero
+ *      - Call pcie_write_status_complete()
+ *
+ *   4. Check result:
+ *      - Check REG_PCIE_STATUS bit 1 for completion
+ *      - Check REG_PCIE_STATUS bit 0 for errors
+ *      - For reads: read data from REG_PCIE_CPL_DATA
+ *
+ * ============================================================================
+ * GLOBAL VARIABLES USED
+ * ============================================================================
+ *
+ *   G_PCIE_DIRECTION (0x05AE)  : Bit 0 = 0 for read, 1 for write
+ *   G_PCIE_ADDR_0..3 (0x05AF)  : Target PCIe address (4 bytes)
+ *   G_PCIE_TXN_COUNT (0x05A6)  : Transaction counter (for debugging)
+ *   G_STATE_FLAG_06E6          : Error flag
+ *   G_ERROR_CODE_06EA          : Error code (0xFE = PCIe error)
+ *
+ * ============================================================================
+ * IMPLEMENTATION STATUS
+ * ============================================================================
+ *
+ * Core functions implemented:
+ *   - Transaction control (trigger, poll, status check)
+ *   - TLP setup (config space, memory read/write)
+ *   - Completion handling
+ *   - Link speed query
+ *
+ * TODO: Additional functions exist in the firmware that use PCIe registers
+ * at addresses 0x35xx, 0x49xx, 0x51xx, 0x80xx, 0x83xx, 0x9fxx, 0xabxx.
+ * These likely handle NVMe-specific operations and error recovery.
+ *
+ * ============================================================================
  */
 
 #include "../types.h"
 #include "../sfr.h"
 #include "../registers.h"
 #include "../globals.h"
+
+/* Forward declarations */
+uint8_t pcie_poll_and_read_completion(void);
 
 /*
  * pcie_clear_and_trigger - Clear status flags and trigger transaction
@@ -408,14 +516,198 @@ uint8_t pcie_wait_for_completion(void)
 }
 
 /*
+ * pcie_setup_memory_tlp - Setup PCIe memory read/write TLP
+ * Address: 0xc20c-0xc244 (57 bytes)
+ *
+ * Sets up a PCIe memory TLP based on direction from global 0x05AE bit 0:
+ *   bit 0 = 1: Memory write (fmt_type = 0x40)
+ *   bit 0 = 0: Memory read  (fmt_type = 0x00)
+ *
+ * Reads address from 0x05AF (4 bytes), calls helper functions to set up
+ * TLP registers, triggers transaction, and polls for completion.
+ * Returns 0 on success (if 0x05AE bit 0 clear), otherwise calls
+ * pcie_poll_and_read_completion.
+ *
+ * Original disassembly at 0xc20c:
+ *   c20c: mov dptr, #0xb210     ; FMT_TYPE register
+ *   c20f: jnb acc.0, 0xc217     ; if read, jump
+ *   c212: mov a, #0x40          ; write fmt_type
+ *   c214: movx @dptr, a
+ *   c215: sjmp 0xc219
+ *   c217: clr a                 ; read fmt_type = 0
+ *   c218: movx @dptr, a
+ *   c219: mov dptr, #0xb213
+ *   c21c: mov a, #0x01
+ *   c21e: movx @dptr, a         ; enable bit
+ *   c21f: mov a, #0x0f
+ *   c221: lcall 0x9a30          ; pcie_set_byte_enables
+ *   c224: mov dptr, #0x05af     ; address source
+ *   c227: lcall 0x0d84          ; load 32-bit value
+ *   c22a: mov dptr, #0xb218     ; address target
+ *   c22d: lcall 0x0dc5          ; store 32-bit value
+ *   c230: lcall 0x999d          ; pcie_clear_and_trigger
+ *   c233: lcall 0x99eb          ; poll loop
+ *   c236: jz 0xc233
+ *   c238: lcall 0x9a95          ; pcie_write_status_complete
+ *   c23b: mov dptr, #0x05ae
+ *   c23e: movx a, @dptr
+ *   c23f: jnb acc.0, 0xc245     ; if read, go to poll
+ *   c242: mov r7, #0x00
+ *   c244: ret
+ */
+uint8_t pcie_setup_memory_tlp(void)
+{
+    uint8_t direction;
+    uint8_t status;
+
+    /* Read direction from global */
+    direction = G_PCIE_DIRECTION;
+
+    /* Set format/type based on direction */
+    if (direction & 0x01) {
+        REG_PCIE_FMT_TYPE = 0x40;  /* Memory write */
+    } else {
+        REG_PCIE_FMT_TYPE = 0x00;  /* Memory read */
+    }
+
+    /* Enable TLP control */
+    REG_PCIE_TLP_CTRL = 0x01;
+
+    /* Set byte enables to 0x0F */
+    pcie_set_byte_enables(0x0F);
+
+    /* Copy 32-bit address from globals to PCIe address registers */
+    REG_PCIE_ADDR_0 = G_PCIE_ADDR_0;
+    REG_PCIE_ADDR_1 = G_PCIE_ADDR_1;
+    REG_PCIE_ADDR_2 = G_PCIE_ADDR_2;
+    REG_PCIE_ADDR_3 = G_PCIE_ADDR_3;
+
+    /* Trigger transaction */
+    pcie_clear_and_trigger();
+
+    /* Poll for completion */
+    do {
+        status = pcie_get_completion_status();
+    } while (status == 0);
+
+    /* Write completion status */
+    pcie_write_status_complete();
+
+    /* Check direction again */
+    direction = G_PCIE_DIRECTION;
+    if (direction & 0x01) {
+        /* Write - return success immediately */
+        return 0;
+    }
+
+    /* Read - call poll and read completion */
+    return pcie_poll_and_read_completion();
+}
+
+/*
+ * pcie_poll_and_read_completion - Poll for completion and read result
+ * Address: 0xc245-0xc26f (43 bytes)
+ *
+ * Polls PCIe status until complete or error. On completion, reads
+ * completion data and verifies status. Returns:
+ *   Link speed (0-7) on success (if completion status == 0x04)
+ *   0xFE on error (bit 0 set)
+ *   0xFF on completion error (non-zero completion data or wrong status)
+ *
+ * Original disassembly:
+ *   c245: mov dptr, #0xb296     ; poll loop start
+ *   c248: movx a, @dptr         ; read status
+ *   c249: anl a, #0x02          ; check complete bit
+ *   c24b: clr c
+ *   c24c: rrc a                 ; shift to bit 0
+ *   c24d: jnz 0xc259            ; if complete, read data
+ *   c24f: movx a, @dptr
+ *   c250: jnb acc.0, 0xc245     ; if no error, keep polling
+ *   c253: mov a, #0x01          ; clear error
+ *   c255: movx @dptr, a
+ *   c256: mov r7, #0xfe         ; return 0xFE (error)
+ *   c258: ret
+ *   c259: lcall 0x9a74          ; pcie_read_completion_data
+ *   c25c: jnz 0xc26d            ; if non-zero, error
+ *   c25e: inc dptr              ; dptr = 0xB22D
+ *   c25f: movx a, @dptr
+ *   c260: jnz 0xc26d            ; if non-zero, error
+ *   c262: mov dptr, #0xb22b
+ *   c265: movx a, @dptr
+ *   c266: cjne a, #0x04, 0xc26d ; check status == 4
+ *   c269: lcall 0x9a60          ; pcie_get_link_speed
+ *   c26c: ret
+ *   c26d: mov r7, #0xff         ; return 0xFF (completion error)
+ *   c26f: ret
+ */
+uint8_t pcie_poll_and_read_completion(void)
+{
+    uint8_t status;
+    uint8_t cpl_data;
+
+    /* Poll for complete or error */
+    while (1) {
+        status = REG_PCIE_STATUS;
+
+        /* Check completion bit (bit 1) */
+        if (status & 0x02) {
+            /* Complete - read completion data */
+            cpl_data = pcie_read_completion_data();
+            if (cpl_data != 0) {
+                return 0xFF;  /* Completion error */
+            }
+
+            /* Check 0xB22D (next byte after CPL_DATA) */
+            if (REG_PCIE_CPL_DATA_ALT != 0) {
+                return 0xFF;  /* Completion error */
+            }
+
+            /* Check completion status code */
+            if (REG_PCIE_CPL_STATUS != 0x04) {
+                return 0xFF;  /* Completion error */
+            }
+
+            /* Success - return link speed */
+            return pcie_get_link_speed();
+        }
+
+        /* Check error bit (bit 0) */
+        if (status & 0x01) {
+            REG_PCIE_STATUS = 0x01;  /* Clear error */
+            return 0xFE;  /* Error code */
+        }
+    }
+}
+
+/*
+ * pcie_write_tlp_addr_low - Write A to 0xB21B and set TLP length
+ * Address: 0x9a33-0x9a3a (8 bytes)
+ *
+ * Called with address low byte in A, writes to 0xB21B then sets
+ * TLP length register to 0x20.
+ *
+ * Original disassembly:
+ *   9a33: movx @dptr, a         ; [B21B] = A
+ *   9a34: mov dptr, #0xb216
+ *   9a37: mov a, #0x20
+ *   9a39: movx @dptr, a         ; [B216] = 0x20
+ *   9a3a: ret
+ */
+void pcie_write_tlp_addr_low(uint8_t val)
+{
+    REG_PCIE_ADDR_3 = val;
+    REG_PCIE_TLP_LENGTH = 0x20;
+}
+
+/*
  * pcie_setup_config_tlp - Setup PCIe configuration space TLP
- * Address: 0xadc3-0xae2f (approximately 109 bytes)
+ * Address: 0xadc3-0xae54 (approximately 145 bytes)
  *
  * Sets up a PCIe configuration space read or write TLP based on
  * parameters in IDATA:
  *   IDATA[0x60] bit 0: 0=read, 1=write
  *   IDATA[0x61]: Type (0=type0, non-0=type1)
- *   IDATA[0x61-0x64]: Address bytes
+ *   IDATA[0x62-0x64]: Address bytes
  *   IDATA[0x65]: Byte enables
  *
  * PCIe Config TLP format types:
@@ -423,6 +715,10 @@ uint8_t pcie_wait_for_completion(void)
  *   0x05: Type 1 Config Read
  *   0x44: Type 0 Config Write
  *   0x45: Type 1 Config Write
+ *
+ * PCIe Config Address format (in 0xB218-0xB21B):
+ *   The address bytes encode Bus/Device/Function/Register
+ *   Bit manipulation is required to place these in the correct positions
  *
  * Original disassembly starts at 0xadc3:
  *   adc3: mov r0, #0x60
@@ -433,7 +729,17 @@ uint8_t pcie_wait_for_completion(void)
  *   adcb: mov r7, #0x44        ; type 0 write
  *   adcd: jz 0xadd1
  *   adcf: mov r7, #0x45        ; type 1 write
- *   ...
+ *   add1: sjmp 0xaddc
+ *   (read path)
+ *   add3: mov r0, #0x61
+ *   add5: mov a, @r0           ; check type
+ *   add6: mov r7, #0x04        ; type 0 read
+ *   add8: jz 0xaddc
+ *   adda: mov r7, #0x05        ; type 1 read
+ *   addc: mov dptr, #0xb210
+ *   addf: mov a, r7
+ *   ade0: movx @dptr, a        ; write fmt_type
+ *   ... (continues with address setup and polling)
  */
 void pcie_setup_config_tlp(void)
 {
@@ -441,16 +747,15 @@ void pcie_setup_config_tlp(void)
     uint8_t direction;
     uint8_t type;
     uint8_t byte_en;
-    uint8_t addr0, addr1, addr2, addr3;
+    uint8_t addr1, addr2, addr3;
+    uint8_t shifted_hi, shifted_lo;
+    uint8_t tmp;
+    uint8_t status;
+    uint8_t i;
 
     /* Read parameters from IDATA */
     direction = ((__idata uint8_t *)0x60)[0];
     type = ((__idata uint8_t *)0x61)[0];
-    addr0 = ((__idata uint8_t *)0x61)[0];
-    addr1 = ((__idata uint8_t *)0x62)[0];
-    addr2 = ((__idata uint8_t *)0x63)[0];
-    addr3 = ((__idata uint8_t *)0x64)[0];
-    byte_en = ((__idata uint8_t *)0x65)[0];
 
     /* Determine format/type based on direction and type */
     if (direction & 0x01) {
@@ -463,11 +768,80 @@ void pcie_setup_config_tlp(void)
 
     /* Setup PCIe TLP registers */
     REG_PCIE_FMT_TYPE = fmt_type;
-    XDATA8(0xB213) = 0x01;  /* Control/enable bit */
+    REG_PCIE_TLP_CTRL = 0x01;  /* Enable TLP control */
+
+    /* Read byte enables and mask to lower 4 bits */
+    byte_en = ((__idata uint8_t *)0x65)[0];
     REG_PCIE_BYTE_EN = byte_en & 0x0F;
 
-    /* Set address bytes (0xB218-0xB21B) */
-    XDATA8(0xB218) = addr0;
-    XDATA8(0xB219) = addr1;
-    /* Remaining address setup involves bit manipulation for config address format */
+    /* Read address bytes from IDATA[0x61-0x64] */
+    addr1 = ((__idata uint8_t *)0x61)[0];
+    REG_PCIE_ADDR_0 = addr1;
+
+    addr1 = ((__idata uint8_t *)0x62)[0];
+    REG_PCIE_ADDR_1 = addr1;
+
+    /* Complex bit manipulation for config address format */
+    /* addr2 = IDATA[0x63], addr3 = IDATA[0x64] */
+    addr2 = ((__idata uint8_t *)0x63)[0];
+    addr3 = ((__idata uint8_t *)0x64)[0];
+
+    /* Extract bits: shifted_hi = addr2 & 0x03, tmp = addr3 & 0xC0 */
+    shifted_hi = addr2 & 0x03;
+    tmp = addr3 & 0xC0;
+
+    /* Rotate 16-bit value (shifted_hi:tmp) right by 6 bits */
+    /* This is: (shifted_hi << 8 | tmp) >> 6 = (shifted_hi << 2) | (tmp >> 6) */
+    for (i = 0; i < 6; i++) {
+        /* 16-bit right rotate through carry */
+        uint8_t carry = shifted_hi & 0x01;
+        shifted_hi >>= 1;
+        tmp = (tmp >> 1) | (carry ? 0x80 : 0);
+    }
+    shifted_lo = tmp;
+
+    /* Update address byte 2: preserve upper nibble, set lower nibble from shifted result */
+    tmp = REG_PCIE_ADDR_2;
+    tmp = (tmp & 0xF0) | (shifted_lo & 0x0F);
+    REG_PCIE_ADDR_2 = tmp;
+
+    /* Compute value for address byte 3 */
+    /* Take lower 6 bits of addr3, multiply by 4 (shift left 2) */
+    tmp = (addr3 & 0x3F) << 2;
+
+    /* Read address byte 3, preserve low 2 bits, OR with shifted value */
+    shifted_lo = REG_PCIE_ADDR_3;
+    shifted_lo = (shifted_lo & 0x03) | tmp;
+
+    /* Write to 0xB21B and set TLP length */
+    pcie_write_tlp_addr_low(shifted_lo);
+
+    /* Trigger the transaction */
+    pcie_clear_and_trigger();
+
+    /* Poll for completion */
+    do {
+        status = pcie_get_completion_status();
+    } while (status == 0);
+
+    /* Write completion status */
+    pcie_write_status_complete();
+
+    /* Check for errors - poll until complete or error */
+    while (1) {
+        status = REG_PCIE_STATUS;
+        if (status & 0x02) {
+            /* Transaction complete - success */
+            return;
+        }
+        if (status & 0x01) {
+            /* Error occurred */
+            REG_PCIE_STATUS = 0x01;  /* Clear error flag */
+            /* Set error indicators in globals */
+            G_ERROR_CODE_06EA = 0xFE;   /* Error code */
+            G_STATE_FLAG_06E6 = 0x01;   /* Error flag */
+            /* Call error handler at 0xc00d - TODO: implement */
+            return;
+        }
+    }
 }

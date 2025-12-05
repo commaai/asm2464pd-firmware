@@ -76,8 +76,27 @@ __sbit __at(0x8F) TF1;      /* Timer 1 overflow flag */
  * These are specific to the ASM2464PD chip
  *===========================================================================*/
 
-/* Extended interrupt priority/enable registers */
-__sfr __at(0x96) DPX;       /* Data pointer extended (XDATA page) */
+/*
+ * DPX - Data Pointer Extended / Code Bank Select Register
+ *
+ * The ASM2464PD has ~98KB of firmware but the 8051 can only address 64KB.
+ * The DPX register implements code banking to access all firmware.
+ *
+ * Memory Map:
+ *   0x0000-0x7FFF: Always visible (32KB shared - vectors, dispatch routines)
+ *   0x8000-0xFFFF with DPX=0: Bank 0 upper (file offset 0x08000-0x0FFFF)
+ *   0x8000-0xFFFF with DPX=1: Bank 1 upper (file offset 0x10000-0x17F0C)
+ *
+ * The dispatch functions at 0x0300 and 0x0311 use this for banking:
+ *   - jump_bank_0 (0x0300): Sets DPX=0 (bank 0)
+ *   - jump_bank_1 (0x0311): Sets DPX=1 (bank 1)
+ *
+ * To calculate file offset for bank 1 addresses:
+ *   file_offset = 0x10000 + (addr - 0x8000) = addr + 0x8000
+ *
+ * Example: Address 0xE911 in bank 1 -> file offset 0x16911
+ */
+__sfr __at(0x96) DPX;       /* Data pointer extended / Code bank select */
 
 /*===========================================================================
  * Interrupt Vector Numbers

@@ -62,12 +62,18 @@
 #define G_PCIE_TXN_COUNT_LO     XDATA_VAR8(0x05A6)  /* PCIe transaction count low */
 #define G_PCIE_TXN_COUNT_HI     XDATA_VAR8(0x05A7)  /* PCIe transaction count high */
 #define G_EP_CONFIG_05A8        XDATA_VAR8(0x05A8)  /* EP config 0x05A8 */
+#define G_PCIE_DIRECTION        XDATA_VAR8(0x05AE)  /* PCIe direction (bit 0: 0=read, 1=write) */
+#define G_PCIE_ADDR_0           XDATA_VAR8(0x05AF)  /* PCIe target address byte 0 */
+#define G_PCIE_ADDR_1           XDATA_VAR8(0x05B0)  /* PCIe target address byte 1 */
+#define G_PCIE_ADDR_2           XDATA_VAR8(0x05B1)  /* PCIe target address byte 2 */
+#define G_PCIE_ADDR_3           XDATA_VAR8(0x05B2)  /* PCIe target address byte 3 */
 #define G_EP_CONFIG_05F8        XDATA_VAR8(0x05F8)  /* EP config 0x05F8 */
 
 //=============================================================================
 // Transfer Work Area (0x0600-0x07FF)
 //=============================================================================
-#define G_STATE_FLAG_06E6       XDATA_VAR8(0x06E6)  /* Processing complete flag */
+#define G_STATE_FLAG_06E6       XDATA_VAR8(0x06E6)  /* Processing complete flag / error flag */
+#define G_ERROR_CODE_06EA       XDATA_VAR8(0x06EA)  /* Error code */
 #define G_SYS_FLAGS_BASE        XDATA_VAR8(0x07E4)  /* Flags base */
 #define G_TRANSFER_ACTIVE       XDATA_VAR8(0x07E5)  /* Transfer active flag */
 #define G_SYS_FLAGS_07EC        XDATA_VAR8(0x07EC)  /* System flags 0x07EC */

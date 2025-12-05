@@ -21,8 +21,8 @@
 void main_loop(void);
 
 /* Dispatch/utility functions */
-void nvme_util_get_status_flags(uint16_t reg_addr);
-void nvme_util_get_error_flags(uint16_t reg_addr);
+void jump_bank_0(uint16_t reg_addr);
+void jump_bank_1(uint16_t reg_addr);
 void reg_set_bit_0(uint16_t reg_addr);
 void reg_set_bit_0_cpu_exec(void);
 
@@ -191,21 +191,53 @@ void main_loop(void)
 }
 
 /*===========================================================================
- * Dispatch / Utility Functions
+ * Code Banking and Dispatch System
  *===========================================================================*/
 
 /*
- * nvme_util_get_status_flags - Dispatch function for status operations
+ * ASM2464PD CODE BANKING MECHANISM
+ * =================================
+ *
+ * The ASM2464PD has ~98KB of firmware but the 8051 can only address 64KB.
+ * A code banking scheme using the DPX register (0x96) provides access to
+ * all code.
+ *
+ * MEMORY MAP:
+ *   CPU Address   | DPX=0 (Bank 0)      | DPX=1 (Bank 1)
+ *   --------------|---------------------|---------------------
+ *   0x0000-0x7FFF | File 0x0000-0x7FFF  | File 0x0000-0x7FFF (shared)
+ *   0x8000-0xFFFF | File 0x8000-0xFFFF  | File 0x10000-0x17F0C
+ *
+ * The lower 32KB (0x0000-0x7FFF) is always visible regardless of DPX.
+ * This contains interrupt vectors, dispatch routines, and common code.
+ *
+ * The upper 32KB (0x8000-0xFFFF) is bank-switched:
+ *   - DPX=0: Maps to file offset 0x08000-0x0FFFF (bank 0)
+ *   - DPX=1: Maps to file offset 0x10000-0x17F0C (bank 1)
+ *
+ * DISPATCH MECHANISM:
+ *   The handlers use a clever trampoline system:
+ *   1. Caller loads DPTR with target function address (e.g., 0xE911)
+ *   2. Caller jumps to dispatch function (0x0300 or 0x0311)
+ *   3. Dispatch saves context, sets DPX, then RET pops the DPTR
+ *   4. Execution continues at the target address in the selected bank
+ *
+ * FILE OFFSET CALCULATION:
+ *   For bank 0 (DPX=0): file_offset = addr
+ *   For bank 1 (DPX=1): file_offset = addr + 0x8000
+ *
+ * EXAMPLE:
+ *   handler_0570 calls jump_bank_1(0xE911)
+ *   -> DPX=1, execution jumps to 0xE911 in bank 1
+ *   -> File offset = 0xE911 + 0x8000 = 0x16911
+ */
+
+/*
+ * jump_bank_0 - Bank 0 dispatch function
  * Address: 0x0300-0x0310 (17 bytes)
  *
- * This is a dispatch function that:
- * 1. Pushes R0, ACC, DPL, DPH onto stack
- * 2. Sets R0 = 0x0A (dispatch parameter)
- * 3. Sets DPX = 0x00
- * 4. Returns (which pops DPTR from stack and jumps there)
- *
- * The calling convention is: set DPTR to target address, then call this.
- * The RET instruction will pop the pushed DPTR and jump to that address.
+ * Sets DPX=0 (bank 0) and dispatches to target address.
+ * R0 is set to 0x0A which may be used by target functions.
  *
  * Original disassembly:
  *   0300: push 0x08      ; push R0
@@ -213,26 +245,26 @@ void main_loop(void)
  *   0304: push 0xe0      ; push ACC
  *   0306: push 0x82      ; push DPL
  *   0308: push 0x83      ; push DPH
- *   030a: mov 0x08, #0x0a  ; R0 = 0x0A (cmd_dispatch entry)
- *   030d: mov 0x96, #0x00  ; DPX = 0x00
- *   0310: ret
+ *   030a: mov 0x08, #0x0a  ; R0 = 0x0A
+ *   030d: mov 0x96, #0x00  ; DPX = 0x00 (bank 0)
+ *   0310: ret              ; pops DPH:DPL from stack, jumps there
  */
-void nvme_util_get_status_flags(uint16_t reg_addr)
+void jump_bank_0(uint16_t reg_addr)
 {
-    /* This is essentially a register read dispatcher */
-    /* For now, just read from the register address */
-    /* The original uses a complex stack-based dispatch */
+    /* Bank 0 dispatch - target address is in bank 0 (file 0x0000-0xFFFF) */
     (void)reg_addr;
     DPX = 0x00;
 }
 
 /*
- * nvme_util_get_error_flags - Dispatch function for error operations
+ * jump_bank_1 - Bank 1 dispatch function
  * Address: 0x0311-0x0321 (17 bytes)
  *
- * Similar to nvme_util_get_status_flags but sets:
- * - R0 = 0x1B (different dispatch parameter)
- * - DPX = 0x01 (different bank)
+ * Sets DPX=1 (bank 1) and dispatches to target address.
+ * R0 is set to 0x1B which may be used by target functions.
+ *
+ * Bank 1 functions handle error conditions and are at file offset
+ * 0x10000-0x17F0C (CPU addresses 0x8000-0xFFFF with DPX=1).
  *
  * Original disassembly:
  *   0311: push 0x08
@@ -240,12 +272,13 @@ void nvme_util_get_status_flags(uint16_t reg_addr)
  *   0315: push 0xe0
  *   0317: push 0x82
  *   0319: push 0x83
- *   031b: mov 0x08, #0x1b
- *   031e: mov 0x96, #0x01
+ *   031b: mov 0x08, #0x1b  ; R0 = 0x1B
+ *   031e: mov 0x96, #0x01  ; DPX = 0x01 (bank 1)
  *   0321: ret
  */
-void nvme_util_get_error_flags(uint16_t reg_addr)
+void jump_bank_1(uint16_t reg_addr)
 {
+    /* Bank 1 dispatch - target address is in bank 1 (file 0x10000+) */
     (void)reg_addr;
     DPX = 0x01;
 }
@@ -288,15 +321,15 @@ void reg_set_bit_0_cpu_exec(void)
 
 /*===========================================================================
  * Main Loop Handler Stubs
- * These are dispatch stubs that set DPTR and call nvme_util_get_status_flags
- * or nvme_util_get_error_flags
+ * These are dispatch stubs that set DPTR and call jump_bank_0
+ * or jump_bank_1
  *===========================================================================*/
 
 /*
  * Handler at 0x04d0
  * Address: 0x04d0-0x04d4 (5 bytes)
  *
- * Calls nvme_util_get_status_flags with register 0xCE79
+ * Calls jump_bank_0 with register 0xCE79
  *
  * Original disassembly:
  *   04d0: mov dptr, #0xce79
@@ -304,7 +337,7 @@ void reg_set_bit_0_cpu_exec(void)
  */
 void handler_04d0(void)
 {
-    nvme_util_get_status_flags(0xCE79);
+    jump_bank_0(0xCE79);
 }
 
 /*
@@ -354,7 +387,7 @@ void phy_config_link_params(void)
  * Handler at 0x04b2
  * Address: 0x04b2-0x04b6 (5 bytes)
  *
- * Calls nvme_util_get_status_flags with register 0xE971
+ * Calls jump_bank_0 with register 0xE971
  *
  * Original disassembly:
  *   04b2: mov dptr, #0xe971
@@ -362,7 +395,7 @@ void phy_config_link_params(void)
  */
 void handler_04b2(void)
 {
-    nvme_util_get_status_flags(0xE971);
+    jump_bank_0(0xE971);
 }
 
 /*
@@ -382,10 +415,10 @@ void handler_04b2(void)
 void handler_4fb6(void)
 {
     /* Call dispatch handlers */
-    nvme_util_get_status_flags(0xD3CB);  /* FUN_CODE_5305 */
-    nvme_util_get_status_flags(0xE597);  /* FUN_CODE_04b7 */
-    nvme_util_get_status_flags(0xE14B);  /* FUN_CODE_04bc */
-    nvme_util_get_status_flags(0x92C5);  /* FUN_CODE_032c */
+    jump_bank_0(0xD3CB);  /* FUN_CODE_5305 */
+    jump_bank_0(0xE597);  /* FUN_CODE_04b7 */
+    jump_bank_0(0xE14B);  /* FUN_CODE_04bc */
+    jump_bank_0(0x92C5);  /* FUN_CODE_032c */
 
     /* Check state flag and conditionally clear bit 0 of CPU exec status */
     if (G_STATE_FLAG_0AE3 != 0) {
@@ -396,7 +429,7 @@ void handler_4fb6(void)
     while ((REG_PHY_EXT_B3 & 0x30) == 0);
 
     /* More dispatch calls */
-    nvme_util_get_status_flags(0xBF8E);  /* FUN_CODE_0340 */
+    jump_bank_0(0xBF8E);  /* FUN_CODE_0340 */
 
     /* Set flag indicating processing complete */
     G_STATE_FLAG_06E6 = 1;
@@ -406,7 +439,7 @@ void handler_4fb6(void)
  * Handler at 0x0327
  * Address: 0x0327-0x032a (5 bytes)
  *
- * Calls nvme_util_get_status_flags with register 0xB1CB
+ * Calls jump_bank_0 with register 0xB1CB
  * Sets DPX register as part of the dispatch system
  *
  * Original disassembly:
@@ -415,14 +448,14 @@ void handler_4fb6(void)
  */
 void handler_0327(void)
 {
-    nvme_util_get_status_flags(0xB1CB);
+    jump_bank_0(0xB1CB);
 }
 
 /*
  * Handler at 0x0494
  * Address: 0x0494-0x0498 (5 bytes)
  *
- * Calls nvme_util_get_error_flags with register 0xE56F
+ * Calls jump_bank_1 with register 0xE56F
  * Called when events & 0x81 is set
  *
  * Original disassembly:
@@ -431,14 +464,14 @@ void handler_0327(void)
  */
 void handler_0494(void)
 {
-    nvme_util_get_error_flags(0xE56F);
+    jump_bank_1(0xE56F);
 }
 
 /*
  * Handler at 0x0606
  * Address: 0x0606-0x060a (5 bytes)
  *
- * Calls nvme_util_get_error_flags with register 0xB230
+ * Calls jump_bank_1 with register 0xB230
  *
  * Original disassembly:
  *   0606: mov dptr, #0xb230
@@ -446,14 +479,14 @@ void handler_0494(void)
  */
 void handler_0606(void)
 {
-    nvme_util_get_error_flags(0xB230);
+    jump_bank_1(0xB230);
 }
 
 /*
  * Handler at 0x0589
  * Address: 0x0589-0x058d (5 bytes)
  *
- * Calls nvme_util_get_status_flags with register 0xD894
+ * Calls jump_bank_0 with register 0xD894
  *
  * Original disassembly:
  *   0589: mov dptr, #0xd894
@@ -461,14 +494,14 @@ void handler_0606(void)
  */
 void handler_0589(void)
 {
-    nvme_util_get_status_flags(0xD894);
+    jump_bank_0(0xD894);
 }
 
 /*
  * Handler at 0x0525
  * Address: 0x0525-0x0529 (5 bytes)
  *
- * Calls nvme_util_get_status_flags with register 0xBAA0
+ * Calls jump_bank_0 with register 0xBAA0
  *
  * Original disassembly:
  *   0525: mov dptr, #0xbaa0
@@ -476,14 +509,14 @@ void handler_0589(void)
  */
 void handler_0525(void)
 {
-    nvme_util_get_status_flags(0xBAA0);
+    jump_bank_0(0xBAA0);
 }
 
 /*
  * Handler at 0x039a - Buffer dispatch handler
  * Address: 0x039a-0x039e (5 bytes)
  *
- * Dispatches to buffer handler at 0xD810 via nvme_util_get_status_flags.
+ * Dispatches to buffer handler at 0xD810 via jump_bank_0.
  *
  * Original disassembly:
  *   039a: mov dptr, #0xd810
@@ -491,14 +524,14 @@ void handler_0525(void)
  */
 void handler_039a(void)
 {
-    nvme_util_get_status_flags(0xD810);
+    jump_bank_0(0xD810);
 }
 
 /*
  * Handler at 0x0520
  * Address: 0x0520-0x0524 (5 bytes)
  *
- * Calls nvme_util_get_status_flags with register 0xB4BA.
+ * Calls jump_bank_0 with register 0xB4BA.
  * Called from ext1_isr when system interrupt status bit 0 is set.
  *
  * Original disassembly:
@@ -507,14 +540,14 @@ void handler_039a(void)
  */
 void handler_0520(void)
 {
-    nvme_util_get_status_flags(0xB4BA);
+    jump_bank_0(0xB4BA);
 }
 
 /*
  * Handler at 0x052f
  * Address: 0x052f-0x0533 (5 bytes)
  *
- * Calls nvme_util_get_status_flags with register 0xAF5E.
+ * Calls jump_bank_0 with register 0xAF5E.
  * Called from ext1_isr when PCIe/NVMe status bit 6 is set.
  *
  * Original disassembly:
@@ -523,14 +556,14 @@ void handler_0520(void)
  */
 void handler_052f(void)
 {
-    nvme_util_get_status_flags(0xAF5E);
+    jump_bank_0(0xAF5E);
 }
 
 /*
  * Handler at 0x0570
  * Address: 0x0570-0x0574 (5 bytes)
  *
- * Calls nvme_util_get_error_flags with register 0xE911.
+ * Calls jump_bank_1 with register 0xE911.
  * Called from ext1_isr when PCIe/NVMe status & 0x0F != 0.
  *
  * Original disassembly:
@@ -539,7 +572,7 @@ void handler_052f(void)
  */
 void handler_0570(void)
 {
-    nvme_util_get_error_flags(0xE911);
+    jump_bank_1(0xE911);
 }
 
 /*
@@ -554,7 +587,7 @@ void handler_0570(void)
  */
 void handler_061a(void)
 {
-    nvme_util_get_error_flags(0xA066);
+    jump_bank_1(0xA066);
 }
 
 /*
@@ -569,7 +602,7 @@ void handler_061a(void)
  */
 void handler_0593(void)
 {
-    nvme_util_get_status_flags(0xC105);
+    jump_bank_0(0xC105);
 }
 
 /*
@@ -584,7 +617,7 @@ void handler_0593(void)
  */
 void handler_0642(void)
 {
-    nvme_util_get_error_flags(0xEF4E);
+    jump_bank_1(0xEF4E);
 }
 
 /*===========================================================================
