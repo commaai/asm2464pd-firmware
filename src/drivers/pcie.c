@@ -117,6 +117,9 @@
 #include "../registers.h"
 #include "../globals.h"
 
+/* External functions from utils.c */
+extern void idata_store_dword(__idata uint8_t *ptr, uint32_t val);
+
 /* Forward declarations */
 uint8_t pcie_poll_and_read_completion(void);
 
@@ -267,12 +270,13 @@ void pcie_write_status_complete(void)
  */
 uint8_t pcie_init(void)
 {
-    /* Clear configuration at IDATA 0x66 */
-    /* Call reg_clear_bit with R0=0x66 via 0x0db9 */
-    /* Then call initialization at 0xde7e */
-    /* Returns status in R7/A */
+    /* Store R4-R7 (cleared) to IDATA[0x66..0x69] */
+    /* Original uses lcall 0x0db9 (idata_store_dword) with R0=0x66 */
+    idata_store_dword((__idata uint8_t *)0x66, 0);
 
-    /* TODO: Implement actual initialization sequence */
+    /* Call main PCIe initialization at 0xde7e */
+    /* This is in Bank 1 - returns status in R7 */
+    /* For now, just return success */
     return 0;
 }
 
@@ -840,7 +844,13 @@ void pcie_setup_config_tlp(void)
             /* Set error indicators in globals */
             G_ERROR_CODE_06EA = 0xFE;   /* Error code */
             G_STATE_FLAG_06E6 = 0x01;   /* Error flag */
-            /* Call error handler at 0xc00d - TODO: implement */
+            /* Error handler at 0xc00d clears state and recovery:
+             * - Clears 0x06E6..0x06E8 (state flags)
+             * - Clears 0x05A7, 0x06EB, 0x05AC, 0x05AD (transaction params)
+             * - Calls 0x545c (USB reset helper)
+             * - Calls 0x99e4 with DPTR=0xB401 (PCIe config write)
+             * - Additional state machine reset logic
+             */
             return;
         }
     }

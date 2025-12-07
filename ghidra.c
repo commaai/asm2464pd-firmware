@@ -4,7 +4,7 @@ typedef unsigned char    undefined1;
 typedef unsigned short    wchar16;
 
 
-undefined1 DAT_EXTMEM_000a;
+undefined1 G_EP_CHECK_FLAG;
 undefined1 DAT_EXTMEM_0af3;
 char DAT_INTMEM_6a;
 char DAT_INTMEM_6b;
@@ -16,17 +16,17 @@ undefined1 BANK1_R2;
 undefined1 BANK1_R3;
 undefined1 BANK1_R4;
 undefined1 DAT_EXTMEM_90a1;
-undefined1 DAT_EXTMEM_07e5;
 undefined1 REG_BUFFER_CTRL;
 undefined1 REG_BUFFER_DATA;
 undefined1 REG_BUFFER_PTR_LOW;
 undefined1 REG_BUFFER_PTR_HIGH;
 undefined1 REG_BUFFER_LENGTH_LOW;
 undefined1 REG_BUFFER_STATUS;
-undefined1 REG_BUFFER_LENGTH_HIGH;
 undefined LAB_CODE_90e1;
-undefined1 DAT_EXTMEM_c4ed;
+undefined1 REG_BUFFER_LENGTH_HIGH;
 undefined LAB_CODE_c509;
+undefined1 DAT_EXTMEM_c4ed;
+undefined1 G_TRANSFER_ACTIVE;
 undefined1 DAT_EXTMEM_c4ef;
 undefined1 DAT_EXTMEM_d80f;
 undefined1 DAT_EXTMEM_c4ee;
@@ -40,10 +40,11 @@ undefined1 DAT_EXTMEM_905c;
 undefined DAT_SFR_96;
 undefined1 BANK1_R0;
 undefined FUN_CODE_ca0d;
+undefined usb_power_init;
 undefined FUN_CODE_c4b3;
 undefined FUN_CODE_bf0f;
-undefined FUN_CODE_bf8e;
-undefined FUN_CODE_d810;
+undefined handler_bf8e;
+undefined usb_buffer_handler;
 undefined FUN_CODE_d916;
 undefined FUN_CODE_e762;
 undefined FUN_CODE_e677;
@@ -51,101 +52,145 @@ undefined FUN_CODE_e2a6;
 undefined FUN_CODE_e91d;
 undefined FUN_CODE_e902;
 undefined FUN_CODE_e77a;
-undefined FUN_CODE_c00d;
+undefined pcie_error_handler;
 undefined FUN_CODE_cd6c;
 undefined FUN_CODE_e8a9;
 undefined FUN_CODE_d436;
+undefined event_state_handler;
+undefined reserved_stub;
+undefined timer_link_handler;
 undefined FUN_CODE_e3b7;
 undefined FUN_CODE_e8e4;
 undefined FUN_CODE_e6fc;
 undefined FUN_CODE_de16;
 undefined thunk_FUN_CODE_de16;
-undefined FUN_CODE_e8ef;
+undefined handler_e8ef;
 undefined FUN_CODE_e50d;
-undefined FUN_CODE_e80a;
+undefined delay_function;
+undefined timer_tick_handler;
+undefined flash_cmd_handler;
 undefined FUN_CODE_e1c6;
-undefined FUN_CODE_af5e;
+undefined debug_output_handler;
 undefined FUN_CODE_8d77;
+undefined error_handler_e911;
+undefined phy_register_config;
+undefined handler_c105;
 undefined LAB_CODE_9d90;
+undefined LAB_CODE_b22f+1;
 undefined FUN_CODE_bb37;
+undefined handler_ed02;
+undefined error_handler_a066;
+undefined handler_eef9;
+undefined error_handler_ef4e;
 undefined DPX;
 undefined OV;
+undefined1 ep_bit_mask_table;
+byte DAT_INTMEM_37;
+undefined ep_offset_table;
+undefined1 DAT_EXTMEM_90e3;
+undefined1 REG_USB_EP_STATUS;
+undefined1 G_EP_DISPATCH_VAL1;
+undefined1 G_EP_DISPATCH_VAL2;
+undefined1 G_EP_DISPATCH_OFFSET;
+undefined1 DAT_EXTMEM_909e;
+undefined ep_index_table;
+undefined1 REG_USB_EP_READY;
+undefined1 REG_USB_PERIPH_STATUS;
+undefined BANK0_R0;
+undefined1 BANK0_R1;
+undefined1 BANK0_R2;
+undefined1 BANK0_R3;
+undefined1 BANK0_R4;
+undefined1 BANK0_R5;
+undefined1 BANK0_R6;
+undefined1 G_SYS_STATUS_PRIMARY;
+undefined1 BANK0_R7;
+undefined1 REG_USB_PHY_CTRL_91D1;
+undefined1 REG_BUF_CFG_9300;
+undefined1 REG_BUF_CFG_9301;
+undefined1 REG_BUF_CFG_9302;
+undefined1 DAT_EXTMEM_0055;
+undefined1 REG_USB_STATUS;
+undefined1 REG_NVME_QUEUE_PTR_C471;
+undefined1 REG_NVME_LINK_STATUS;
+undefined1 REG_INT_USB_MASTER;
+undefined1 REG_INT_SYSTEM;
+undefined1 REG_CPU_LINK_CEF2;
+undefined1 REG_CPU_LINK_CEF3;
+undefined1 REG_POWER_DOMAIN_92E0;
+undefined1 DAT_EXTMEM_c47b;
+undefined1 REG_NVME_CMD_NSID;
+undefined1 REG_USB_MODE_90E2;
+undefined1 REG_USB_EP_CFG1;
 undefined1 DAT_EXTMEM_c47a;
 byte DAT_INTMEM_43;
-byte DAT_INTMEM_3f;
-byte DAT_INTMEM_40;
-byte DAT_INTMEM_42;
+undefined DAT_INTMEM_3f;
+undefined DAT_INTMEM_40;
+undefined DAT_INTMEM_42;
 char DAT_INTMEM_44;
-byte DAT_INTMEM_41;
+undefined DAT_INTMEM_41;
 char DAT_INTMEM_46;
 byte DAT_INTMEM_45;
 byte DAT_INTMEM_47;
-undefined1 BANK0_R7;
+undefined1 G_SYS_STATUS_SECONDARY;
 undefined UNK_CODE_ce51;
 undefined UNK_CODE_ce55;
-undefined FUN_CODE_0539+1;
 undefined LAB_CODE_046f+1;
 undefined LAB_CODE_0476;
 undefined1 BANK1_R5;
+undefined1 G_DMA_LOAD_PARAM2;
+undefined1 G_STATE_HELPER_41;
 undefined1 DAT_EXTMEM_ce51;
-undefined LAB_CODE_0474+1;
-undefined1 DAT_EXTMEM_ce55;
-undefined1 REG_USB_STATUS;
-undefined1 REG_SYS_STATUS_SECONDARY;
-undefined DAT_CODE_5b72;
+undefined1 G_STATE_HELPER_42;
 undefined DAT_CODE_5b7a;
-undefined1 DAT_EXTMEM_ce5c;
+undefined1 G_NVME_PARAM_053A;
+undefined1 DAT_EXTMEM_ce55;
 undefined1 DAT_EXTMEM_ce5f;
+undefined1 REG_SCSI_DMA_COMPL;
 undefined1 DAT_EXTMEM_ce60;
 undefined1 REG_SCSI_DMA_STATUS;
 undefined1 DAT_EXTMEM_ce65;
 undefined1 REG_NVME_DATA_CTRL;
 undefined1 DAT_EXTMEM_0470;
-undefined1 DAT_EXTMEM_0473;
-undefined1 DAT_EXTMEM_0475;
 undefined1 DAT_EXTMEM_01b4;
-undefined1 DAT_EXTMEM_0474;
 undefined1 DAT_EXTMEM_0476;
-undefined1 DAT_EXTMEM_053a;
 undefined1 DAT_EXTMEM_0aa7;
-undefined1 DAT_EXTMEM_05a6;
+undefined1 G_PCIE_TXN_COUNT_LO;
 char DAT_INTMEM_41;
 char DAT_INTMEM_3f;
 byte DAT_INTMEM_52;
-undefined1 DAT_EXTMEM_c8d8;
+byte DAT_INTMEM_40;
+undefined1 REG_DMA_STATUS2;
 undefined1 DAT_INTMEM_41;
 char DAT_INTMEM_47;
 undefined1 DAT_EXTMEM_ce97;
 undefined1 DAT_EXTMEM_ce96;
-undefined1 REG_SYS_STATUS_PRIMARY;
 char DAT_INTMEM_53;
 byte DAT_INTMEM_55;
 undefined1 REG_DMA_STATUS;
 undefined1 REG_SCSI_DMA_PARAM3;
 undefined1 REG_SCSI_DMA_PARAM1;
-undefined1 DAT_EXTMEM_0472;
-undefined1 BANK0_R3;
-undefined1 DAT_EXTMEM_0aa3;
-undefined1 DAT_EXTMEM_0aa4;
-undefined1 DAT_EXTMEM_06e6;
-undefined1 DAT_EXTMEM_0565;
-undefined1 DAT_EXTMEM_0564;
-undefined1 DAT_EXTMEM_ce66;
-undefined1 DAT_EXTMEM_ce67;
+undefined1 G_DMA_LOAD_PARAM1;
+undefined1 G_STATE_COUNTER_HI;
+undefined1 G_STATE_COUNTER_LO;
+undefined1 G_STATE_FLAG_06E6;
+undefined1 G_EP_QUEUE_CTRL;
+undefined1 G_EP_QUEUE_STATUS;
+undefined1 REG_SCSI_DMA_TAG_COUNT;
+undefined1 REG_SCSI_DMA_QUEUE_STAT;
 undefined1 DAT_EXTMEM_0a81;
-undefined1 DAT_EXTMEM_0b41;
 undefined1 DAT_EXTMEM_9201;
 char DAT_INTMEM_39;
 byte DAT_INTMEM_38;
 undefined1 DAT_EXTMEM_0a82;
-undefined1 BANK0_R6;
+undefined LAB_CODE_0051;
 undefined1 DAT_EXTMEM_ce89;
 undefined1 DAT_EXTMEM_ce88;
-undefined LAB_CODE_0051;
 undefined1 DAT_EXTMEM_924c;
-undefined1 DAT_EXTMEM_0051;
 undefined LAB_CODE_c4ea+1;
 undefined LAB_CODE_c4e8;
+undefined1 DAT_EXTMEM_0051;
+undefined1 G_USB_STATE_0B41;
 undefined1 DAT_EXTMEM_0052;
 undefined LAB_CODE_c4ee+1;
 undefined UNK_CODE_0a82;
@@ -153,7 +198,6 @@ undefined LAB_CODE_0052;
 undefined1 DAT_EXTMEM_911d;
 undefined1 DAT_EXTMEM_911e;
 undefined func_util_0006+1;
-undefined1 DAT_CODE_5b6a;
 undefined1 DAT_EXTMEM_07e8;
 undefined1 DAT_EXTMEM_c4e8;
 undefined1 DAT_EXTMEM_c4eb;
@@ -167,51 +211,49 @@ undefined1 DAT_EXTMEM_0af4;
 undefined1 DAT_EXTMEM_0af7;
 undefined1 DAT_EXTMEM_0af6;
 undefined1 DAT_EXTMEM_0af8;
-undefined1 DAT_EXTMEM_0a7d;
-undefined1 DAT_EXTMEM_0b00;
-undefined buffer_allocate;
+undefined1 G_EP_DISPATCH_VAL3;
+undefined handler_0570_bank1_e911;
+undefined1 G_BUF_BASE_HI;
+undefined1 G_BUF_BASE_LO;
 undefined1 DAT_EXTMEM_0567;
 undefined1 DAT_EXTMEM_0566;
-undefined1 DAT_EXTMEM_0569;
-undefined1 DAT_EXTMEM_0568;
 undefined1 DAT_EXTMEM_056b;
 undefined1 DAT_EXTMEM_056a;
+undefined1 G_USB_PARAM_0B00;
+undefined1 G_BUF_OFFSET_HI;
+undefined1 G_BUF_OFFSET_LO;
 undefined1 BANK3_R0;
-undefined1 DAT_EXTMEM_021b;
 undefined1 BANK3_R1;
-undefined1 DAT_EXTMEM_021a;
 byte DAT_INTMEM_3e;
 undefined1 REG_NVME_CTRL_STATUS;
 undefined1 REG_NVME_DEV_STATUS;
 undefined1 BANK2_R6;
 undefined1 BANK2_R7;
-undefined1 REG_EP_CONFIG_ARRAY;
-undefined1 DAT_EXTMEM_0219;
-undefined1 DAT_EXTMEM_0218;
+undefined1 G_EP_CONFIG_ARRAY;
+undefined1 G_BUF_ADDR_HI;
+undefined1 G_BUF_ADDR_LO;
 undefined1 BANK2_R2;
 undefined1 REG_USB_EP0_CONFIG;
 byte DAT_INTMEM_3c;
-undefined1 REG_SCSI_CTRL;
+undefined1 G_SCSI_CTRL;
 undefined1 DAT_INTMEM_3c;
 undefined1 DAT_EXTMEM_0216;
-undefined1 DAT_EXTMEM_0203;
-undefined1 DAT_EXTMEM_020d;
-undefined1 DAT_EXTMEM_020e;
+undefined1 G_DMA_MODE_SELECT;
+undefined1 G_DMA_PARAM1;
+undefined1 G_DMA_PARAM2;
 undefined1 REG_NVME_CMD_PARAM;
 undefined1 REG_TRANSFER_FLAGS;
 undefined1 REG_NVME_STATUS;
 byte DAT_INTMEM_23;
-undefined1 DAT_EXTMEM_9093;
-undefined1 DAT_EXTMEM_9094;
-undefined1 DAT_EXTMEM_0b2e;
-undefined1 DAT_EXTMEM_014e;
+undefined1 REG_USB_EP_CFG2;
+undefined1 G_USB_TRANSFER_FLAG;
+undefined1 G_USB_INDEX_COUNTER;
+undefined1 G_FLASH_ERROR_1;
 undefined FUN_CODE_0566;
-undefined1 BANK0_R1;
-undefined1 DAT_EXTMEM_0aa9;
-undefined1 DAT_EXTMEM_0aa8;
+undefined1 G_FLASH_RESET_0AAA;
+undefined1 G_EP_CONFIG_MULT_BASE;
 undefined1 DAT_EXTMEM_0aab;
-undefined1 DAT_EXTMEM_0aaa;
-undefined LAB_CODE_05d2+1;
+undefined1 G_FLASH_ERROR_0;
 undefined UNK_CODE_0aa2;
 undefined1 DAT_EXTMEM_c8d7;
 byte DAT_INTMEM_53;
@@ -228,19 +270,14 @@ undefined UNK_CODE_0578;
 undefined FUN_CODE_0539+2;
 undefined1 DAT_EXTMEM_c8d5;
 undefined1 DAT_EXTMEM_0aa6;
-undefined1 DAT_EXTMEM_0af5;
 undefined1 DAT_EXTMEM_0578;
 undefined1 DAT_EXTMEM_053b;
 undefined1 DAT_EXTMEM_0b3f;
 undefined1 DAT_EXTMEM_0b3e;
 char DAT_INTMEM_3a;
-undefined BANK0_R0;
 undefined1 DAT_EXTMEM_0a83;
 byte DAT_INTMEM_3b;
 char DAT_INTMEM_3d;
-undefined1 BANK0_R4;
-undefined FUN_CODE_0471+2;
-undefined LAB_CODE_0474;
 undefined LAB_CODE_0216;
 undefined1 DAT_EXTMEM_0217;
 undefined1 REG_NVME_CONFIG;
@@ -269,7 +306,6 @@ undefined1 REG_SCSI_DMA_PARAM0;
 undefined1 REG_SCSI_DMA_PARAM2;
 undefined1 DAT_EXTMEM_c4e9;
 undefined1 DAT_EXTMEM_002d;
-undefined1 DAT_EXTMEM_cef3;
 undefined1 DAT_EXTMEM_0b3d;
 char DAT_INTMEM_3b;
 undefined1 DAT_EXTMEM_07ea;
@@ -277,47 +313,45 @@ undefined1 DAT_EXTMEM_ce00;
 undefined1 DAT_INTMEM_3a;
 byte DAT_INTMEM_3d;
 undefined1 DAT_INTMEM_3b;
-undefined s_om/en-us/windows/fix-usb-c-probl_CODE_06e6;
 undefined LAB_CODE_ce00;
 undefined UNK_CODE_07ea;
 undefined LAB_CODE_0054+1;
-undefined1 DAT_EXTMEM_0055;
 undefined1 DAT_EXTMEM_ce36;
 undefined 20.1;
 undefined1 DAT_EXTMEM_ce3a;
 undefined1 DAT_EXTMEM_ce01;
 byte DAT_INTMEM_3a;
-undefined1 DAT_EXTMEM_91c0;
 undefined1 REG_TIMER1_CSR;
 undefined1 REG_TIMER2_CSR;
+undefined1 G_SYSTEM_STATE_0AE2;
+undefined1 REG_USB_PHY_CTRL_91C0;
 undefined1 DAT_EXTMEM_044b;
 undefined1 DAT_EXTMEM_044c;
-undefined1 REG_POWER_STATUS;
-undefined1 DAT_EXTMEM_0a59;
 undefined1 DAT_EXTMEM_0a5a;
 undefined EX0;
-undefined1 DAT_EXTMEM_0ae2;
 undefined EX1;
+undefined1 G_MISC_FLAG_06EC;
 undefined1 DAT_EXTMEM_0ae9;
 undefined EA;
 undefined1 DAT_EXTMEM_0ae8;
-undefined1 DAT_EXTMEM_06ec;
 undefined PX0;
 undefined PX1;
 undefined1 DAT_EXTMEM_07b7;
+undefined1 G_EVENT_FLAGS;
+undefined1 G_EVENT_CTRL_09FA;
 undefined1 DAT_EXTMEM_0ab6;
-undefined1 DAT_EXTMEM_09f9;
+undefined1 REG_POWER_STATUS_92C2;
+undefined1 G_LOOP_STATE;
 undefined1 DAT_EXTMEM_0b39;
-undefined1 DAT_EXTMEM_09fa;
-undefined1 DAT_EXTMEM_0af2;
-undefined1 DAT_EXTMEM_9121;
-undefined1 DAT_EXTMEM_9120;
-undefined1 DAT_EXTMEM_9122;
-undefined1 DAT_EXTMEM_911f;
-undefined1 DAT_EXTMEM_910d;
-undefined1 DAT_EXTMEM_910e;
-undefined1 DAT_EXTMEM_0afb;
-undefined1 DAT_EXTMEM_0afa;
+undefined1 G_TRANSFER_FLAG_0AF2;
+undefined1 REG_USB_STATUS_1F;
+undefined1 REG_USB_STATUS_20;
+undefined1 REG_USB_STATUS_21;
+undefined1 REG_USB_STATUS_22;
+undefined1 REG_USB_STATUS_0D;
+undefined1 REG_USB_STATUS_0E;
+undefined1 G_TRANSFER_PARAMS_HI;
+undefined1 G_TRANSFER_PARAMS_LO;
 undefined1 DAT_EXTMEM_c509;
 undefined1 DAT_EXTMEM_c805;
 undefined1 DAT_EXTMEM_9100;
@@ -327,27 +361,26 @@ byte DAT_INTMEM_39;
 undefined1 DAT_EXTMEM_00c2;
 undefined1 DAT_EXTMEM_ce86;
 undefined1 DAT_EXTMEM_0108;
-undefined1 DAT_EXTMEM_d80c;
 undefined1 DAT_EXTMEM_0517;
-undefined1 DAT_EXTMEM_009f;
 undefined1 DAT_INTMEM_6f;
 undefined1 DAT_INTMEM_70;
 undefined1 DAT_INTMEM_71;
 undefined1 DAT_INTMEM_72;
+undefined1 DAT_EXTMEM_009f;
 undefined1 DAT_EXTMEM_00e5;
+undefined1 REG_BUFFER_XFER_START;
 undefined1 DAT_EXTMEM_012b;
 undefined1 DAT_EXTMEM_0b2f;
 undefined1 DAT_EXTMEM_0aff;
-undefined1 DAT_EXTMEM_0aa1;
-undefined UNK_CODE_0aa1;
 undefined1 DAT_EXTMEM_b480;
-undefined1 DAT_EXTMEM_0aa2;
 undefined FUN_CODE_0449+2;
-undefined1 DAT_EXTMEM_07eb;
+undefined1 DAT_EXTMEM_0aa2;
 undefined LAB_CODE_05d4;
-undefined1 DAT_EXTMEM_07ef;
+undefined1 DAT_EXTMEM_07eb;
+undefined1 G_SYS_FLAGS_07EF;
 undefined1 DAT_EXTMEM_b2d5;
 undefined1 DAT_EXTMEM_b455;
+undefined1 G_LOG_PROCESSED_INDEX;
 undefined1 REG_PCIE_STATUS;
 undefined1 DAT_EXTMEM_ce81;
 undefined1 DAT_EXTMEM_ce80;
@@ -379,11 +412,8 @@ undefined1 DAT_EXTMEM_053d;
 undefined1 DAT_EXTMEM_053e;
 undefined1 DAT_INTMEM_6a;
 undefined LAB_CODE_c8d7;
-undefined UNK_CODE_0aa4;
-undefined LAB_CODE_c8d8;
-undefined REG_SYSTEM_CTRL_0000;
+undefined G_SYSTEM_CTRL;
 char DAT_INTMEM_54;
-undefined UNK_CODE_0aaa;
 undefined UNK_CODE_0aab;
 undefined UNK_CODE_0aac;
 undefined1 DAT_EXTMEM_0aac;
@@ -404,13 +434,11 @@ undefined1 DAT_INTMEM_3d;
 undefined1 DAT_CODE_0a7d;
 undefined1 DAT_EXTMEM_0456;
 undefined1 DAT_EXTMEM_c51a;
-undefined1 DAT_EXTMEM_c520;
 undefined LAB_CODE_c515+1;
 undefined1 DAT_EXTMEM_c512;
-undefined1 DAT_EXTMEM_cef2;
 undefined1 DAT_EXTMEM_c516;
 undefined1 DAT_EXTMEM_05ac;
-undefined1 DAT_EXTMEM_06e5;
+undefined1 G_MAX_LOG_ENTRIES;
 undefined1 DAT_EXTMEM_06e8;
 undefined UNK_CODE_0afe;
 undefined1 DAT_EXTMEM_0af9;
@@ -422,53 +450,43 @@ string s_https://support.microsoft.com/en_CODE_06cb;
 undefined1 DAT_EXTMEM_0053;
 undefined UNK_CODE_0a83;
 undefined1 DAT_EXTMEM_0a8e;
-undefined1 DAT_CODE_0648;
 undefined SP;
+undefined1 init_data_table;
 undefined1 DAT_EXTMEM_0214;
 undefined1 DAT_EXTMEM_0a8d;
-undefined1 DAT_EXTMEM_e7e3;
-undefined1 BANK0_R2;
-undefined1 DAT_EXTMEM_ec04;
-undefined1 BANK0_R5;
-undefined1 DAT_EXTMEM_c806;
-undefined1 DAT_EXTMEM_ec06;
-undefined1 DAT_EXTMEM_c80a;
-undefined1 DAT_EXTMEM_0af1;
-undefined1 DAT_EXTMEM_cc33;
-undefined1 DAT_EXTMEM_91d1;
-undefined1 DAT_EXTMEM_9301;
-undefined1 DAT_EXTMEM_9300;
+undefined1 REG_INT_PCIE_NVME;
+undefined1 REG_CPU_EXEC_STATUS_2;
+undefined1 G_STATE_FLAG_0AF1;
+undefined1 REG_PHY_LINK_CTRL;
+undefined1 REG_NVME_EVENT_ACK;
+undefined1 REG_NVME_EVENT_STATUS;
 undefined1 DAT_EXTMEM_01b6;
 undefined1 REG_CPU_MODE_NEXT;
 undefined LAB_CODE_044c+1;
 undefined1 DAT_EXTMEM_ce6f;
-undefined LAB_CODE_05a5+1;
-undefined s_n-us/windows/fix-usb-c-problems-_CODE_06ea;
-undefined1 DAT_EXTMEM_c656;
+undefined1 REG_PHY_EXT_56;
+undefined1 G_ERROR_CODE_06EA;
 undefined1 DAT_EXTMEM_0b3b;
-undefined1 DAT_EXTMEM_06ea;
 byte DAT_INTMEM_21;
 undefined1 DAT_EXTMEM_e716;
 undefined1 DAT_EXTMEM_c51e;
 undefined1 DAT_EXTMEM_900b;
 undefined1 DAT_EXTMEM_901a;
-undefined1 REG_NVME_CMD_NSID;
 undefined1 REG_NVME_CMD_PRP1;
 undefined LAB_CODE_b294;
 undefined1 DAT_EXTMEM_b294;
-undefined LAB_CODE_cef2;
 undefined1 DAT_EXTMEM_05ad;
 undefined1 DAT_INTMEM_38;
-undefined1 DAT_EXTMEM_c8b3;
-undefined1 DAT_EXTMEM_c8b2;
-undefined1 DAT_EXTMEM_c8b5;
-undefined1 DAT_EXTMEM_c8b4;
-undefined1 DAT_EXTMEM_c8b7;
-undefined1 DAT_EXTMEM_c8b6;
-undefined1 DAT_EXTMEM_c8b8;
+undefined1 REG_DMA_CHAN_AUX;
+undefined1 REG_DMA_CHAN_AUX1;
+undefined1 REG_DMA_XFER_CNT_HI;
+undefined1 REG_DMA_XFER_CNT_LO;
+undefined1 REG_DMA_CHAN_CTRL2;
+undefined1 REG_DMA_CHAN_STATUS2;
+undefined1 REG_DMA_TRIGGER;
 undefined LAB_CODE_ce35+1;
 undefined1 DAT_EXTMEM_07f1;
-undefined1 DAT_EXTMEM_c801;
+undefined1 REG_INT_CTRL_C801;
 undefined1 DAT_EXTMEM_07f0;
 undefined1 DAT_EXTMEM_c800;
 undefined1 DAT_EXTMEM_ca60;
@@ -477,21 +495,19 @@ undefined1 DAT_EXTMEM_07f2;
 undefined1 DAT_EXTMEM_07f5;
 undefined1 DAT_EXTMEM_cc35;
 undefined1 DAT_EXTMEM_07f4;
-undefined LAB_CODE_cc3a+1;
+undefined1 REG_CPU_CTRL_CC3B;
 undefined1 DAT_EXTMEM_07e7;
 undefined1 DAT_EXTMEM_920f;
 undefined LAB_CODE_054b+1;
 undefined1 DAT_EXTMEM_ce8a;
 char DAT_INTMEM_22;
-undefined LAB_CODE_014d+1;
 undefined1 BANK2_R1;
 undefined1 DAT_EXTMEM_c4c9;
 undefined1 DAT_EXTMEM_c4c8;
-undefined1 DAT_EXTMEM_0ae3;
-undefined1 DAT_EXTMEM_c6b3;
-undefined1 DAT_EXTMEM_cc32;
+undefined1 REG_PHY_EXT_B3;
+undefined1 REG_CPU_EXEC_STATUS;
+undefined1 G_STATE_FLAG_0AE3;
 undefined1 DAT_EXTMEM_0006;
-undefined UNK_CODE_0af5;
 undefined1 DAT_INTMEM_6b;
 undefined1 DAT_EXTMEM_9123;
 undefined1 DAT_INTMEM_6c;
@@ -510,15 +526,13 @@ undefined1 REG_USB_BUFFER_ALT;
 undefined1 DAT_EXTMEM_9119;
 undefined1 DAT_EXTMEM_911a;
 undefined1 DAT_EXTMEM_911c;
-undefined1 DAT_EXTMEM_9008;
-undefined1 REG_USB_SCSI_BUF_LEN;
-undefined UNK_CODE_ce5c;
-undefined1 DAT_EXTMEM_c65b;
-undefined1 DAT_EXTMEM_c62d;
-undefined1 DAT_EXTMEM_90e3;
+undefined1 REG_USB_SCSI_BUF_LEN_L;
+undefined1 REG_USB_SCSI_BUF_LEN_H;
+undefined1 REG_PHY_EXT_2D;
+undefined1 REG_PHY_EXT_5B;
 undefined UNK_CODE_ce5f;
-undefined1 DAT_EXTMEM_e795;
 undefined1 DAT_EXTMEM_07f6;
+undefined1 REG_FLASH_READY_STATUS;
 undefined1 DAT_EXTMEM_91d0;
 undefined1 DAT_EXTMEM_ce95;
 undefined DAT_CODE_5b9a;
@@ -533,11 +547,11 @@ char DAT_INTMEM_62;
 byte DAT_INTMEM_2b;
 undefined1 DAT_INTMEM_24;
 byte DAT_INTMEM_75;
+undefined DAT_SFR_aa;
 undefined RCAP2H;
 byte DAT_INTMEM_72;
-undefined1 DAT_SFR_ef;
 byte UNK_INTMEM_74;
-undefined DAT_SFR_aa;
+undefined1 DAT_SFR_ef;
 undefined DAT_SFR_95;
 undefined FIE1;
 undefined HSTAT;
@@ -556,12 +570,12 @@ byte DAT_INTMEM_7e;
 undefined HPCON;
 undefined LAB_CODE_0070;
 undefined 23.0;
-undefined TB8;
 undefined DAT_SFR_91;
-undefined1 DAT_SFR_a5;
+undefined TB8;
 undefined HIFLG;
 undefined DPXL;
 undefined 2d.4;
+undefined1 DAT_SFR_a5;
 undefined CCAP1L;
 undefined DAT_SFR_af;
 undefined TXCON;
@@ -574,11 +588,11 @@ byte DAT_INTMEM_59;
 undefined1 DAT_INTMEM_43;
 undefined1 DAT_INTMEM_33;
 byte DAT_INTMEM_70;
-undefined DAT_SFR_94;
 undefined1 DAT_INTMEM_5c;
 undefined1 DAT_INTMEM_30;
 undefined1 DAT_INTMEM_7e;
 undefined1 DAT_INTMEM_51;
+undefined DAT_SFR_94;
 undefined1 UNK_INTMEM_97;
 undefined 26.6;
 undefined SCON;
@@ -598,7 +612,6 @@ undefined LAB_CODE_05bb;
 undefined LAB_CODE_05bb+1;
 undefined LAB_CODE_05cf;
 undefined LAB_CODE_05d2;
-undefined LAB_CODE_b22f+1;
 undefined1 DAT_EXTMEM_b221;
 undefined1 DAT_EXTMEM_b223;
 undefined1 USB_SCSI_BUF_BASE;
@@ -681,7 +694,7 @@ undefined1 DAT_EXTMEM_cc9a;
 undefined1 DAT_EXTMEM_e41c;
 undefined1 DAT_EXTMEM_cc88;
 undefined1 DAT_EXTMEM_cc8a;
-undefined1 DAT_EXTMEM_07bd;
+undefined1 G_FLASH_OP_COUNTER;
 undefined1 DAT_EXTMEM_e421;
 undefined1 DAT_EXTMEM_e405;
 undefined1 DAT_EXTMEM_07dd;
@@ -705,23 +718,23 @@ char DAT_INTMEM_64;
 undefined1 DAT_INTMEM_63;
 undefined LAB_CODE_05bb+2;
 undefined1 DAT_INTMEM_26;
-undefined1 DAT_EXTMEM_05a7;
 undefined1 DAT_EXTMEM_0a5b;
+undefined1 G_PCIE_TXN_COUNT_HI;
 undefined1 REG_PCIE_TRIGGER;
 undefined1 DAT_INTMEM_64;
 undefined1 REG_PCIE_BYTE_EN;
-undefined1 DAT_EXTMEM_b216;
+undefined1 REG_PCIE_TLP_LENGTH;
 undefined LAB_CODE_05c0+2;
 undefined1 REG_PCIE_LINK_STATUS;
-undefined1 DAT_EXTMEM_b22c;
+undefined1 REG_PCIE_CPL_DATA;
 char DAT_INTMEM_25;
 char DAT_INTMEM_26;
 byte DAT_INTMEM_63;
 undefined1 DAT_EXTMEM_b222;
 undefined LAB_CODE_05b9;
 undefined LAB_CODE_05be;
-undefined1 DAT_EXTMEM_800e;
 undefined LAB_CODE_05c0;
+undefined1 DAT_EXTMEM_800e;
 undefined LAB_CODE_05c3+1;
 undefined LAB_CODE_05c5;
 undefined1 DAT_EXTMEM_8037;
@@ -733,7 +746,6 @@ char DAT_INTMEM_61;
 byte DAT_INTMEM_62;
 undefined LAB_CODE_05b4+1;
 undefined1 DAT_EXTMEM_0b35;
-undefined UNK_CODE_09fa;
 undefined1 DAT_EXTMEM_e710;
 undefined1 DAT_EXTMEM_0ad7;
 undefined1 DAT_EXTMEM_0acb;
@@ -750,21 +762,21 @@ undefined1 DAT_EXTMEM_e302;
 undefined1 DAT_EXTMEM_0acf;
 undefined1 REG_USB_EP0_STATUS;
 undefined1 DAT_EXTMEM_9090;
-undefined1 REG_SYS_FLAGS_BASE;
-undefined1 REG_SYS_FLAGS;
 undefined1 REG_INT_FLAGS_EX0;
 undefined1 DAT_EXTMEM_9220;
-undefined1 DAT_EXTMEM_07ee;
+undefined1 G_FLASH_CMD_TYPE;
+undefined1 G_SYS_FLAGS_BASE;
+undefined1 G_SYS_FLAGS_07EC;
+undefined1 G_SYS_FLAGS_07EE;
 undefined1 DAT_EXTMEM_0ad0;
-undefined1 REG_POWER_CTRL;
+undefined1 REG_POWER_CTRL_92C4;
 undefined CCAPM3;
-undefined1 DAT_EXTMEM_07bc;
 undefined RXSTAT;
-undefined1 DAT_EXTMEM_ca81;
 undefined1 DAT_EXTMEM_b403;
+undefined1 REG_CA81;
 undefined DAT_CODE_5d24;
-undefined1 DAT_EXTMEM_07b9;
 undefined DAT_CODE_5d29;
+undefined1 DAT_EXTMEM_07b9;
 undefined1 DAT_EXTMEM_0aed;
 undefined1 DAT_EXTMEM_0aec;
 undefined1 REG_CMD_LBA_0;
@@ -784,20 +796,20 @@ undefined LAB_CODE_b25e+2;
 char DAT_INTMEM_51;
 byte DAT_INTMEM_60;
 undefined1 DAT_INTMEM_62;
-undefined1 DAT_EXTMEM_b22b;
+undefined1 REG_PCIE_TLP_CTRL;
+undefined1 REG_PCIE_ADDR_0;
+undefined1 REG_PCIE_ADDR_1;
+undefined1 REG_PCIE_ADDR_2;
+undefined1 REG_PCIE_ADDR_3;
+undefined1 REG_PCIE_CPL_STATUS;
 undefined1 REG_PCIE_FMT_TYPE;
-undefined1 DAT_EXTMEM_b213;
-undefined1 REG_PCIE_ADDR_LOW;
-undefined1 DAT_EXTMEM_b219;
-undefined1 DAT_EXTMEM_b21b;
-undefined1 DAT_EXTMEM_b21a;
 undefined1 REG_PCIE_COMPL_STATUS;
 undefined1 DAT_EXTMEM_e400;
 undefined1 REG_CMD_CONFIG;
+undefined1 REG_INT_CTRL_C809;
 undefined1 DAT_EXTMEM_e402;
 undefined1 DAT_EXTMEM_cac4;
 undefined LAB_CODE_e409;
-undefined1 DAT_EXTMEM_c809;
 undefined1 DAT_EXTMEM_e40a;
 undefined1 DAT_EXTMEM_e66a;
 undefined1 DAT_EXTMEM_e40d;
@@ -806,11 +818,20 @@ undefined1 DAT_EXTMEM_e411;
 undefined1 DAT_EXTMEM_e413;
 undefined1 DAT_EXTMEM_e412;
 undefined1 DAT_EXTMEM_c698;
-undefined1 REG_DMA_BURST_SIZE;
-undefined1 REG_DMA_SRC_L;
-undefined1 REG_DMA_CHANNEL_SEL;
-undefined1 REG_DMA_CHANNEL_STATUS;
-undefined1 REG_DMA_LENGTH_LOW;
+undefined1 REG_FLASH_ADDR_LO;
+undefined1 REG_FLASH_DATA_LEN;
+undefined1 REG_FLASH_CSR;
+undefined1 REG_FLASH_CMD;
+undefined1 REG_FLASH_DATA_LEN_HI;
+undefined1 REG_USB_PHY_CTRL_91C1;
+undefined1 REG_USB_PHY_CTRL_91C3;
+undefined1 REG_POWER_CTRL_92C0;
+undefined1 REG_BUF_CFG_9303;
+undefined1 REG_BUF_CFG_9304;
+undefined1 REG_BUF_CFG_9305;
+undefined1 DAT_EXTMEM_e318;
+undefined1 REG_USB_EP0_LEN_H;
+undefined1 REG_USB_EP_CTRL_905E;
 undefined TR2;
 undefined CR;
 undefined1 DAT_EXTMEM_0ad5;
@@ -821,7 +842,13 @@ undefined1 DAT_EXTMEM_0adb;
 undefined1 DAT_EXTMEM_0ada;
 undefined1 DAT_EXTMEM_0add;
 undefined1 DAT_EXTMEM_0adc;
-undefined1 REG_CMD_OPCODE;
+undefined1 DAT_EXTMEM_0719;
+undefined1 DAT_EXTMEM_ccd9;
+undefined1 DAT_EXTMEM_ccf9;
+undefined1 REG_TIMER3_CSR;
+undefined1 REG_CPU_STATUS_CC81;
+undefined1 REG_CPU_STATUS_CC91;
+undefined1 REG_CMD_PARAM;
 undefined1 REG_CMD_STATUS;
 undefined1 DAT_EXTMEM_07db;
 undefined1 DAT_EXTMEM_07da;
@@ -833,33 +860,31 @@ undefined1 DAT_EXTMEM_9208;
 undefined1 DAT_EXTMEM_92f8;
 undefined1 DAT_EXTMEM_920b;
 undefined1 DAT_EXTMEM_920a;
-undefined1 DAT_EXTMEM_0ab1;
-undefined1 DAT_EXTMEM_0ab2;
-undefined1 REG_DMA_DST_L;
+undefined1 G_FLASH_LEN_LO;
+undefined1 G_FLASH_LEN_HI;
+undefined1 REG_FLASH_ADDR_LEN;
 undefined1 DAT_EXTMEM_0b21;
-undefined1 REG_DMA_DST_H;
-undefined1 REG_DMA_CHANNEL_CTRL;
-undefined1 REG_DMA_SRC_H;
+undefined1 REG_FLASH_MODE;
+undefined1 REG_FLASH_ADDR_MD;
+undefined1 REG_FLASH_ADDR_HI;
 undefined1 FLASH_BUFFER_BASE;
 undefined1 REG_USB_EP0_LEN_L;
+undefined1 G_FLASH_CMD_FLAG;
 undefined1 DAT_EXTMEM_c472;
 undefined REG_NVME_CMD_CDW11;
 undefined1 DAT_EXTMEM_707d;
 undefined1 DAT_EXTMEM_707b;
+undefined1 REG_CPU_CTRL_CC3A;
 undefined1 DAT_EXTMEM_cc38;
-undefined1 DAT_EXTMEM_cc3a;
 undefined1 DAT_EXTMEM_0b40;
-undefined1 REG_TIMER3_CSR;
-undefined1 DAT_EXTMEM_cc3e;
-undefined1 DAT_EXTMEM_cc3b;
+undefined1 REG_CPU_CTRL_CC3E;
 undefined1 REG_FLASH_CON;
-undefined1 REG_DMA_LEN_L;
 undefined1 REG_DMA_LEN_H;
-undefined1 DAT_EXTMEM_c471;
+undefined1 REG_FLASH_BUF_OFFSET;
 undefined LAB_CODE_9009+2;
 undefined1 DAT_EXTMEM_07e6;
-undefined1 DAT_EXTMEM_07ed;
 undefined1 DAT_EXTMEM_0acc;
+undefined1 G_SYS_FLAGS_07ED;
 undefined1 DAT_EXTMEM_cd31;
 undefined1 REG_POWER_CTRL_92C8;
 undefined1 DAT_EXTMEM_0b3c;
@@ -867,11 +892,10 @@ undefined1 DAT_EXTMEM_06e7;
 undefined LAB_CODE_b401;
 undefined1 DAT_EXTMEM_06eb;
 undefined1 DAT_EXTMEM_b434;
-undefined1 DAT_EXTMEM_05ae;
+undefined1 G_PCIE_DIRECTION;
 char DAT_INTMEM_52;
-undefined s_com/en-us/windows/fix-usb-c-prob_CODE_06e5;
-undefined1 DAT_EXTMEM_0575;
-undefined1 DAT_EXTMEM_0574;
+undefined1 G_LOG_PROCESS_STATE;
+undefined1 G_LOG_ENTRY_VALUE;
 undefined1 DAT_INTMEM_52;
 undefined1 DAT_EXTMEM_0b31;
 undefined1 DAT_EXTMEM_0b30;
@@ -898,7 +922,7 @@ byte DAT_INTMEM_4e;
 undefined1 DAT_EXTMEM_0004;
 undefined1 DAT_EXTMEM_0b24;
 undefined1 DAT_EXTMEM_0aeb;
-undefined1 REG_TRANSFER_SIZE;
+undefined1 G_EP_CONFIG_05A8;
 undefined1 DAT_EXTMEM_b423;
 undefined1 DAT_EXTMEM_b422;
 undefined1 DAT_EXTMEM_b429;
@@ -913,16 +937,18 @@ undefined1 DAT_EXTMEM_b41b;
 undefined1 DAT_EXTMEM_b41a;
 undefined1 DAT_EXTMEM_c6a8;
 undefined1 DAT_EXTMEM_0aef;
-undefined1 DAT_EXTMEM_cc30;
+undefined1 REG_CPU_CTRL_CC30;
 undefined1 DAT_EXTMEM_92e1;
 undefined1 DAT_EXTMEM_92f7;
-undefined1 DAT_EXTMEM_b402;
+undefined1 REG_PCIE_CTRL_B402;
 undefined LAB_CODE_e764;
 undefined1 DAT_EXTMEM_e762;
 undefined1 DAT_EXTMEM_e764;
 undefined1 DAT_EXTMEM_06e9;
-undefined LAB_CODE_cc2e+2;
-undefined1 DAT_EXTMEM_e324;
+undefined1 REG_LINK_STATUS_E712;
+undefined1 REG_PHY_CONFIG;
+undefined1 REG_CPU_CTRL_CC3F;
+undefined1 REG_LINK_CTRL_E324;
 undefined1 DAT_EXTMEM_0ad1;
 undefined1 DAT_EXTMEM_0ad3;
 undefined1 DAT_EXTMEM_0ad2;
@@ -933,9 +959,7 @@ undefined1 DAT_INTMEM_3e;
 undefined1 DAT_EXTMEM_9018;
 undefined FUN_CODE_c448;
 undefined1 REG_USB_DATA_L;
-undefined LAB_CODE_cc3f;
-undefined1 DAT_EXTMEM_cc3d;
-undefined1 DAT_EXTMEM_cc3f;
+undefined1 REG_CPU_CTRL_CC3D;
 undefined1 DAT_EXTMEM_0b25;
 undefined1 DAT_EXTMEM_9e01;
 undefined SOFL;
@@ -943,7 +967,6 @@ undefined 2a.7;
 undefined 2d.0;
 undefined 29.2;
 undefined1 USB_CTRL_BUF_BASE;
-undefined1 DAT_EXTMEM_ccf9;
 undefined1 DAT_EXTMEM_ccf8;
 undefined1 DAT_EXTMEM_0b1b;
 undefined1 DAT_EXTMEM_ccfb;
@@ -962,7 +985,6 @@ undefined1 DAT_EXTMEM_b432;
 undefined1 DAT_EXTMEM_e77c;
 undefined1 DAT_EXTMEM_b481;
 undefined UNK_CODE_0b2f;
-undefined1 DAT_EXTMEM_9101;
 undefined1 DAT_EXTMEM_e401;
 undefined1 DAT_EXTMEM_e407;
 undefined1 DAT_EXTMEM_e406;
@@ -1004,11 +1026,10 @@ undefined1 DAT_EXTMEM_c473;
 undefined1 DAT_EXTMEM_e765;
 undefined1 DAT_EXTMEM_0750;
 undefined1 DAT_EXTMEM_0819;
-undefined1 DAT_EXTMEM_cc91;
 undefined1 DAT_EXTMEM_cc93;
-undefined1 DAT_EXTMEM_cc92;
 undefined LAB_CODE_cc90;
-undefined1 DAT_EXTMEM_0aee;
+undefined1 DAT_EXTMEM_cc92;
+undefined1 G_STATE_CHECK_0AEE;
 undefined1 DAT_EXTMEM_0b23;
 undefined1 DAT_EXTMEM_0b22;
 undefined1 REG_TIMER0_DIV;
@@ -1023,40 +1044,37 @@ undefined1 DAT_INTMEM_61;
 undefined1 REG_UART_TFBF;
 undefined1 DAT_EXTMEM_c00e;
 undefined1 DAT_EXTMEM_cc83;
-undefined FUN_CODE_cc80+1;
 undefined1 DAT_EXTMEM_cc82;
 undefined UNK_CODE_0b44;
 undefined1 DAT_EXTMEM_0b44;
 undefined UNK_CODE_0b40;
 undefined1 DAT_INTMEM_60;
 undefined1 DAT_EXTMEM_c659;
-undefined1 DAT_EXTMEM_cc81;
 undefined1 DAT_INTMEM_21;
 undefined1 UNK_CODE_21ad;
-undefined1 DAT_EXTMEM_c405;
-undefined1 DAT_EXTMEM_c404;
-undefined1 DAT_EXTMEM_0549;
-undefined1 DAT_EXTMEM_054a;
-undefined LAB_CODE_0ae7;
-undefined FUN_CODE_0548+1;
+undefined UNK_CODE_21ae;
+byte UNK_CODE_21ae;
+undefined1 DAT_EXTMEM_0ae7;
 undefined LAB_CODE_053c;
 undefined FUN_CODE_053e;
+undefined FUN_CODE_0548+1;
 undefined FUN_CODE_054d+2;
-undefined1 DAT_EXTMEM_055d;
-undefined1 DAT_EXTMEM_055e;
-undefined1 DAT_EXTMEM_0ae7;
-undefined1 REG_NVME_LBA_0;
-undefined1 REG_NVME_LBA_1;
-undefined1 REG_NVME_LBA_2;
-undefined REG_NVME_COUNT_LOW;
-undefined1 DAT_EXTMEM_c2a1;
-undefined1 DAT_EXTMEM_c2c3;
-undefined1 DAT_EXTMEM_c2c9;
-undefined1 DAT_EXTMEM_c28c;
-undefined1 DAT_EXTMEM_c2bc;
+undefined1 DAT_EXTMEM_c405;
+undefined1 DAT_EXTMEM_c404;
+undefined UNK_CODE_0aa6;
 undefined1 DAT_EXTMEM_801b;
 byte DAT_INTMEM_48;
 byte DAT_INTMEM_58;
+byte DAT_INTMEM_42;
+undefined1 DAT_INTMEM_59;
+undefined s_3743f30eed2_CODE_072e;
+undefined s_USB4_or_Thunderbolt_device_funct_CODE_073e;
+undefined LAB_CODE_c342+1;
+byte UNK_INTMEM_57;
+byte UNK_INTMEM_5a;
+undefined1 UNK_INTMEM_5b;
+undefined1 UNK_INTMEM_5d;
+byte UNK_INTMEM_5e;
 
 void func_util_0006(void)
 
@@ -1064,9 +1082,9 @@ void func_util_0006(void)
   char cVar1;
   
   startup_init();
-  cVar1 = DAT_EXTMEM_000a;
+  cVar1 = G_EP_CHECK_FLAG;
   if (cVar1 != '\0') {
-    DAT_EXTMEM_000a = cVar1 + -1;
+    G_EP_CHECK_FLAG = cVar1 + -1;
   }
   return;
 }
@@ -1081,11 +1099,11 @@ void func_init_0016(byte param_1,byte param_2,byte param_3,byte param_4)
   char cVar3;
   
   UNK_EXTMEM_0001 = 0;
-  reg_write_byte(0x6b);
+  idata_load_dword(0x6b);
   bVar2 = param_1 | param_2 | param_3 | param_4;
   do {
     if (bVar2 == 0) {
-      reg_write_byte(9);
+      idata_load_dword(9);
       if (((param_1 != 0 || param_2 != 0) || param_3 != 0) || param_4 != 0) {
         UNK_EXTMEM_0001 = 1;
       }
@@ -1215,7 +1233,7 @@ void usb_parse_descriptor(byte param_1,byte param_2)
   DAT_EXTMEM_d80f = 0;
   if ((param_1 >> 4 & 1) == 0) {
     REG_BUFFER_CTRL = 3;
-    cVar3 = DAT_EXTMEM_07e5;
+    cVar3 = G_TRANSFER_ACTIVE;
     if (cVar3 == '\0') {
       bVar4 = 0x10;
       if ((param_1 >> 2 & 1) != 0) {
@@ -1233,7 +1251,7 @@ void usb_parse_descriptor(byte param_1,byte param_2)
       } while (bVar5 != 0x12);
       REG_BUFFER_STATUS = 2;
       DAT_EXTMEM_d80f = 0x12;
-      DAT_EXTMEM_07e5 = 0;
+      G_TRANSFER_ACTIVE = 0;
     }
   }
   else {
@@ -1265,7 +1283,7 @@ void usb_parse_descriptor(byte param_1,byte param_2)
 
 
 
-void nvme_util_get_status_flags(void)
+void jump_bank_0(void)
 
 {
   BANK1_R0 = 10;
@@ -1275,7 +1293,7 @@ void nvme_util_get_status_flags(void)
 
 
 
-void cmd_dispatch(void)
+void jump_bank_0_entry(void)
 
 {
   BANK1_R0 = 10;
@@ -1285,7 +1303,7 @@ void cmd_dispatch(void)
 
 
 
-void nvme_util_get_error_flags(void)
+void jump_bank_1(void)
 
 {
   BANK1_R0 = 0x1b;
@@ -1298,16 +1316,16 @@ void nvme_util_get_error_flags(void)
 void FUN_CODE_0322(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_ca0d);
+  jump_bank_0(FUN_CODE_ca0d);
   return;
 }
 
 
 
-void FUN_CODE_0327(void)
+void handler_0327_usb_power_init(void)
 
 {
-  nvme_util_get_status_flags(0xb1cb);
+  jump_bank_0(usb_power_init);
   return;
 }
 
@@ -1316,7 +1334,7 @@ void FUN_CODE_0327(void)
 void FUN_CODE_032c(void)
 
 {
-  nvme_util_get_status_flags(0x92c5);
+  jump_bank_0(0x92c5);
   return;
 }
 
@@ -1325,7 +1343,7 @@ void FUN_CODE_032c(void)
 void FUN_CODE_0331(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_c4b3);
+  jump_bank_0(FUN_CODE_c4b3);
   return;
 }
 
@@ -1334,7 +1352,7 @@ void FUN_CODE_0331(void)
 void FUN_CODE_0336(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_bf0f);
+  jump_bank_0(FUN_CODE_bf0f);
   return;
 }
 
@@ -1343,7 +1361,7 @@ void FUN_CODE_0336(void)
 void FUN_CODE_033b(void)
 
 {
-  nvme_util_get_status_flags(0xcf7f);
+  jump_bank_0(0xcf7f);
   return;
 }
 
@@ -1352,7 +1370,7 @@ void FUN_CODE_033b(void)
 void FUN_CODE_0340(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_bf8e);
+  jump_bank_0(handler_bf8e);
   return;
 }
 
@@ -1361,7 +1379,7 @@ void FUN_CODE_0340(void)
 void FUN_CODE_0345(void)
 
 {
-  nvme_util_get_status_flags(0x9c2b);
+  jump_bank_0(0x9c2b);
   return;
 }
 
@@ -1370,7 +1388,7 @@ void FUN_CODE_0345(void)
 void FUN_CODE_034a(void)
 
 {
-  nvme_util_get_status_flags(0xc66a);
+  jump_bank_0(0xc66a);
   return;
 }
 
@@ -1379,7 +1397,7 @@ void FUN_CODE_034a(void)
 void FUN_CODE_034f(void)
 
 {
-  nvme_util_get_status_flags(0xe94d);
+  jump_bank_0(0xe94d);
   return;
 }
 
@@ -1388,7 +1406,7 @@ void FUN_CODE_034f(void)
 void FUN_CODE_0354(void)
 
 {
-  nvme_util_get_status_flags(0xe925);
+  jump_bank_0(0xe925);
   return;
 }
 
@@ -1397,7 +1415,7 @@ void FUN_CODE_0354(void)
 void FUN_CODE_0359(void)
 
 {
-  nvme_util_get_status_flags(0xdee3);
+  jump_bank_0(0xdee3);
   return;
 }
 
@@ -1406,7 +1424,7 @@ void FUN_CODE_0359(void)
 void FUN_CODE_035e(void)
 
 {
-  nvme_util_get_status_flags(0xe6bd);
+  jump_bank_0(0xe6bd);
   return;
 }
 
@@ -1415,7 +1433,7 @@ void FUN_CODE_035e(void)
 void FUN_CODE_0363(void)
 
 {
-  nvme_util_get_status_flags(0xe969);
+  jump_bank_0(0xe969);
   return;
 }
 
@@ -1424,7 +1442,7 @@ void FUN_CODE_0363(void)
 void FUN_CODE_0368(void)
 
 {
-  nvme_util_get_status_flags(0xdf15);
+  jump_bank_0(0xdf15);
   return;
 }
 
@@ -1433,7 +1451,7 @@ void FUN_CODE_0368(void)
 void FUN_CODE_036d(void)
 
 {
-  nvme_util_get_status_flags(0xe96f);
+  jump_bank_0(0xe96f);
   return;
 }
 
@@ -1442,7 +1460,7 @@ void FUN_CODE_036d(void)
 void FUN_CODE_0372(void)
 
 {
-  nvme_util_get_status_flags(0xe970);
+  jump_bank_0(0xe970);
   return;
 }
 
@@ -1451,7 +1469,7 @@ void FUN_CODE_0372(void)
 void FUN_CODE_0377(void)
 
 {
-  nvme_util_get_status_flags(0xe952);
+  jump_bank_0(0xe952);
   return;
 }
 
@@ -1460,7 +1478,7 @@ void FUN_CODE_0377(void)
 void FUN_CODE_037c(void)
 
 {
-  nvme_util_get_status_flags(0xe941);
+  jump_bank_0(0xe941);
   return;
 }
 
@@ -1469,7 +1487,7 @@ void FUN_CODE_037c(void)
 void FUN_CODE_0381(void)
 
 {
-  nvme_util_get_status_flags(0xe947);
+  jump_bank_0(0xe947);
   return;
 }
 
@@ -1478,7 +1496,7 @@ void FUN_CODE_0381(void)
 void FUN_CODE_0386(void)
 
 {
-  nvme_util_get_status_flags(0xe92c);
+  jump_bank_0(0xe92c);
   return;
 }
 
@@ -1487,16 +1505,16 @@ void FUN_CODE_0386(void)
 void FUN_CODE_038b(void)
 
 {
-  nvme_util_get_status_flags(0xd2bd);
+  jump_bank_0(0xd2bd);
   return;
 }
 
 
 
-void cmd_execute(void)
+void handler_0390(void)
 
 {
-  nvme_util_get_status_flags(0xcd10);
+  jump_bank_0(0xcd10);
   return;
 }
 
@@ -1505,16 +1523,16 @@ void cmd_execute(void)
 void FUN_CODE_0395(void)
 
 {
-  nvme_util_get_status_flags(0xda8f);
+  jump_bank_0(0xda8f);
   return;
 }
 
 
 
-void FUN_CODE_039a(void)
+void handler_039a_buffer_dispatch(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_d810);
+  jump_bank_0(usb_buffer_handler);
   return;
 }
 
@@ -1523,7 +1541,7 @@ void FUN_CODE_039a(void)
 void FUN_CODE_039f(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_d916);
+  jump_bank_0(FUN_CODE_d916);
   return;
 }
 
@@ -1532,7 +1550,7 @@ void FUN_CODE_039f(void)
 void FUN_CODE_03a4(void)
 
 {
-  nvme_util_get_status_flags(0xcb37);
+  jump_bank_0(0xcb37);
   return;
 }
 
@@ -1541,7 +1559,7 @@ void FUN_CODE_03a4(void)
 void FUN_CODE_03a9(void)
 
 {
-  nvme_util_get_error_flags(0x89db);
+  jump_bank_1(0x89db);
   return;
 }
 
@@ -1550,7 +1568,7 @@ void FUN_CODE_03a9(void)
 void FUN_CODE_0412(void)
 
 {
-  nvme_util_get_status_flags(0xe617);
+  jump_bank_0(0xe617);
   return;
 }
 
@@ -1559,7 +1577,7 @@ void FUN_CODE_0412(void)
 void power_check_status(void)
 
 {
-  nvme_util_get_status_flags(0xe647);
+  jump_bank_0(0xe647);
   return;
 }
 
@@ -1568,7 +1586,7 @@ void power_check_status(void)
 void FUN_CODE_0421(void)
 
 {
-  nvme_util_get_status_flags(0xe65f);
+  jump_bank_0(0xe65f);
   return;
 }
 
@@ -1577,7 +1595,7 @@ void FUN_CODE_0421(void)
 void FUN_CODE_0426(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e762);
+  jump_bank_0(FUN_CODE_e762);
   return;
 }
 
@@ -1586,7 +1604,7 @@ void FUN_CODE_0426(void)
 void FUN_CODE_042b(void)
 
 {
-  nvme_util_get_status_flags(0xe4f0);
+  jump_bank_0(0xe4f0);
   return;
 }
 
@@ -1595,7 +1613,7 @@ void FUN_CODE_042b(void)
 void FUN_CODE_0430(void)
 
 {
-  nvme_util_get_status_flags(0x9037);
+  jump_bank_0(0x9037);
   return;
 }
 
@@ -1604,7 +1622,7 @@ void FUN_CODE_0430(void)
 void FUN_CODE_0435(void)
 
 {
-  nvme_util_get_status_flags(0xd127);
+  jump_bank_0(0xd127);
   return;
 }
 
@@ -1613,7 +1631,7 @@ void FUN_CODE_0435(void)
 void FUN_CODE_043a(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e677);
+  jump_bank_0(FUN_CODE_e677);
   return;
 }
 
@@ -1622,7 +1640,7 @@ void FUN_CODE_043a(void)
 void FUN_CODE_043f(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e2a6);
+  jump_bank_0(FUN_CODE_e2a6);
   return;
 }
 
@@ -1631,7 +1649,7 @@ void FUN_CODE_043f(void)
 void FUN_CODE_0449(void)
 
 {
-  nvme_util_get_status_flags(0xdd78);
+  jump_bank_0(0xdd78);
   return;
 }
 
@@ -1640,7 +1658,7 @@ void FUN_CODE_0449(void)
 void FUN_CODE_044e(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e91d);
+  jump_bank_0(FUN_CODE_e91d);
   return;
 }
 
@@ -1649,7 +1667,7 @@ void FUN_CODE_044e(void)
 void FUN_CODE_0453(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e902);
+  jump_bank_0(FUN_CODE_e902);
   return;
 }
 
@@ -1658,7 +1676,7 @@ void FUN_CODE_0453(void)
 void protocol_dispatch(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e77a);
+  jump_bank_0(FUN_CODE_e77a);
   return;
 }
 
@@ -1667,7 +1685,7 @@ void protocol_dispatch(void)
 void FUN_CODE_045d(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_c00d);
+  jump_bank_0(pcie_error_handler);
   return;
 }
 
@@ -1676,7 +1694,7 @@ void FUN_CODE_045d(void)
 void FUN_CODE_0462(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_cd6c);
+  jump_bank_0(FUN_CODE_cd6c);
   return;
 }
 
@@ -1685,7 +1703,7 @@ void FUN_CODE_0462(void)
 void FUN_CODE_0471(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e8a9);
+  jump_bank_0(FUN_CODE_e8a9);
   return;
 }
 
@@ -1694,7 +1712,7 @@ void FUN_CODE_0471(void)
 void FUN_CODE_047b(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_d436);
+  jump_bank_0(FUN_CODE_d436);
   return;
 }
 
@@ -1703,7 +1721,7 @@ void FUN_CODE_047b(void)
 void FUN_CODE_048a(void)
 
 {
-  nvme_util_get_error_flags(0xece1);
+  jump_bank_1(0xece1);
   return;
 }
 
@@ -1712,25 +1730,25 @@ void FUN_CODE_048a(void)
 void FUN_CODE_048f(void)
 
 {
-  nvme_util_get_error_flags(0xef1e);
+  jump_bank_1(0xef1e);
   return;
 }
 
 
 
-void FUN_CODE_0494(void)
+void handler_0494_event(void)
 
 {
-  nvme_util_get_error_flags(0xe56f);
+  jump_bank_1(event_state_handler);
   return;
 }
 
 
 
-void setup_data_structures(void)
+void timer0_poll_handler_0499(void)
 
 {
-  nvme_util_get_error_flags(0xc0a5);
+  jump_bank_1(0xc0a5);
   return;
 }
 
@@ -1739,16 +1757,16 @@ void setup_data_structures(void)
 void FUN_CODE_04a3(void)
 
 {
-  nvme_util_get_status_flags(0xe95b);
+  jump_bank_0(0xe95b);
   return;
 }
 
 
 
-void FUN_CODE_04b2(void)
+void handler_04b2_reserved(void)
 
 {
-  nvme_util_get_status_flags(0xe971);
+  jump_bank_0(reserved_stub);
   return;
 }
 
@@ -1757,7 +1775,7 @@ void FUN_CODE_04b2(void)
 void FUN_CODE_04b7(void)
 
 {
-  nvme_util_get_status_flags(0xe597);
+  jump_bank_0(0xe597);
   return;
 }
 
@@ -1766,25 +1784,25 @@ void FUN_CODE_04b7(void)
 void FUN_CODE_04bc(void)
 
 {
-  nvme_util_get_status_flags(0xe14b);
+  jump_bank_0(0xe14b);
   return;
 }
 
 
 
-void FUN_CODE_04d0(void)
+void handler_04d0_timer_link(void)
 
 {
-  nvme_util_get_status_flags(0xce79);
+  jump_bank_0(timer_link_handler);
   return;
 }
 
 
 
-void FUN_CODE_04d5(void)
+void handler_04d5(void)
 
 {
-  nvme_util_get_status_flags(0xd3a2);
+  jump_bank_0(0xd3a2);
   return;
 }
 
@@ -1793,7 +1811,7 @@ void FUN_CODE_04d5(void)
 void parse_descriptor(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e3b7);
+  jump_bank_0(FUN_CODE_e3b7);
   return;
 }
 
@@ -1802,7 +1820,7 @@ void parse_descriptor(void)
 void FUN_CODE_04e4(void)
 
 {
-  nvme_util_get_status_flags(0xe2ec);
+  jump_bank_0(0xe2ec);
   return;
 }
 
@@ -1811,7 +1829,7 @@ void FUN_CODE_04e4(void)
 void FUN_CODE_04e9(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e8e4);
+  jump_bank_0(FUN_CODE_e8e4);
   return;
 }
 
@@ -1820,7 +1838,7 @@ void FUN_CODE_04e9(void)
 void FUN_CODE_04ee(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e6fc);
+  jump_bank_0(FUN_CODE_e6fc);
   return;
 }
 
@@ -1829,7 +1847,7 @@ void FUN_CODE_04ee(void)
 void FUN_CODE_04f8(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_de16);
+  jump_bank_0(FUN_CODE_de16);
   return;
 }
 
@@ -1838,7 +1856,7 @@ void FUN_CODE_04f8(void)
 void FUN_CODE_04fd(void)
 
 {
-  nvme_util_get_status_flags(thunk_FUN_CODE_de16);
+  jump_bank_0(thunk_FUN_CODE_de16);
   return;
 }
 
@@ -1847,7 +1865,7 @@ void FUN_CODE_04fd(void)
 void FUN_CODE_0507(void)
 
 {
-  nvme_util_get_status_flags(0xc7a5);
+  jump_bank_0(0xc7a5);
   return;
 }
 
@@ -1856,7 +1874,7 @@ void FUN_CODE_0507(void)
 void FUN_CODE_050c(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e8ef);
+  jump_bank_0(handler_e8ef);
   return;
 }
 
@@ -1865,7 +1883,7 @@ void FUN_CODE_050c(void)
 void FUN_CODE_0511(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e50d);
+  jump_bank_0(FUN_CODE_e50d);
   return;
 }
 
@@ -1874,7 +1892,7 @@ void FUN_CODE_0511(void)
 void FUN_CODE_0516(void)
 
 {
-  nvme_util_get_status_flags(0xe30e);
+  jump_bank_0(0xe30e);
   return;
 }
 
@@ -1883,25 +1901,25 @@ void FUN_CODE_0516(void)
 void interface_ready_check(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e80a);
+  jump_bank_0(delay_function);
   return;
 }
 
 
 
-void cmd_get_status(void)
+void handler_0520_system_int(void)
 
 {
-  nvme_util_get_status_flags(0xb4ba);
+  jump_bank_0(timer_tick_handler);
   return;
 }
 
 
 
-void FUN_CODE_0525(void)
+void handler_0525_flash_cmd(void)
 
 {
-  nvme_util_get_status_flags(0xbaa0);
+  jump_bank_0(flash_cmd_handler);
   return;
 }
 
@@ -1910,16 +1928,16 @@ void FUN_CODE_0525(void)
 void FUN_CODE_052a(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_e1c6);
+  jump_bank_0(FUN_CODE_e1c6);
   return;
 }
 
 
 
-void transfer_prepare(void)
+void handler_052f_pcie_nvme_event(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_af5e);
+  jump_bank_0(debug_output_handler);
   return;
 }
 
@@ -1928,7 +1946,7 @@ void transfer_prepare(void)
 void FUN_CODE_0534(void)
 
 {
-  nvme_util_get_status_flags(0xd6bc);
+  jump_bank_0(0xd6bc);
   return;
 }
 
@@ -1937,7 +1955,7 @@ void FUN_CODE_0534(void)
 void FUN_CODE_0539(void)
 
 {
-  nvme_util_get_status_flags(FUN_CODE_8d77);
+  jump_bank_0(FUN_CODE_8d77);
   return;
 }
 
@@ -1946,7 +1964,7 @@ void FUN_CODE_0539(void)
 void FUN_CODE_053e(void)
 
 {
-  nvme_util_get_error_flags(0xef03);
+  jump_bank_1(0xef03);
   return;
 }
 
@@ -1955,7 +1973,7 @@ void FUN_CODE_053e(void)
 void FUN_CODE_0543(void)
 
 {
-  nvme_util_get_error_flags(0xd855);
+  jump_bank_1(0xd855);
   return;
 }
 
@@ -1964,7 +1982,7 @@ void FUN_CODE_0543(void)
 void FUN_CODE_0548(void)
 
 {
-  nvme_util_get_error_flags(0xeec7);
+  jump_bank_1(0xeec7);
   return;
 }
 
@@ -1973,7 +1991,7 @@ void FUN_CODE_0548(void)
 void FUN_CODE_054d(void)
 
 {
-  nvme_util_get_error_flags(0xed44);
+  jump_bank_1(0xed44);
   return;
 }
 
@@ -1982,7 +2000,7 @@ void FUN_CODE_054d(void)
 void FUN_CODE_0552(void)
 
 {
-  nvme_util_get_error_flags(0xee82);
+  jump_bank_1(0xee82);
   return;
 }
 
@@ -1991,7 +2009,7 @@ void FUN_CODE_0552(void)
 void FUN_CODE_0557(void)
 
 {
-  nvme_util_get_error_flags(0xee94);
+  jump_bank_1(0xee94);
   return;
 }
 
@@ -2000,7 +2018,7 @@ void FUN_CODE_0557(void)
 void FUN_CODE_055c(void)
 
 {
-  nvme_util_get_error_flags(0xc735);
+  jump_bank_1(0xc735);
   return;
 }
 
@@ -2009,7 +2027,7 @@ void FUN_CODE_055c(void)
 void FUN_CODE_0561(void)
 
 {
-  nvme_util_get_error_flags(0xee29);
+  jump_bank_1(0xee29);
   return;
 }
 
@@ -2018,7 +2036,7 @@ void FUN_CODE_0561(void)
 void FUN_CODE_0566(void)
 
 {
-  nvme_util_get_error_flags(0xe26a);
+  jump_bank_1(0xe26a);
   return;
 }
 
@@ -2027,16 +2045,16 @@ void FUN_CODE_0566(void)
 void FUN_CODE_056b(void)
 
 {
-  nvme_util_get_error_flags(0xe9b5);
+  jump_bank_1(0xe9b5);
   return;
 }
 
 
 
-void buffer_allocate(void)
+void handler_0570_bank1_e911(void)
 
 {
-  nvme_util_get_error_flags(0xe911);
+  jump_bank_1(error_handler_e911);
   return;
 }
 
@@ -2045,7 +2063,7 @@ void buffer_allocate(void)
 void FUN_CODE_057a(void)
 
 {
-  nvme_util_get_error_flags(0xe0d9);
+  jump_bank_1(0xe0d9);
   return;
 }
 
@@ -2054,7 +2072,7 @@ void FUN_CODE_057a(void)
 void FUN_CODE_057f(void)
 
 {
-  nvme_util_get_error_flags(0xb8db);
+  jump_bank_1(0xb8db);
   return;
 }
 
@@ -2063,25 +2081,25 @@ void FUN_CODE_057f(void)
 void FUN_CODE_0584(void)
 
 {
-  nvme_util_get_error_flags(0xef24);
+  jump_bank_1(0xef24);
   return;
 }
 
 
 
-void FUN_CODE_0589(void)
+void handler_0589_phy_config(void)
 
 {
-  nvme_util_get_status_flags(0xd894);
+  jump_bank_0(phy_register_config);
   return;
 }
 
 
 
-void status_update(void)
+void handler_0593_bank0_c105(void)
 
 {
-  nvme_util_get_status_flags(0xc105);
+  jump_bank_0(handler_c105);
   return;
 }
 
@@ -2090,7 +2108,7 @@ void status_update(void)
 void FUN_CODE_05e8(void)
 
 {
-  nvme_util_get_error_flags(&LAB_CODE_9d90);
+  jump_bank_1(&LAB_CODE_9d90);
   return;
 }
 
@@ -2099,7 +2117,7 @@ void FUN_CODE_05e8(void)
 void FUN_CODE_05ed(void)
 
 {
-  nvme_util_get_error_flags(0xd556);
+  jump_bank_1(0xd556);
   return;
 }
 
@@ -2108,7 +2126,7 @@ void FUN_CODE_05ed(void)
 void FUN_CODE_05f2(void)
 
 {
-  nvme_util_get_error_flags(0xdcb4);
+  jump_bank_1(0xdcb4);
   return;
 }
 
@@ -2117,7 +2135,7 @@ void FUN_CODE_05f2(void)
 void FUN_CODE_05f7(void)
 
 {
-  nvme_util_get_error_flags(0xcbcc);
+  jump_bank_1(0xcbcc);
   return;
 }
 
@@ -2126,16 +2144,16 @@ void FUN_CODE_05f7(void)
 void FUN_CODE_0601(void)
 
 {
-  nvme_util_get_error_flags(0xeea5);
+  jump_bank_1(0xeea5);
   return;
 }
 
 
 
-void FUN_CODE_0606(void)
+void handler_0606_error_state(void)
 
 {
-  nvme_util_get_error_flags(0xb230);
+  jump_bank_1(&error_state_handler);
   return;
 }
 
@@ -2144,16 +2162,16 @@ void FUN_CODE_0606(void)
 void FUN_CODE_060b(void)
 
 {
-  nvme_util_get_error_flags(FUN_CODE_bb37);
+  jump_bank_1(FUN_CODE_bb37);
   return;
 }
 
 
 
-void FUN_CODE_0610(void)
+void handler_0610(void)
 
 {
-  nvme_util_get_error_flags(0xed02);
+  jump_bank_1(handler_ed02);
   return;
 }
 
@@ -2162,16 +2180,16 @@ void FUN_CODE_0610(void)
 void FUN_CODE_0615(void)
 
 {
-  nvme_util_get_error_flags(0xe9e7);
+  jump_bank_1(0xe9e7);
   return;
 }
 
 
 
-void command_validate(void)
+void handler_061a_bank1_a066(void)
 
 {
-  nvme_util_get_error_flags(0xa066);
+  jump_bank_1(error_handler_a066);
   return;
 }
 
@@ -2180,7 +2198,7 @@ void command_validate(void)
 void FUN_CODE_061f(void)
 
 {
-  nvme_util_get_error_flags(0xcb10);
+  jump_bank_1(0xcb10);
   return;
 }
 
@@ -2189,7 +2207,7 @@ void FUN_CODE_061f(void)
 void FUN_CODE_0624(void)
 
 {
-  nvme_util_get_error_flags(0xe5b0);
+  jump_bank_1(0xe5b0);
   return;
 }
 
@@ -2198,7 +2216,7 @@ void FUN_CODE_0624(void)
 void FUN_CODE_0629(void)
 
 {
-  nvme_util_get_error_flags(0xe8d6);
+  jump_bank_1(0xe8d6);
   return;
 }
 
@@ -2207,7 +2225,7 @@ void FUN_CODE_0629(void)
 void FUN_CODE_0633(void)
 
 {
-  nvme_util_get_error_flags(0xc8c7);
+  jump_bank_1(0xc8c7);
   return;
 }
 
@@ -2216,25 +2234,25 @@ void FUN_CODE_0633(void)
 void FUN_CODE_0638(void)
 
 {
-  nvme_util_get_error_flags(0xeadb);
+  jump_bank_1(0xeadb);
   return;
 }
 
 
 
-void FUN_CODE_063d(void)
+void handler_063d(void)
 
 {
-  nvme_util_get_error_flags(0xeef9);
+  jump_bank_1(handler_eef9);
   return;
 }
 
 
 
-void completion_process(void)
+void handler_0642_bank1_ef4e(void)
 
 {
-  nvme_util_get_error_flags(0xef4e);
+  jump_bank_1(error_handler_ef4e);
   return;
 }
 
@@ -2326,7 +2344,7 @@ undefined1 flash_func_0bc8(undefined1 *param_1,undefined1 param_2,byte param_3)
 
 
 
-void phy_link_init(undefined1 param_1,undefined1 *param_2,undefined1 param_3,byte param_4)
+void write_xdata_reg(undefined1 param_1,undefined1 *param_2,undefined1 param_3,byte param_4)
 
 {
   if (param_4 == 1) {
@@ -2357,7 +2375,7 @@ char flash_func_0bfd(char param_1,byte param_2,char param_3,byte param_4)
 
 
 
-byte flash_func_0c0f(char param_1,byte param_2,byte param_3,byte param_4)
+byte flash_div16(char param_1,byte param_2,byte param_3,byte param_4)
 
 {
   bool bVar1;
@@ -2433,7 +2451,7 @@ LAB_CODE_0c4d:
 
 
 
-void flash_func_0c64(char param_1,short param_2,byte param_3)
+void flash_add_to_xdata16(char param_1,short param_2,byte param_3)
 
 {
   byte bVar1;
@@ -2455,8 +2473,8 @@ void flash_func_0c64(char param_1,short param_2,byte param_3)
 
 
 
-void flash_func_0c7a(undefined1 param_1,undefined1 param_2,undefined1 *param_3,undefined1 param_4,
-                    byte param_5)
+void flash_write_byte(undefined1 param_1,undefined1 param_2,undefined1 *param_3,undefined1 param_4,
+                     byte param_5)
 
 {
   if (param_5 == 1) {
@@ -2474,6 +2492,45 @@ void flash_func_0c7a(undefined1 param_1,undefined1 param_2,undefined1 *param_3,u
     *(undefined1 *)ZEXT12(param_3 + '\x01') = param_2;
   }
   else if (param_5 < 0xfe) {
+    flash_func_0b15();
+    return;
+  }
+  return;
+}
+
+
+
+void flash_write_idata(undefined1 param_1,undefined1 param_2,undefined1 *param_3,byte param_4)
+
+{
+  char in_PSW;
+  
+  if (in_PSW < '\0') {
+    *param_3 = param_1;
+    param_3['\x01'] = param_2;
+    return;
+  }
+  if (param_4 == 0xfe) {
+    *(undefined1 *)ZEXT12(param_3) = param_1;
+    *(undefined1 *)ZEXT12(param_3 + '\x01') = param_2;
+  }
+  else if (param_4 < 0xfe) {
+    flash_func_0b15();
+    return;
+  }
+  return;
+}
+
+
+
+void flash_write_r1_xdata(undefined1 param_1,undefined1 param_2,byte param_3,byte param_4)
+
+{
+  if (param_4 == 0xfe) {
+    *(undefined1 *)(ushort)param_3 = param_1;
+    *(undefined1 *)(ushort)(param_3 + 1) = param_2;
+  }
+  else if (param_4 < 0xfe) {
     flash_func_0b15();
     return;
   }
@@ -2612,7 +2669,7 @@ byte reg_read_dword(byte param_1,byte param_2,byte param_3,byte param_4,byte par
 
 
 
-undefined1 reg_write_byte(char param_1)
+undefined1 idata_load_dword(char param_1)
 
 {
   return *(undefined1 *)(param_1 + '\x03');
@@ -2620,7 +2677,7 @@ undefined1 reg_write_byte(char param_1)
 
 
 
-undefined1 reg_modify_bits(short param_1)
+undefined1 xdata_load_dword(short param_1)
 
 {
   return *(undefined1 *)(param_1 + 3);
@@ -2628,7 +2685,7 @@ undefined1 reg_modify_bits(short param_1)
 
 
 
-undefined1 reg_set_bit(undefined1 *param_1)
+undefined1 idata_load_dword_alt(undefined1 *param_1)
 
 {
   return *param_1;
@@ -2644,8 +2701,8 @@ undefined1 FUN_CODE_0d9d(short param_1)
 
 
 
-void reg_clear_bit(undefined1 *param_1,undefined1 param_2,undefined1 param_3,undefined1 param_4,
-                  undefined1 param_5)
+void idata_store_dword(undefined1 *param_1,undefined1 param_2,undefined1 param_3,undefined1 param_4,
+                      undefined1 param_5)
 
 {
   *param_1 = param_2;
@@ -2657,8 +2714,8 @@ void reg_clear_bit(undefined1 *param_1,undefined1 param_2,undefined1 param_3,und
 
 
 
-void reg_test_bit(undefined1 *param_1,undefined1 param_2,undefined1 param_3,undefined1 param_4,
-                 undefined1 param_5)
+void xdata_store_dword(undefined1 *param_1,undefined1 param_2,undefined1 param_3,undefined1 param_4,
+                      undefined1 param_5)
 
 {
   *param_1 = param_2;
@@ -2670,7 +2727,7 @@ void reg_test_bit(undefined1 *param_1,undefined1 param_2,undefined1 param_3,unde
 
 
 
-char FUN_CODE_0dd1(byte param_1,undefined2 param_2,byte param_3)
+char mul_add_index(byte param_1,undefined2 param_2,byte param_3)
 
 {
   return (char)((ushort)param_1 * (ushort)param_3 >> 8) +
@@ -2724,63 +2781,479 @@ LAB_CODE_0dff:
 
 
 
+void usb_ep_dispatch_loop(void)
+
+{
+  byte bVar1;
+  byte bVar2;
+  
+  DAT_INTMEM_37 = 0;
+  do {
+    bVar1 = REG_USB_EP_STATUS;
+    G_EP_DISPATCH_VAL1 = ep_index_table[bVar1];
+    bVar1 = G_EP_DISPATCH_VAL1;
+    if (7 < bVar1) break;
+    G_EP_DISPATCH_VAL2 =
+         ep_index_table[*(byte *)CONCAT11(-0x70 - (((0x69 < bVar1) << 7) >> 7),bVar1 + 0x96)];
+    bVar1 = G_EP_DISPATCH_VAL2;
+    if (7 < bVar1) break;
+    bVar2 = G_EP_DISPATCH_VAL1;
+    G_EP_DISPATCH_OFFSET = bVar1 + (char)ep_offset_table[bVar2];
+    usb_ep_handler();
+    bVar2 = G_EP_DISPATCH_VAL2;
+    bVar1 = G_EP_DISPATCH_VAL1;
+    *(undefined1 *)CONCAT11(-0x70 - (((0x69 < bVar1) << 7) >> 7),bVar1 + 0x96) =
+         (&ep_bit_mask_table)[bVar2];
+    DAT_INTMEM_37 = DAT_INTMEM_37 + 1;
+  } while ((DAT_INTMEM_37 < 0x20) << 7 < '\0');
+  bVar1 = DAT_EXTMEM_909e;
+  if ((bVar1 & 1) != 1) {
+    usb_master_handler();
+    return;
+  }
+  G_EP_DISPATCH_OFFSET = 0x40;
+  usb_ep_handler();
+  DAT_EXTMEM_909e = 1;
+  DAT_EXTMEM_90e3 = 2;
+  usb_master_handler();
+  return;
+}
+
+
+
+void usb_endpoint_handler(void)
+
+{
+  byte bVar1;
+  
+  bVar1 = REG_USB_EP_READY;
+  if ((bVar1 & 1) != 1) {
+    usb_master_handler();
+    return;
+  }
+  usb_ep_process();
+  REG_USB_EP_READY = 1;
+  usb_master_handler();
+  return;
+}
+
+
+
+undefined1 usb_peripheral_handler(void)
+
+{
+  char cVar1;
+  byte bVar2;
+  undefined1 uVar3;
+  undefined1 *puVar4;
+  undefined1 uStackX_0;
+  undefined1 in_stack_000000f4;
+  undefined1 in_stack_000000f9;
+  undefined1 in_stack_000000fa;
+  undefined1 in_stack_000000fb;
+  undefined1 in_stack_000000fc;
+  undefined1 in_stack_000000fd;
+  undefined1 in_stack_000000fe;
+  undefined1 in_stack_000000ff;
+  
+  bVar2 = REG_USB_PERIPH_STATUS;
+  if ((bVar2 >> 3 & 1) != 0) {
+    bVar2 = REG_BUF_CFG_9301;
+    if ((bVar2 >> 6 & 1) != 0) {
+      FUN_CODE_035e();
+      REG_BUF_CFG_9301 = 0x40;
+      uVar3 = usb_master_handler();
+      return uVar3;
+    }
+    cVar1 = REG_BUF_CFG_9301;
+    if (cVar1 < '\0') {
+      REG_BUF_CFG_9301 = 0x80;
+      bVar2 = REG_POWER_DOMAIN_92E0;
+      REG_POWER_DOMAIN_92E0 = bVar2 & 0xfd | 2;
+      FUN_CODE_0363();
+      uVar3 = usb_master_handler();
+      return uVar3;
+    }
+    cVar1 = REG_BUF_CFG_9302;
+    if (-1 < cVar1) {
+      uVar3 = usb_master_handler();
+      return uVar3;
+    }
+    REG_BUF_CFG_9302 = 0x80;
+    uVar3 = usb_master_handler();
+    return uVar3;
+  }
+  bVar2 = REG_USB_PERIPH_STATUS;
+  if ((bVar2 & 1) == 0) {
+    bVar2 = REG_USB_PERIPH_STATUS;
+    if ((bVar2 >> 1 & 1) != 0) {
+      FUN_CODE_033b();
+      uVar3 = usb_master_handler();
+      return uVar3;
+    }
+    bVar2 = REG_USB_PERIPH_STATUS;
+    if ((bVar2 >> 2 & 1) == 0) {
+      bVar2 = REG_USB_PERIPH_STATUS;
+      if ((bVar2 >> 6 & 1) != 0) {
+        bVar2 = REG_USB_MODE_90E2;
+        if ((bVar2 & 1) != 1) {
+          uVar3 = usb_master_handler();
+          return uVar3;
+        }
+        bVar2 = REG_USB_STATUS;
+        if ((bVar2 & 1) == 0) {
+          REG_USB_MODE_90E2 = 1;
+          FUN_CODE_3419();
+          uVar3 = usb_master_handler();
+          return uVar3;
+        }
+        cVar1 = DAT_EXTMEM_c47b;
+        if (cVar1 != '\0') {
+          bVar2 = REG_NVME_QUEUE_PTR_C471;
+          if ((bVar2 & 1) != 1) {
+            uVar3 = usb_master_handler();
+            return uVar3;
+          }
+          nvme_submit_cmd();
+          uVar3 = usb_master_handler();
+          return uVar3;
+        }
+        dma_store_to_0a7d(2);
+        puVar4 = &REG_USB_MODE_90E2;
+LAB_CODE_1035:
+        *puVar4 = 1;
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      bVar2 = REG_USB_PERIPH_STATUS;
+      if ((bVar2 >> 4 & 1) != 1) {
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      bVar2 = REG_BUF_CFG_9302;
+      if ((bVar2 >> 3 & 1) != 0) {
+        FUN_CODE_037c();
+        puVar4 = &REG_BUF_CFG_9302;
+        goto LAB_CODE_106e;
+      }
+      bVar2 = REG_BUF_CFG_9302;
+      if ((bVar2 >> 4 & 1) != 0) {
+        FUN_CODE_0381();
+        REG_BUF_CFG_9302 = 0x10;
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      bVar2 = REG_BUF_CFG_9302;
+      if ((bVar2 >> 5 & 1) != 0) {
+        FUN_CODE_0386();
+        REG_BUF_CFG_9302 = 0x20;
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      bVar2 = REG_BUF_CFG_9302;
+      if ((bVar2 & 1) != 0) {
+        REG_BUF_CFG_9302 = 1;
+        FUN_CODE_036d();
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      bVar2 = REG_BUF_CFG_9302;
+      if ((bVar2 >> 1 & 1) != 0) {
+        REG_BUF_CFG_9302 = 2;
+        FUN_CODE_0372();
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      bVar2 = REG_BUF_CFG_9302;
+      if ((bVar2 >> 2 & 1) != 0) {
+        REG_BUF_CFG_9302 = 4;
+        FUN_CODE_0377();
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      bVar2 = REG_BUF_CFG_9300;
+      if ((bVar2 >> 2 & 1) == 0) {
+        bVar2 = REG_BUF_CFG_9300;
+        if ((bVar2 >> 3 & 1) != 0) {
+          FUN_CODE_038b();
+        }
+        bVar2 = REG_INT_SYSTEM;
+        if ((bVar2 >> 5 & 1) != 0) {
+          bVar2 = REG_CPU_LINK_CEF3;
+          if ((bVar2 >> 3 & 1) == 0) {
+            cVar1 = REG_CPU_LINK_CEF2;
+            if (cVar1 < '\0') {
+              REG_CPU_LINK_CEF2 = 0x80;
+              handler_3adb(0);
+            }
+          }
+          else {
+            G_SYS_STATUS_PRIMARY = 0;
+            REG_CPU_LINK_CEF3 = 8;
+            handler_2608();
+          }
+        }
+        bVar2 = REG_INT_USB_MASTER;
+        if ((bVar2 >> 2 & 1) != 0) {
+          DAT_INTMEM_37 = 0;
+          do {
+            bVar2 = REG_NVME_QUEUE_PTR_C471;
+            if ((bVar2 & 1) == 0) break;
+            cVar1 = DAT_EXTMEM_0055;
+            if ((cVar1 == '\0') && (bVar2 = REG_NVME_LINK_STATUS, (bVar2 >> 1 & 1) != 0)) {
+              nvme_util_clear_completion();
+            }
+            nvme_submit_cmd();
+            DAT_INTMEM_37 = DAT_INTMEM_37 + 1;
+          } while ((DAT_INTMEM_37 < 0x20) << 7 < '\0');
+          bVar2 = REG_USB_STATUS;
+          if ((bVar2 & 1) == 0) {
+            bVar2 = REG_NVME_LINK_STATUS;
+            if ((bVar2 >> 1 & 1) != 0) {
+              usb_setup_data_xfer();
+            }
+            bVar2 = REG_NVME_LINK_STATUS;
+            if ((bVar2 & 1) != 0) {
+              nvme_util_get_phase_tag();
+            }
+          }
+          else {
+            bVar2 = REG_NVME_LINK_STATUS;
+            if ((bVar2 & 1) != 0) {
+              nvme_util_check_command_ready();
+            }
+            bVar2 = REG_NVME_LINK_STATUS;
+            if ((bVar2 >> 1 & 1) != 0) {
+              nvme_util_clear_completion();
+            }
+          }
+          bVar2 = REG_NVME_CMD_NSID;
+          if ((bVar2 & 1) != 0) {
+            usb_setup_data_xfer();
+            REG_NVME_CMD_NSID = 1;
+          }
+        }
+        BANK0_R7 = uStackX_0;
+        BANK0_R6 = in_stack_000000ff;
+        BANK0_R5 = in_stack_000000fe;
+        BANK0_R4 = in_stack_000000fd;
+        BANK0_R3 = in_stack_000000fc;
+        BANK0_R2 = in_stack_000000fb;
+        BANK0_R1 = in_stack_000000fa;
+        BANK0_R0 = in_stack_000000f9;
+        return in_stack_000000f4;
+      }
+      FUN_CODE_0368();
+      puVar4 = &REG_BUF_CFG_9300;
+    }
+    else {
+      bVar2 = REG_USB_EP_CFG1;
+      if ((bVar2 >> 1 & 1) != 0) {
+        REG_USB_EP_CFG1 = 2;
+        nvme_io_handler();
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      bVar2 = REG_USB_EP_CFG1;
+      if ((bVar2 >> 3 & 1) != 0) {
+        dma_transfer_handler();
+        puVar4 = &REG_USB_EP_CFG1;
+LAB_CODE_106e:
+        *puVar4 = 8;
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      bVar2 = REG_USB_EP_CFG1;
+      if ((bVar2 & 1) != 0) {
+        FUN_CODE_5455();
+        puVar4 = &REG_USB_EP_CFG1;
+        goto LAB_CODE_1035;
+      }
+      bVar2 = REG_USB_EP_CFG1;
+      if ((bVar2 >> 2 & 1) != 1) {
+        uVar3 = usb_master_handler();
+        return uVar3;
+      }
+      FUN_CODE_5455();
+      puVar4 = &REG_USB_EP_CFG1;
+    }
+  }
+  else {
+    bVar2 = REG_USB_PHY_CTRL_91D1;
+    if ((bVar2 >> 3 & 1) != 0) {
+      REG_USB_PHY_CTRL_91D1 = 8;
+      FUN_CODE_0345();
+    }
+    bVar2 = REG_USB_PHY_CTRL_91D1;
+    if ((bVar2 & 1) != 0) {
+      REG_USB_PHY_CTRL_91D1 = 1;
+      FUN_CODE_034a();
+      uVar3 = usb_master_handler();
+      return uVar3;
+    }
+    bVar2 = REG_USB_PHY_CTRL_91D1;
+    if ((bVar2 >> 1 & 1) != 0) {
+      REG_USB_PHY_CTRL_91D1 = 2;
+      FUN_CODE_034f();
+      uVar3 = usb_master_handler();
+      return uVar3;
+    }
+    bVar2 = REG_USB_PHY_CTRL_91D1;
+    if ((bVar2 >> 2 & 1) != 1) {
+      uVar3 = usb_master_handler();
+      return uVar3;
+    }
+    FUN_CODE_0354();
+    puVar4 = &REG_USB_PHY_CTRL_91D1;
+  }
+  *puVar4 = 4;
+  uVar3 = usb_master_handler();
+  return uVar3;
+}
+
+
+
+undefined1 usb_master_handler(void)
+
+{
+  char cVar1;
+  byte bVar2;
+  undefined1 uStackX_0;
+  undefined1 in_stack_000000f4;
+  undefined1 in_stack_000000f9;
+  undefined1 in_stack_000000fa;
+  undefined1 in_stack_000000fb;
+  undefined1 in_stack_000000fc;
+  undefined1 in_stack_000000fd;
+  undefined1 in_stack_000000fe;
+  undefined1 in_stack_000000ff;
+  
+  bVar2 = REG_INT_SYSTEM;
+  if ((bVar2 >> 5 & 1) != 0) {
+    bVar2 = REG_CPU_LINK_CEF3;
+    if ((bVar2 >> 3 & 1) == 0) {
+      cVar1 = REG_CPU_LINK_CEF2;
+      if (cVar1 < '\0') {
+        REG_CPU_LINK_CEF2 = 0x80;
+        handler_3adb(0);
+      }
+    }
+    else {
+      G_SYS_STATUS_PRIMARY = 0;
+      REG_CPU_LINK_CEF3 = 8;
+      handler_2608();
+    }
+  }
+  bVar2 = REG_INT_USB_MASTER;
+  if ((bVar2 >> 2 & 1) != 0) {
+    DAT_INTMEM_37 = 0;
+    do {
+      bVar2 = REG_NVME_QUEUE_PTR_C471;
+      if ((bVar2 & 1) == 0) break;
+      cVar1 = DAT_EXTMEM_0055;
+      if ((cVar1 == '\0') && (bVar2 = REG_NVME_LINK_STATUS, (bVar2 >> 1 & 1) != 0)) {
+        nvme_util_clear_completion();
+      }
+      nvme_submit_cmd();
+      DAT_INTMEM_37 = DAT_INTMEM_37 + 1;
+    } while ((DAT_INTMEM_37 < 0x20) << 7 < '\0');
+    bVar2 = REG_USB_STATUS;
+    if ((bVar2 & 1) == 0) {
+      bVar2 = REG_NVME_LINK_STATUS;
+      if ((bVar2 >> 1 & 1) != 0) {
+        usb_setup_data_xfer();
+      }
+      bVar2 = REG_NVME_LINK_STATUS;
+      if ((bVar2 & 1) != 0) {
+        nvme_util_get_phase_tag();
+      }
+    }
+    else {
+      bVar2 = REG_NVME_LINK_STATUS;
+      if ((bVar2 & 1) != 0) {
+        nvme_util_check_command_ready();
+      }
+      bVar2 = REG_NVME_LINK_STATUS;
+      if ((bVar2 >> 1 & 1) != 0) {
+        nvme_util_clear_completion();
+      }
+    }
+    bVar2 = REG_NVME_CMD_NSID;
+    if ((bVar2 & 1) != 0) {
+      usb_setup_data_xfer();
+      REG_NVME_CMD_NSID = 1;
+    }
+  }
+  BANK0_R7 = uStackX_0;
+  BANK0_R6 = in_stack_000000ff;
+  BANK0_R5 = in_stack_000000fe;
+  BANK0_R4 = in_stack_000000fd;
+  BANK0_R3 = in_stack_000000fc;
+  BANK0_R2 = in_stack_000000fb;
+  BANK0_R1 = in_stack_000000fa;
+  BANK0_R0 = in_stack_000000f9;
+  return in_stack_000000f4;
+}
+
+
+
 void nvme_submit_cmd(void)
 
 {
-  nvme_command_handler(1);
+  dma_store_to_0a7d(1);
   DAT_EXTMEM_c47a = 0xff;
   return;
 }
 
 
 
-byte FUN_CODE_11a2(char param_1,char param_2,byte param_3)
+code FUN_CODE_11a2(char param_1,char param_2,code param_3)
 
 {
   undefined1 uVar1;
   byte bVar2;
-  byte bVar3;
+  code cVar3;
   char cVar4;
-  byte *pbVar5;
+  code *pcVar5;
   undefined1 *puVar6;
   char *pcVar7;
-  code *pcVar8;
   
   DAT_INTMEM_43 = BANK1_R5;
-  if (param_3 == 0) {
-    bVar3 = DAT_EXTMEM_0470;
-    if ((bVar3 & 1) == 0) {
-      cVar4 = REG_SYS_STATUS_SECONDARY;
-      transfer_func_171d(0,*(undefined1 *)
-                            CONCAT11('\x05' - (((0xb4U < (byte)(cVar4 * '\x14')) << 7) >> 7),
-                                     cVar4 * '\x14' + 0x4b));
+  if (param_3 == (code)0x0) {
+    bVar2 = DAT_EXTMEM_0470;
+    if ((bVar2 & 1) == 0) {
+      cVar4 = G_SYS_STATUS_SECONDARY;
+      dma_load_transfer_params
+                (0,*(undefined1 *)
+                    CONCAT11('\x05' - (((0xb4U < (byte)(cVar4 * '\x14')) << 7) >> 7),
+                             cVar4 * '\x14' + 0x4b));
       DAT_INTMEM_3f = param_3;
-      transfer_func_171d();
+      dma_load_transfer_params();
       if (param_2 != '\0' || param_1 != '\0') {
-        DAT_INTMEM_3f = DAT_INTMEM_3f + 1;
+        DAT_INTMEM_3f = (code)((char)DAT_INTMEM_3f + 1);
       }
     }
     else {
-      DAT_INTMEM_3f = DAT_EXTMEM_0473;
+      DAT_INTMEM_3f = (code)G_DMA_LOAD_PARAM2;
     }
-    bVar3 = DAT_EXTMEM_0470;
-    if ((bVar3 >> 3 & 1) != 0) {
+    bVar2 = DAT_EXTMEM_0470;
+    if ((bVar2 >> 3 & 1) != 0) {
       bVar2 = FUN_CODE_1646();
-      bVar3 = DAT_INTMEM_3f;
+      cVar3 = DAT_INTMEM_3f;
       if (bVar2 != 0) {
-        bVar3 = DAT_INTMEM_3f / bVar2;
+        cVar3 = (code)((byte)DAT_INTMEM_3f / bVar2);
       }
-      DAT_EXTMEM_0476 = bVar3;
+      DAT_EXTMEM_0476 = cVar3;
       if (bVar2 != 0) {
-        bVar2 = DAT_INTMEM_3f % bVar2;
+        bVar2 = (byte)DAT_INTMEM_3f % bVar2;
       }
       if (bVar2 != 0) {
         cVar4 = DAT_EXTMEM_0476;
         DAT_EXTMEM_0476 = cVar4 + '\x01';
       }
       pcVar7 = &REG_USB_STATUS;
-      bVar3 = REG_USB_STATUS;
-      if ((bVar3 & 1) != 0) {
+      bVar2 = REG_USB_STATUS;
+      if ((bVar2 & 1) != 0) {
         FUN_CODE_15b7();
         if (*pcVar7 == -1) {
           puVar6 = &DAT_EXTMEM_0476;
@@ -2788,39 +3261,39 @@ byte FUN_CODE_11a2(char param_1,char param_2,byte param_3)
           FUN_CODE_15d4();
           FUN_CODE_15b6(uVar1);
           *puVar6 = uVar1;
-          pcVar7 = &DAT_EXTMEM_053a;
-          DAT_EXTMEM_053a = 0;
+          pcVar7 = &G_NVME_PARAM_053A;
+          G_NVME_PARAM_053A = 0;
         }
         FUN_CODE_15d4();
         FUN_CODE_15b7(*pcVar7);
         if (*pcVar7 == BANK0_R7) {
-          bVar3 = REG_NVME_DATA_CTRL;
-          REG_NVME_DATA_CTRL = bVar3 & 0x7f | 0x80;
+          bVar2 = REG_NVME_DATA_CTRL;
+          REG_NVME_DATA_CTRL = bVar2 & 0x7f | 0x80;
         }
         else {
-          bVar3 = REG_NVME_DATA_CTRL;
-          REG_NVME_DATA_CTRL = bVar3 & 0x7f;
+          bVar2 = REG_NVME_DATA_CTRL;
+          REG_NVME_DATA_CTRL = bVar2 & 0x7f;
         }
       }
     }
-    if (0x81U - (((DAT_INTMEM_3f == 0) << 7) >> 7) < 0x81) {
-      bVar3 = usb_check_buffer_ready(0,0x24,5);
-      return bVar3;
+    if (0x81U - (((DAT_INTMEM_3f == (code)0x0) << 7) >> 7) < 0x81) {
+      cVar3 = (code)dma_setup_transfer(0,0x24,5);
+      return cVar3;
     }
-    pbVar5 = &DAT_EXTMEM_0470;
-    bVar3 = DAT_EXTMEM_0470;
-    if ((bVar3 >> 2 & 1) != 0) {
-      DAT_EXTMEM_0474 = 0;
-      bVar3 = DAT_INTMEM_3f & 0x1f;
-      pbVar5 = &DAT_EXTMEM_0475;
+    pcVar5 = (code *)&DAT_EXTMEM_0470;
+    bVar2 = DAT_EXTMEM_0470;
+    if ((bVar2 >> 2 & 1) != 0) {
+      G_STATE_HELPER_41 = 0;
+      cVar3 = (code)((byte)DAT_INTMEM_3f & 0x1f);
+      pcVar5 = (code *)&G_STATE_HELPER_42;
       goto LAB_CODE_14e1;
     }
   }
   else {
-    pbVar5 = &DAT_EXTMEM_ce51;
-    DAT_INTMEM_3f = DAT_EXTMEM_ce51;
+    pcVar5 = (code *)&DAT_EXTMEM_ce51;
+    DAT_INTMEM_3f = (code)DAT_EXTMEM_ce51;
     FUN_CODE_15b7();
-    if (*pbVar5 == 0xff) {
+    if (*pcVar5 == (code)0xff) {
       puVar6 = &DAT_EXTMEM_ce55;
       uVar1 = DAT_EXTMEM_ce55;
       FUN_CODE_15d4();
@@ -2829,210 +3302,210 @@ byte FUN_CODE_11a2(char param_1,char param_2,byte param_3)
       uVar1 = DAT_EXTMEM_ce55;
       FUN_CODE_15b7();
       *puVar6 = uVar1;
-      pbVar5 = &DAT_EXTMEM_053a;
-      DAT_EXTMEM_053a = 0;
+      pcVar5 = (code *)&G_NVME_PARAM_053A;
+      G_NVME_PARAM_053A = 0;
     }
   }
-  if (DAT_INTMEM_3f == 1) {
-    DAT_INTMEM_40 = DAT_EXTMEM_ce60;
-    if (0x3f < DAT_INTMEM_40) {
-      return DAT_INTMEM_40 - 0x40;
+  if (DAT_INTMEM_3f == (code)0x1) {
+    DAT_INTMEM_40 = (code)DAT_EXTMEM_ce60;
+    if (0x3f < (byte)DAT_INTMEM_40) {
+      return (code)((char)DAT_INTMEM_40 - 0x40);
     }
     REG_SCSI_DMA_STATUS = DAT_INTMEM_40;
-    DAT_EXTMEM_0474 = DAT_INTMEM_40;
-    pcVar8 = (code *)0x475;
-    DAT_EXTMEM_0475 = DAT_INTMEM_40 + 1;
+    G_STATE_HELPER_41 = DAT_INTMEM_40;
+    pcVar5 = (code *)0x475;
+    G_STATE_HELPER_42 = (char)DAT_INTMEM_40 + 1;
     FUN_CODE_1755(DAT_INTMEM_43 + 0x59);
     FUN_CODE_159f(DAT_INTMEM_40);
     FUN_CODE_166a(DAT_INTMEM_40);
     FUN_CODE_15b6(1);
-    *pcVar8 = (code)0x1;
-    return 1;
+    *pcVar5 = (code)0x1;
+    return (code)0x1;
   }
   FUN_CODE_15d4();
-  DAT_INTMEM_42 = *pbVar5;
+  DAT_INTMEM_42 = *pcVar5;
   DAT_INTMEM_44 = FUN_CODE_1646();
-  if (DAT_INTMEM_42 < 2) {
-    if ((DAT_INTMEM_3f < 3) << 7 < '\0') {
-      if (DAT_INTMEM_3f == 2) {
-        pbVar5 = (byte *)0xce65;
-        bVar3 = DAT_EXTMEM_ce65;
-        DAT_INTMEM_41 = (bVar3 & 0x3f) * '\x02';
-        if (0x3f < DAT_INTMEM_41) {
-          return DAT_INTMEM_41 - 0x40;
+  if ((byte)DAT_INTMEM_42 < 2) {
+    if (((byte)DAT_INTMEM_3f < 3) << 7 < '\0') {
+      if (DAT_INTMEM_3f == (code)0x2) {
+        pcVar5 = (code *)0xce65;
+        bVar2 = DAT_EXTMEM_ce65;
+        DAT_INTMEM_41 = (code)((bVar2 & 0x3f) * '\x02');
+        if (0x3f < (byte)DAT_INTMEM_41) {
+          return (code)((char)DAT_INTMEM_41 - 0x40U);
         }
-        transfer_func_16ae(DAT_INTMEM_41 - 0x40);
+        transfer_func_16ae((char)DAT_INTMEM_41 - 0x40U);
       }
     }
     else {
-      cVar4 = (DAT_INTMEM_3f < 5) << 7;
-      if (DAT_INTMEM_3f < 5) {
-        bVar3 = FUN_CODE_17b5(DAT_INTMEM_3f - 5);
+      cVar4 = ((byte)DAT_INTMEM_3f < 5) << 7;
+      if ((byte)DAT_INTMEM_3f < 5) {
+        cVar3 = (code)scsi_get_tag_count_status((char)DAT_INTMEM_3f - 5);
         if (-1 < cVar4) {
-          return bVar3;
+          return cVar3;
         }
-        DAT_INTMEM_41 = DAT_INTMEM_40 * '\x04';
+        DAT_INTMEM_41 = (code)((char)DAT_INTMEM_40 * '\x04');
         transfer_func_16b0();
         transfer_func_17d8();
       }
       else {
-        cVar4 = (DAT_INTMEM_3f < 9) << 7;
-        if (DAT_INTMEM_3f < 9) {
-          bVar3 = FUN_CODE_17c1(DAT_INTMEM_3f - 9);
+        cVar4 = ((byte)DAT_INTMEM_3f < 9) << 7;
+        if ((byte)DAT_INTMEM_3f < 9) {
+          cVar3 = (code)usb_read_queue_status_masked((char)DAT_INTMEM_3f - 9);
           if (-1 < cVar4) {
-            return bVar3;
+            return cVar3;
           }
           transfer_func_1602();
-          pbVar5 = &DAT_CODE_5b72;
-          DAT_INTMEM_41 = (&DAT_CODE_5b72)[DAT_INTMEM_40];
+          pcVar5 = ep_offset_table;
+          DAT_INTMEM_41 = ep_offset_table[(byte)DAT_INTMEM_40];
         }
         else {
-          pbVar5 = (byte *)0xce5c;
-          DAT_INTMEM_41 = DAT_EXTMEM_ce5c;
-          if (DAT_INTMEM_41 == 0) {
+          pcVar5 = (code *)0xce5c;
+          DAT_INTMEM_41 = (code)REG_SCSI_DMA_COMPL;
+          if (DAT_INTMEM_41 == (code)0x0) {
             return DAT_INTMEM_41;
           }
-          if ((DAT_INTMEM_41 & 1) == 0) {
-            if ((DAT_INTMEM_41 >> 1 & 1) == 0) {
+          if (((byte)DAT_INTMEM_41 & 1) == 0) {
+            if (((byte)DAT_INTMEM_41 >> 1 & 1) == 0) {
               return DAT_INTMEM_41;
             }
-            bVar3 = transfer_func_1713();
-            *pbVar5 = bVar3;
-            DAT_INTMEM_41 = 0x10;
+            cVar3 = (code)dma_set_scsi_param1();
+            *pcVar5 = cVar3;
+            DAT_INTMEM_41 = (code)0x10;
           }
           else {
-            bVar3 = transfer_func_1709();
-            *pbVar5 = bVar3;
-            DAT_INTMEM_41 = 0;
+            cVar3 = (code)dma_set_scsi_param3();
+            *pcVar5 = cVar3;
+            DAT_INTMEM_41 = (code)0x0;
           }
         }
       }
     }
     FUN_CODE_1586();
     FUN_CODE_1668();
-    bVar3 = DAT_INTMEM_3f;
+    cVar3 = DAT_INTMEM_3f;
   }
   else {
-    FUN_CODE_15b7(DAT_INTMEM_42 - 2);
-    bVar3 = DAT_INTMEM_43;
-    if (*pbVar5 != DAT_INTMEM_42) {
+    FUN_CODE_15b7((char)DAT_INTMEM_42 - 2);
+    bVar2 = DAT_INTMEM_43;
+    if (*pcVar5 != DAT_INTMEM_42) {
       if (DAT_INTMEM_44 == '\x02') {
         FUN_CODE_15a0();
-        bVar3 = FUN_CODE_533d(*pbVar5);
-        return bVar3;
+        cVar3 = (code)FUN_CODE_533d(*pcVar5);
+        return cVar3;
       }
       if (DAT_INTMEM_44 == '\b') {
         FUN_CODE_15a0();
-        bVar3 = FUN_CODE_5373(*pbVar5);
-        return bVar3;
+        cVar3 = (code)FUN_CODE_5373(*pcVar5);
+        return cVar3;
       }
       if (DAT_INTMEM_44 != '\x04') {
         FUN_CODE_15a0();
-        bVar3 = FUN_CODE_5260(*pbVar5);
-        return bVar3;
+        cVar3 = (code)dma_check_scsi_status(*pcVar5);
+        return cVar3;
       }
       FUN_CODE_15a0();
-      bVar3 = FUN_CODE_52c7(*pbVar5);
-      return bVar3;
+      cVar3 = (code)FUN_CODE_52c7(*pcVar5);
+      return cVar3;
     }
     do {
-      DAT_INTMEM_45 = *(byte *)CONCAT11(-(((0xd0 < bVar3) << 7) >> 7),bVar3 + 0x2f);
+      DAT_INTMEM_45 = *(byte *)CONCAT11(-(((0xd0 < bVar2) << 7) >> 7),bVar2 + 0x2f);
       DAT_INTMEM_46 = '\0';
       if (DAT_INTMEM_45 == 0x21) goto LAB_CODE_1330;
-      bVar3 = DAT_INTMEM_45;
+      bVar2 = DAT_INTMEM_45;
     } while (*(char *)CONCAT11('\x05' - (((0xe8 < DAT_INTMEM_45) << 7) >> 7),DAT_INTMEM_45 + 0x17)
              != '\0');
     DAT_INTMEM_46 = '\x01';
 LAB_CODE_1330:
-    DAT_INTMEM_47 = DAT_INTMEM_42 * DAT_INTMEM_44;
+    DAT_INTMEM_47 = (char)DAT_INTMEM_42 * DAT_INTMEM_44;
     if (0x20 < DAT_INTMEM_47) {
       DAT_INTMEM_47 = 0x20;
     }
     if (DAT_INTMEM_44 == '\x02') {
-      pbVar5 = (byte *)0xce65;
-      bVar3 = DAT_EXTMEM_ce65;
-      DAT_INTMEM_40 = (bVar3 & 0x3f) * '\x02';
-      if (0x3f < DAT_INTMEM_40) {
-        return DAT_INTMEM_40 - 0x40;
+      pcVar5 = (code *)0xce65;
+      bVar2 = DAT_EXTMEM_ce65;
+      DAT_INTMEM_40 = (code)((bVar2 & 0x3f) * '\x02');
+      if (0x3f < (byte)DAT_INTMEM_40) {
+        return (code)((char)DAT_INTMEM_40 - 0x40);
       }
       cVar4 = (DAT_INTMEM_46 == '\0') << 7;
       DAT_INTMEM_41 = DAT_INTMEM_40;
-      if ((DAT_INTMEM_46 == '\x01') && (bVar3 = FUN_CODE_163a(), cVar4 < '\0')) {
-        return bVar3;
+      if ((DAT_INTMEM_46 == '\x01') && (cVar3 = (code)FUN_CODE_163a(), cVar4 < '\0')) {
+        return cVar3;
       }
       transfer_func_16ae();
     }
     else {
       cVar4 = (5 < DAT_INTMEM_44 - 2U) << 7;
       if (DAT_INTMEM_44 == '\b') {
-        bVar3 = FUN_CODE_17c1();
+        cVar3 = (code)usb_read_queue_status_masked();
         if (-1 < cVar4) {
-          return bVar3;
+          return cVar3;
         }
-        pbVar5 = &DAT_CODE_5b72;
-        DAT_INTMEM_41 = (&DAT_CODE_5b72)[DAT_INTMEM_40];
+        pcVar5 = ep_offset_table;
+        DAT_INTMEM_41 = ep_offset_table[(byte)DAT_INTMEM_40];
         cVar4 = (DAT_INTMEM_46 == '\0') << 7;
-        if ((DAT_INTMEM_46 == '\x01') && (bVar3 = FUN_CODE_163a(), cVar4 < '\0')) {
-          return bVar3;
+        if ((DAT_INTMEM_46 == '\x01') && (cVar3 = (code)FUN_CODE_163a(), cVar4 < '\0')) {
+          return cVar3;
         }
         transfer_func_1602();
       }
       else {
         cVar4 = (0xfb < DAT_INTMEM_44 - 8U) << 7;
         if (DAT_INTMEM_44 == '\x04') {
-          DAT_INTMEM_41 = DAT_EXTMEM_01b4;
-          pbVar5 = (byte *)0xce5f;
-          bVar3 = DAT_EXTMEM_ce5f;
-          if ((bVar3 & (&DAT_CODE_5b7a)[DAT_INTMEM_41]) == 0) {
-            bVar3 = FUN_CODE_17b5();
+          DAT_INTMEM_41 = (code)DAT_EXTMEM_01b4;
+          pcVar5 = (code *)0xce5f;
+          bVar2 = DAT_EXTMEM_ce5f;
+          if ((bVar2 & (&DAT_CODE_5b7a)[(byte)DAT_INTMEM_41]) == 0) {
+            cVar3 = (code)scsi_get_tag_count_status();
             if (-1 < cVar4) {
-              return bVar3;
+              return cVar3;
             }
-            DAT_INTMEM_41 = DAT_INTMEM_40 * '\x04';
+            DAT_INTMEM_41 = (code)((char)DAT_INTMEM_40 * '\x04');
             cVar4 = (DAT_INTMEM_46 == '\0') << 7;
-            if ((DAT_INTMEM_46 == '\x01') && (bVar3 = FUN_CODE_163a(), cVar4 < '\0')) {
-              return bVar3;
+            if ((DAT_INTMEM_46 == '\x01') && (cVar3 = (code)FUN_CODE_163a(), cVar4 < '\0')) {
+              return cVar3;
             }
           }
-          else if ((DAT_INTMEM_46 == '\x01') && (bVar3 = FUN_CODE_163a(), cVar4 < '\0')) {
-            return bVar3;
+          else if ((DAT_INTMEM_46 == '\x01') && (cVar3 = (code)FUN_CODE_163a(), cVar4 < '\0')) {
+            return cVar3;
           }
           transfer_func_16ae();
           transfer_func_17d8();
         }
         else {
-          pbVar5 = (byte *)0xce5c;
-          DAT_INTMEM_41 = DAT_EXTMEM_ce5c;
+          pcVar5 = (code *)0xce5c;
+          DAT_INTMEM_41 = (code)REG_SCSI_DMA_COMPL;
           cVar4 = (DAT_INTMEM_46 == '\0') << 7;
-          if ((DAT_INTMEM_46 == '\x01') && (bVar3 = FUN_CODE_163a(), cVar4 < '\0')) {
-            return bVar3;
+          if ((DAT_INTMEM_46 == '\x01') && (cVar3 = (code)FUN_CODE_163a(), cVar4 < '\0')) {
+            return cVar3;
           }
-          if (DAT_INTMEM_41 == 0) {
-            return 0;
+          if (DAT_INTMEM_41 == (code)0x0) {
+            return (code)0x0;
           }
-          if ((DAT_INTMEM_41 & 1) == 0) {
-            if ((DAT_INTMEM_41 >> 1 & 1) == 0) {
+          if (((byte)DAT_INTMEM_41 & 1) == 0) {
+            if (((byte)DAT_INTMEM_41 >> 1 & 1) == 0) {
               return DAT_INTMEM_41;
             }
-            bVar3 = transfer_func_1713();
-            *pbVar5 = bVar3;
-            DAT_INTMEM_41 = 0x10;
+            cVar3 = (code)dma_set_scsi_param1();
+            *pcVar5 = cVar3;
+            DAT_INTMEM_41 = (code)0x10;
           }
           else {
-            bVar3 = transfer_func_1709();
-            *pbVar5 = bVar3;
-            DAT_INTMEM_41 = 0;
+            cVar3 = (code)dma_set_scsi_param3();
+            *pcVar5 = cVar3;
+            DAT_INTMEM_41 = (code)0x0;
           }
         }
       }
     }
     FUN_CODE_1586();
     FUN_CODE_1668();
-    bVar3 = DAT_INTMEM_3f;
+    cVar3 = DAT_INTMEM_3f;
   }
 LAB_CODE_14e1:
-  *pbVar5 = bVar3;
-  return bVar3;
+  *pcVar5 = cVar3;
+  return cVar3;
 }
 
 
@@ -3042,11 +3515,11 @@ void FUN_CODE_14e5(byte param_1,char param_2)
 {
   undefined1 uVar1;
   
-  reg_test_bit(0xaa4);
+  xdata_store_dword(0xaa4);
   uVar1 = DAT_EXTMEM_0aa7;
   reg_wait_bit_set(0x45e,uVar1);
                     // WARNING: Subroutine does not return
-  phy_link_init(uVar1,param_1 + 0x18,param_2 - (((0xe7 < param_1) << 7) >> 7));
+  write_xdata_reg(uVar1,param_1 + 0x18,param_2 - (((0xe7 < param_1) << 7) >> 7));
 }
 
 
@@ -3055,7 +3528,7 @@ void FUN_CODE_1564(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -3073,7 +3546,7 @@ void FUN_CODE_156f(byte param_1,char param_2,undefined1 param_3)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(param_3,param_1 + 0x28,param_2 - (((0xd7 < param_1) << 7) >> 7));
+  write_xdata_reg(param_3,param_1 + 0x28,param_2 - (((0xd7 < param_1) << 7) >> 7));
 }
 
 
@@ -3084,7 +3557,7 @@ void FUN_CODE_1571(undefined1 param_1,char param_2,undefined1 param_3)
   char in_PSW;
   
                     // WARNING: Subroutine does not return
-  phy_link_init(param_3,param_1,param_2 - (in_PSW >> 7));
+  write_xdata_reg(param_3,param_1,param_2 - (in_PSW >> 7));
 }
 
 
@@ -3094,8 +3567,8 @@ void FUN_CODE_1579(void)
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_05a6;
-  FUN_CODE_0dd1(uVar1,0x5b4,0x22);
+  uVar1 = G_PCIE_TXN_COUNT_LO;
+  mul_add_index(uVar1,0x5b4,0x22);
   return;
 }
 
@@ -3104,7 +3577,7 @@ void FUN_CODE_1579(void)
 void FUN_CODE_157d(void)
 
 {
-  FUN_CODE_0dd1(0x5b4,0x22);
+  mul_add_index(0x5b4,0x22);
   return;
 }
 
@@ -3113,7 +3586,7 @@ void FUN_CODE_157d(void)
 void FUN_CODE_1580(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
@@ -3122,8 +3595,8 @@ void FUN_CODE_1580(void)
 char FUN_CODE_1586(void)
 
 {
-  DAT_EXTMEM_0474 = DAT_INTMEM_41;
-  DAT_EXTMEM_0475 = DAT_INTMEM_41 + DAT_INTMEM_3f & 0x1f;
+  G_STATE_HELPER_41 = DAT_INTMEM_41;
+  G_STATE_HELPER_42 = DAT_INTMEM_41 + DAT_INTMEM_3f & 0x1f;
   *(char *)CONCAT11(-(((0xa6 < DAT_INTMEM_43) << 7) >> 7),DAT_INTMEM_43 + 0x59) = DAT_INTMEM_41;
   return '\x01' - (((0xb1 < DAT_INTMEM_43) << 7) >> 7);
 }
@@ -3225,7 +3698,7 @@ undefined1 FUN_CODE_15dc(void)
 {
   char cVar1;
   
-  cVar1 = REG_SYS_STATUS_SECONDARY;
+  cVar1 = G_SYS_STATUS_SECONDARY;
   return *(undefined1 *)
           CONCAT11('\x05' - (((0xc2U < (byte)(cVar1 * '\x14')) << 7) >> 7),cVar1 * '\x14' + 0x3d);
 }
@@ -3285,10 +3758,10 @@ void transfer_func_161a(undefined1 param_1)
 {
   byte bVar1;
   
-  FUN_CODE_4a57(0,0x40,param_1,0);
+  dma_config_channel(0,0x40,param_1,0);
   reg_wait_bit_clear(0x45e,0,0xa0,1);
-  bVar1 = DAT_EXTMEM_c8d8;
-  DAT_EXTMEM_c8d8 = bVar1 & 0xfe | 1;
+  bVar1 = REG_DMA_STATUS2;
+  REG_DMA_STATUS2 = bVar1 & 0xfe | 1;
   return;
 }
 
@@ -3320,7 +3793,7 @@ undefined1 FUN_CODE_1646(void)
 {
   char cVar1;
   
-  cVar1 = REG_SYS_STATUS_SECONDARY;
+  cVar1 = G_SYS_STATUS_SECONDARY;
   return *(undefined1 *)
           CONCAT11('\x05' - (((0xb1U < (byte)(cVar1 * '\x14')) << 7) >> 7),cVar1 * '\x14' + 0x4e);
 }
@@ -3333,7 +3806,7 @@ char FUN_CODE_1659(undefined1 param_1,undefined1 *param_2)
   byte bVar1;
   
   *param_2 = param_1;
-  bVar1 = REG_SYS_STATUS_PRIMARY;
+  bVar1 = G_SYS_STATUS_PRIMARY;
   return '\x04' - (((0xb1 < bVar1) << 7) >> 7);
 }
 
@@ -3406,7 +3879,7 @@ char FUN_CODE_1687(void)
 {
   byte bVar1;
   
-  bVar1 = REG_SYS_STATUS_PRIMARY;
+  bVar1 = G_SYS_STATUS_PRIMARY;
   return '\x04' - (((0xa5 < bVar1) << 7) >> 7);
 }
 
@@ -3517,7 +3990,7 @@ void transfer_func_16c3(char param_1,char param_2)
   char in_PSW;
   
                     // WARNING: Subroutine does not return
-  phy_link_init(0,param_1 + (param_2 - (in_PSW >> 7)));
+  write_xdata_reg(0,param_1 + (param_2 - (in_PSW >> 7)));
 }
 
 
@@ -3525,7 +3998,7 @@ void transfer_func_16c3(char param_1,char param_2)
 void transfer_func_16cc(void)
 
 {
-  flash_func_0c64(1);
+  flash_add_to_xdata16(1);
   return;
 }
 
@@ -3574,7 +4047,7 @@ char FUN_CODE_16eb(void)
 
 
 
-void transfer_func_16f3(void)
+void dma_clear_status(void)
 
 {
   byte bVar1;
@@ -3598,7 +4071,7 @@ void transfer_func_16f6(byte *param_1)
 
 
 
-undefined1 FUN_CODE_16ff(undefined1 *param_1)
+undefined1 dma_reg_wait_bit(undefined1 *param_1)
 
 {
   undefined1 uVar1;
@@ -3610,7 +4083,7 @@ undefined1 FUN_CODE_16ff(undefined1 *param_1)
 
 
 
-void transfer_func_1709(void)
+void dma_set_scsi_param3(void)
 
 {
   REG_SCSI_DMA_PARAM3 = 0xff;
@@ -3619,7 +4092,7 @@ void transfer_func_1709(void)
 
 
 
-void transfer_func_1713(void)
+void dma_set_scsi_param1(void)
 
 {
   REG_SCSI_DMA_PARAM1 = 0xff;
@@ -3628,54 +4101,54 @@ void transfer_func_1713(void)
 
 
 
-void transfer_func_171d(void)
+void dma_load_transfer_params(void)
 
 {
   undefined1 uVar1;
   undefined1 uVar2;
   
-  uVar1 = DAT_EXTMEM_0472;
-  uVar2 = DAT_EXTMEM_0473;
-  flash_func_0c0f(0,BANK0_R3,uVar1,uVar2);
+  uVar1 = G_DMA_LOAD_PARAM1;
+  uVar2 = G_DMA_LOAD_PARAM2;
+  flash_div16(0,BANK0_R3,uVar1,uVar2);
   return;
 }
 
 
 
-char FUN_CODE_172c(void)
+char dma_check_state_counter(void)
 
 {
   char cVar1;
   byte bVar2;
   
-  cVar1 = DAT_EXTMEM_0aa3;
-  bVar2 = DAT_EXTMEM_0aa4;
+  cVar1 = G_STATE_COUNTER_HI;
+  bVar2 = G_STATE_COUNTER_LO;
   return cVar1 + (((bVar2 < 0x28) << 7) >> 7);
 }
 
 
 
-void command_abort(void)
+void dma_clear_dword(void)
 
 {
-  reg_test_bit(0,0,0,0);
+  xdata_store_dword(0,0,0,0);
   return;
 }
 
 
 
-undefined1 FUN_CODE_1743(void)
+undefined1 usb_get_sys_status_offset(void)
 
 {
   byte bVar1;
   
-  bVar1 = REG_SYS_STATUS_PRIMARY;
+  bVar1 = G_SYS_STATUS_PRIMARY;
   return *(undefined1 *)CONCAT11('\x05' - (((0x57 < bVar1) << 7) >> 7),bVar1 + 0xa8);
 }
 
 
 
-char FUN_CODE_1752(byte param_1)
+char usb_calc_addr_with_offset(byte param_1)
 
 {
   return -(((0xa6 < param_1) << 7) >> 7);
@@ -3693,16 +4166,16 @@ char FUN_CODE_1755(void)
 
 
 
-void transfer_func_175d(void)
+void dma_init_channel_b8(void)
 
 {
-  FUN_CODE_4a57(4,0xb8);
+  dma_config_channel(4,0xb8);
   return;
 }
 
 
 
-char FUN_CODE_176b(char param_1)
+char usb_calc_queue_addr(char param_1)
 
 {
   return '\x04' - (((0x87U < (byte)(param_1 * '\x04')) << 7) >> 7);
@@ -3710,7 +4183,7 @@ char FUN_CODE_176b(char param_1)
 
 
 
-char FUN_CODE_1779(char param_1)
+char usb_calc_queue_addr_next(char param_1)
 
 {
   return '\x04' - (((0x86U < (byte)(param_1 * '\x04')) << 7) >> 7);
@@ -3718,16 +4191,16 @@ char FUN_CODE_1779(char param_1)
 
 
 
-void transfer_func_1787(void)
+void usb_set_done_flag(void)
 
 {
-  DAT_EXTMEM_06e6 = 1;
+  G_STATE_FLAG_06E6 = 1;
   return;
 }
 
 
 
-undefined1 FUN_CODE_178e(void)
+undefined1 dma_calc_addr_with_carry(void)
 
 {
   return 0xff;
@@ -3735,17 +4208,17 @@ undefined1 FUN_CODE_178e(void)
 
 
 
-void transfer_func_1795(void)
+void dma_clear_state_counters(void)
 
 {
-  DAT_EXTMEM_0aa3 = 0;
-  DAT_EXTMEM_0aa4 = 0;
+  G_STATE_COUNTER_HI = 0;
+  G_STATE_COUNTER_LO = 0;
   return;
 }
 
 
 
-char FUN_CODE_179d(void)
+char usb_calc_indexed_addr(void)
 
 {
   return -(((0x3d < DAT_INTMEM_52) << 7) >> 7);
@@ -3753,41 +4226,41 @@ char FUN_CODE_179d(void)
 
 
 
-void transfer_func_17a9(void)
+void dma_init_ep_queue(void)
 
 {
-  DAT_EXTMEM_0565 = 0;
-  DAT_EXTMEM_0564 = 8;
+  G_EP_QUEUE_STATUS = 0;
+  G_EP_QUEUE_CTRL = 8;
   return;
 }
 
 
 
-char FUN_CODE_17b5(void)
+char scsi_get_tag_count_status(void)
 
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_ce66;
+  bVar1 = REG_SCSI_DMA_TAG_COUNT;
   DAT_INTMEM_40 = bVar1 & 0x1f;
   return (bVar1 & 0x1f) - 0x10;
 }
 
 
 
-char FUN_CODE_17c1(void)
+char usb_read_queue_status_masked(void)
 
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_ce67;
+  bVar1 = REG_SCSI_DMA_QUEUE_STAT;
   DAT_INTMEM_40 = bVar1 & 0xf;
   return (bVar1 & 0xf) - 8;
 }
 
 
 
-char FUN_CODE_17cd(byte param_1)
+char usb_shift_right_3(byte param_1)
 
 {
   return '\x03' - (param_1 >> 3);
@@ -3808,7 +4281,7 @@ void transfer_func_17d8(char *param_1)
 void transfer_func_17e3(void)
 
 {
-  FUN_CODE_4a57(0x10);
+  dma_config_channel(0x10);
   return;
 }
 
@@ -3823,7 +4296,7 @@ void transfer_func_17ed(void)
 
 
 
-byte nvme_util_update_queue_ptr(byte param_1)
+byte dma_shift_rrc2_mask(byte param_1)
 
 {
   return param_1 >> 2 | 0x20;
@@ -3845,13 +4318,13 @@ void FUN_CODE_1804(undefined1 param_1,char param_2)
   char in_PSW;
   
                     // WARNING: Subroutine does not return
-  phy_link_init(0x20,param_1,param_2 - (in_PSW >> 7));
+  write_xdata_reg(0x20,param_1,param_2 - (in_PSW >> 7));
 }
 
 
 
-void nvme_command_handler
-               (byte param_1,char param_2,byte param_3,byte param_4,byte param_5,char param_6)
+void dma_store_to_0a7d(byte param_1,char param_2,byte param_3,byte param_4,byte param_5,char param_6
+                      )
 
 {
   undefined1 uVar1;
@@ -3863,12 +4336,12 @@ void nvme_command_handler
   byte *pbVar7;
   undefined1 *puVar8;
   
-  DAT_EXTMEM_0a7d = param_6;
+  G_EP_DISPATCH_VAL3 = param_6;
   if (param_6 == '\x01') {
-    cVar6 = DAT_EXTMEM_000a;
+    cVar6 = G_EP_CHECK_FLAG;
     if (cVar6 == '\0') {
       DAT_EXTMEM_07e8 = 1;
-      cVar6 = DAT_EXTMEM_0b41;
+      cVar6 = G_USB_STATE_0B41;
       if (cVar6 != '\0') {
         parse_descriptor(1);
       }
@@ -3878,9 +4351,9 @@ void nvme_command_handler
     do {
       bVar4 = DAT_EXTMEM_ce89;
     } while ((bVar4 & 1) == 0);
-    cVar6 = DAT_EXTMEM_000a;
-    DAT_EXTMEM_000a = cVar6 + '\x01';
-    bVar4 = DAT_EXTMEM_000a;
+    cVar6 = G_EP_CHECK_FLAG;
+    G_EP_CHECK_FLAG = cVar6 + '\x01';
+    bVar4 = G_EP_CHECK_FLAG;
     bVar3 = DAT_EXTMEM_924c;
     if (bVar4 < 3) {
       DAT_EXTMEM_924c = bVar3 & 0xfe;
@@ -3908,7 +4381,7 @@ void nvme_command_handler
       DAT_EXTMEM_c4e8 = DAT_INTMEM_38;
       BANK1_R5 = DAT_INTMEM_38;
       FUN_CODE_2db7();
-      FUN_CODE_3168();
+      usb_clear_idata_indexed();
       *puVar8 = 0;
       return;
     }
@@ -3919,7 +4392,7 @@ void nvme_command_handler
     DAT_EXTMEM_c4ea = uVar5;
     puVar8 = &DAT_EXTMEM_c4eb;
     DAT_EXTMEM_c4eb = cVar6;
-    FUN_CODE_3168();
+    usb_clear_idata_indexed();
     *puVar8 = 0;
     bVar4 = DAT_EXTMEM_c4ec;
     if ((bVar4 & 1) == 1) {
@@ -3960,11 +4433,11 @@ void nvme_command_handler
           param_5 = param_4 & 7;
           FUN_CODE_31c3(bVar3);
           param_3 = *pbVar7;
-          bVar4 = param_3 & (&DAT_CODE_5b6a)[param_5];
+          bVar4 = param_3 & (&ep_bit_mask_table)[param_5];
           if (bVar4 != 0) {
             cVar6 = bVar3 + 0x96;
             *(undefined1 *)CONCAT11(-0x70 - (((0x69 < bVar3) << 7) >> 7),cVar6) =
-                 (&DAT_CODE_5b6a)[param_5];
+                 (&ep_bit_mask_table)[param_5];
             goto LAB_CODE_1981;
           }
         }
@@ -3988,11 +4461,11 @@ LAB_CODE_1981:
       if (DAT_INTMEM_39 == '\x05') {
         nvme_process_cmd(DAT_INTMEM_38);
         usb_get_endpoint_status();
-        reg_modify_bits();
+        xdata_load_dword();
         if (((param_3 == 0 && param_4 == 0) && param_5 == 0) && cVar6 == '\0') {
           FUN_CODE_329f();
           usb_get_endpoint_config();
-          reg_modify_bits();
+          xdata_load_dword();
           param_2 = '\0';
           param_1 = 0;
           cVar6 = '\0';
@@ -4014,7 +4487,7 @@ LAB_CODE_1981:
     }
   }
   else {
-    cVar6 = DAT_EXTMEM_0a7d;
+    cVar6 = G_EP_DISPATCH_VAL3;
     if (cVar6 == '\0') {
       bVar4 = DAT_EXTMEM_ce88;
       DAT_EXTMEM_ce88 = bVar4 & 0xc0 | BANK1_R5;
@@ -4082,20 +4555,20 @@ void usb_func_1aad(undefined1 param_1)
   char cVar4;
   
   DAT_EXTMEM_0566 = param_1;
-  bVar2 = DAT_EXTMEM_0b00;
+  bVar2 = G_USB_PARAM_0B00;
   bVar3 = (byte)((ushort)bVar2 * 0x40);
-  bVar1 = DAT_EXTMEM_021b;
-  cVar4 = DAT_EXTMEM_021a;
+  bVar1 = G_BUF_BASE_LO;
+  cVar4 = G_BUF_BASE_HI;
   cVar4 = cVar4 + ((char)((ushort)bVar2 * 0x40 >> 8) - ((CARRY1(bVar1,bVar3) << 7) >> 7));
-  DAT_EXTMEM_0568 = cVar4;
-  DAT_EXTMEM_0569 = bVar1 + bVar3;
+  G_BUF_OFFSET_HI = cVar4;
+  G_BUF_OFFSET_LO = bVar1 + bVar3;
   DAT_EXTMEM_0567 = BANK1_R5;
   DAT_EXTMEM_056a = BANK3_R0;
   DAT_EXTMEM_056b = BANK3_R1;
-  reg_write_byte(0xe,cVar4);
-  reg_test_bit(buffer_allocate);
-  reg_write_byte(0x12);
-  reg_test_bit(0x56c);
+  idata_load_dword(0xe,cVar4);
+  xdata_store_dword(handler_0570_bank1_e911);
+  idata_load_dword(0x12);
+  xdata_store_dword(0x56c);
   return;
 }
 
@@ -4107,10 +4580,10 @@ void usb_func_1ad1(undefined1 param_1)
   DAT_EXTMEM_0567 = param_1;
   DAT_EXTMEM_056a = BANK3_R0;
   DAT_EXTMEM_056b = BANK3_R1;
-  reg_write_byte(0xe);
-  reg_test_bit(buffer_allocate);
-  reg_write_byte(0x12);
-  reg_test_bit(0x56c);
+  idata_load_dword(0xe);
+  xdata_store_dword(handler_0570_bank1_e911);
+  idata_load_dword(0x12);
+  xdata_store_dword(0x56c);
   return;
 }
 
@@ -4122,10 +4595,10 @@ void usb_func_1ad4(undefined1 param_1,undefined1 *param_2)
   *param_2 = param_1;
   DAT_EXTMEM_056a = BANK3_R0;
   DAT_EXTMEM_056b = BANK3_R1;
-  reg_write_byte(0xe);
-  reg_test_bit(buffer_allocate);
-  reg_write_byte(0x12);
-  reg_test_bit(0x56c);
+  idata_load_dword(0xe);
+  xdata_store_dword(handler_0570_bank1_e911);
+  idata_load_dword(0x12);
+  xdata_store_dword(0x56c);
   return;
 }
 
@@ -4168,9 +4641,9 @@ void usb_func_1b14(undefined1 param_1,char param_2)
 {
   char in_PSW;
   
-  reg_modify_bits(param_2 - (in_PSW >> 7),param_1);
+  xdata_load_dword(param_2 - (in_PSW >> 7),param_1);
                     // WARNING: Subroutine does not return
-  reg_clear_bit(0x12);
+  idata_store_dword(0x12);
 }
 
 
@@ -4179,7 +4652,7 @@ void usb_func_1b20(void)
 
 {
                     // WARNING: Subroutine does not return
-  reg_clear_bit();
+  idata_store_dword();
 }
 
 
@@ -4259,7 +4732,7 @@ void usb_func_1b47(void)
   byte bVar1;
   byte bVar2;
   
-  bVar1 = DAT_EXTMEM_0475;
+  bVar1 = G_STATE_HELPER_42;
   bVar2 = REG_NVME_DEV_STATUS;
   REG_NVME_DEV_STATUS = bVar1 | bVar2 & 0xc0;
   bVar1 = REG_NVME_CTRL_STATUS;
@@ -4296,7 +4769,7 @@ void usb_func_1b60(void)
 {
   flash_func_0d08();
                     // WARNING: Subroutine does not return
-  reg_clear_bit(0xe);
+  idata_store_dword(0xe);
 }
 
 
@@ -4312,14 +4785,14 @@ undefined1 FUN_CODE_1b77(void)
 void usb_enable(void)
 
 {
-  reg_write_byte(9);
-  reg_set_bit(0x6b);
+  idata_load_dword(9);
+  idata_load_dword_alt(0x6b);
   return;
 }
 
 
 
-undefined1 FUN_CODE_1b88(void)
+undefined1 usb_calc_addr_009f(void)
 
 {
   return *(undefined1 *)CONCAT11(-(((0x60 < DAT_INTMEM_3e) << 7) >> 7),DAT_INTMEM_3e + 0x9f);
@@ -4345,15 +4818,15 @@ undefined1 FUN_CODE_1b8d(undefined1 param_1)
 
 
 
-undefined1 FUN_CODE_1b96(void)
+undefined1 usb_get_ep_config_indexed(void)
 
 {
   undefined1 uVar1;
   undefined1 *puVar2;
   
-  uVar1 = REG_SYS_STATUS_SECONDARY;
-  puVar2 = &REG_EP_CONFIG_ARRAY;
-  FUN_CODE_0dd1(uVar1,0x14);
+  uVar1 = G_SYS_STATUS_SECONDARY;
+  puVar2 = &G_EP_CONFIG_ARRAY;
+  mul_add_index(uVar1,0x14);
   return *puVar2;
 }
 
@@ -4364,8 +4837,8 @@ undefined1 ep_config_read(void)
 {
   undefined1 *puVar1;
   
-  puVar1 = &REG_EP_CONFIG_ARRAY;
-  FUN_CODE_0dd1(0x14);
+  puVar1 = &G_EP_CONFIG_ARRAY;
+  mul_add_index(0x14);
   return *puVar1;
 }
 
@@ -4374,25 +4847,25 @@ undefined1 ep_config_read(void)
 undefined1 FUN_CODE_1b9d(undefined1 *param_1)
 
 {
-  FUN_CODE_0dd1(0x14);
+  mul_add_index(0x14);
   return *param_1;
 }
 
 
 
-undefined1 FUN_CODE_1ba5(void)
+undefined1 usb_read_buf_addr_pair(void)
 
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_0218;
-  uVar1 = DAT_EXTMEM_0219;
+  uVar1 = G_BUF_ADDR_HI;
+  uVar1 = G_BUF_ADDR_LO;
   return uVar1;
 }
 
 
 
-undefined1 FUN_CODE_1bae(void)
+undefined1 usb_get_idata_0x12_field(void)
 
 {
   return 0;
@@ -4418,12 +4891,12 @@ char usb_reset_interface(char param_1)
 
 
 
-void usb_setup_endpoint(void)
+void nvme_load_transfer_data(void)
 
 {
-  reg_write_byte(0x6b);
+  idata_load_dword(0x6b);
                     // WARNING: Subroutine does not return
-  reg_clear_bit(0x6f);
+  idata_store_dword(0x6f);
 }
 
 
@@ -4437,7 +4910,7 @@ void FUN_CODE_1bd5(byte param_1,char param_2)
 
 
 
-void usb_start_transfer(undefined1 param_1,char param_2)
+void usb_setup_endpoint(undefined1 param_1,char param_2)
 
 {
   char in_PSW;
@@ -4448,7 +4921,7 @@ void usb_start_transfer(undefined1 param_1,char param_2)
 
 
 
-void usb_stop_transfer(void)
+void nvme_set_usb_mode_bit(void)
 
 {
   byte bVar1;
@@ -4469,12 +4942,12 @@ void usb_data_handler(byte *param_1)
 
 
 
-char FUN_CODE_1be8(void)
+char nvme_get_config_offset(void)
 
 {
   byte bVar1;
   
-  bVar1 = REG_SYS_STATUS_PRIMARY;
+  bVar1 = G_SYS_STATUS_PRIMARY;
   return '\x04' - (((0xa9 < bVar1) << 7) >> 7);
 }
 
@@ -4488,7 +4961,7 @@ char FUN_CODE_1bec(byte param_1)
 
 
 
-void usb_func_1bf6(byte param_1)
+void nvme_calc_buffer_offset(byte param_1)
 
 {
   char cVar1;
@@ -4496,17 +4969,17 @@ void usb_func_1bf6(byte param_1)
   byte bVar3;
   
   bVar3 = (byte)((ushort)param_1 * 0x40);
-  bVar2 = DAT_EXTMEM_021b;
-  cVar1 = DAT_EXTMEM_021a;
-  DAT_EXTMEM_0568 =
+  bVar2 = G_BUF_BASE_LO;
+  cVar1 = G_BUF_BASE_HI;
+  G_BUF_OFFSET_HI =
        cVar1 + ((char)((ushort)param_1 * 0x40 >> 8) - ((CARRY1(bVar2,bVar3) << 7) >> 7));
-  DAT_EXTMEM_0569 = bVar2 + bVar3;
+  G_BUF_OFFSET_LO = bVar2 + bVar3;
   return;
 }
 
 
 
-char FUN_CODE_1c0f(void)
+char nvme_calc_idata_offset(void)
 
 {
   return -(((0xf3 < DAT_INTMEM_3c) << 7) >> 7);
@@ -4531,18 +5004,18 @@ char FUN_CODE_1c1b(char param_1)
   
   *(undefined1 *)(param_1 + '\x01') = BANK0_R6;
   *(undefined1 *)(param_1 + '\x02') = BANK0_R7;
-  cVar1 = REG_SCSI_CTRL;
+  cVar1 = G_SCSI_CTRL;
   return cVar1 + -1;
 }
 
 
 
-char FUN_CODE_1c22(void)
+char nvme_check_scsi_ctrl(void)
 
 {
   char cVar1;
   
-  cVar1 = REG_SCSI_CTRL;
+  cVar1 = G_SCSI_CTRL;
   return cVar1 + -1;
 }
 
@@ -4554,7 +5027,7 @@ undefined1 FUN_CODE_1c2a(undefined1 param_1)
   short sVar1;
   
   sVar1 = 0x5cad;
-  FUN_CODE_0dd1(DAT_INTMEM_3c,2,param_1);
+  mul_add_index(DAT_INTMEM_3c,2,param_1);
   return *(undefined1 *)(sVar1 + 1);
 }
 
@@ -4566,7 +5039,7 @@ undefined1 FUN_CODE_1c30(void)
   short sVar1;
   
   sVar1 = 0x5cad;
-  FUN_CODE_0dd1();
+  mul_add_index();
   return *(undefined1 *)(sVar1 + 1);
 }
 
@@ -4596,9 +5069,9 @@ void FUN_CODE_1c43(byte param_1)
 void FUN_CODE_1c4a(undefined1 param_1)
 
 {
-  DAT_EXTMEM_0203 = param_1;
-  DAT_EXTMEM_020d = param_1;
-  DAT_EXTMEM_020e = param_1;
+  G_DMA_MODE_SELECT = param_1;
+  G_DMA_PARAM1 = param_1;
+  G_DMA_PARAM2 = param_1;
   return;
 }
 
@@ -4615,7 +5088,7 @@ byte FUN_CODE_1c55(void)
 
 
 
-byte FUN_CODE_1c56(void)
+byte nvme_get_dev_status_upper(void)
 
 {
   byte bVar1;
@@ -4629,14 +5102,14 @@ byte FUN_CODE_1c56(void)
 void FUN_CODE_1c5d(byte *param_1)
 
 {
-  DAT_EXTMEM_05a6 =
+  G_PCIE_TXN_COUNT_LO =
        *(undefined1 *)CONCAT11('\x05' - (((0x57 < *param_1) << 7) >> 7),*param_1 + 0xa8);
   return;
 }
 
 
 
-void FUN_CODE_1c6d(char param_1,char param_2)
+void nvme_subtract_idata_16(char param_1,char param_2)
 
 {
   bool bVar1;
@@ -4652,7 +5125,7 @@ void FUN_CODE_1c6d(char param_1,char param_2)
 
 
 
-byte link_get_status(void)
+byte nvme_get_cmd_param_upper(void)
 
 {
   byte bVar1;
@@ -4666,7 +5139,7 @@ byte link_get_status(void)
 void FUN_CODE_1c7e(void)
 
 {
-  reg_write_byte(0xe);
+  idata_load_dword(0xe);
   reg_read_dword(3);
   return;
 }
@@ -4676,14 +5149,14 @@ void FUN_CODE_1c7e(void)
 void FUN_CODE_1c80(void)
 
 {
-  reg_write_byte();
+  idata_load_dword();
   reg_read_dword(3);
   return;
 }
 
 
 
-char FUN_CODE_1c88(void)
+char nvme_calc_addr_01xx(void)
 
 {
   char in_PSW;
@@ -4699,9 +5172,9 @@ undefined1 FUN_CODE_1c90(void)
   undefined1 uVar1;
   undefined1 *puVar2;
   
-  uVar1 = DAT_EXTMEM_05a6;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
   puVar2 = &REG_TRANSFER_FLAGS;
-  FUN_CODE_0dd1(uVar1,0x22);
+  mul_add_index(uVar1,0x22);
   return *puVar2;
 }
 
@@ -4717,19 +5190,19 @@ byte FUN_CODE_1c9f(void)
 
 
 
-void FUN_CODE_1cae(void)
+void nvme_inc_circular_counter(void)
 
 {
   char cVar1;
   
-  cVar1 = DAT_EXTMEM_0b00;
-  DAT_EXTMEM_0b00 = cVar1 + 1U & 0x1f;
+  cVar1 = G_USB_PARAM_0B00;
+  G_USB_PARAM_0B00 = cVar1 + 1U & 0x1f;
   return;
 }
 
 
 
-char FUN_CODE_1cb7(byte param_1)
+char nvme_calc_addr_012b(byte param_1)
 
 {
   return '\x01' - (((0xd4 < param_1) << 7) >> 7);
@@ -4747,10 +5220,10 @@ char FUN_CODE_1cb9(void)
 
 
 
-void FUN_CODE_1cc1(void)
+void nvme_set_ep_queue_ctrl_84(void)
 
 {
-  DAT_EXTMEM_0564 = 0x84;
+  G_EP_QUEUE_CTRL = 0x84;
   return;
 }
 
@@ -4766,7 +5239,7 @@ void FUN_CODE_1cc8(undefined1 *param_1)
 
 
 
-void link_configure(void)
+void nvme_clear_status_bit1(void)
 
 {
   byte bVar1;
@@ -4778,19 +5251,19 @@ void link_configure(void)
 
 
 
-void link_set_speed(void)
+void nvme_add_to_global_053a(void)
 
 {
   char cVar1;
   
-  cVar1 = DAT_EXTMEM_053a;
-  DAT_EXTMEM_053a = cVar1 + ' ';
+  cVar1 = G_NVME_PARAM_053A;
+  G_NVME_PARAM_053A = cVar1 + ' ';
   return;
 }
 
 
 
-char FUN_CODE_1ce4(void)
+char nvme_calc_addr_04b7(void)
 
 {
   return '\x04' - (((0x48 < DAT_INTMEM_23) << 7) >> 7);
@@ -4801,27 +5274,27 @@ char FUN_CODE_1ce4(void)
 void FUN_CODE_1cf0(void)
 
 {
-  usb_check_buffer_ready(0,0x20,5);
+  dma_setup_transfer(0,0x20,5);
   return;
 }
 
 
 
-void link_start_training(void)
+void usb_ep_config_bulk(void)
 
 {
-  DAT_EXTMEM_9093 = 8;
-  DAT_EXTMEM_9094 = 2;
+  REG_USB_EP_CFG1 = 8;
+  REG_USB_EP_CFG2 = 2;
   return;
 }
 
 
 
-void link_check_training(void)
+void usb_ep_config_int(void)
 
 {
-  DAT_EXTMEM_9093 = 2;
-  DAT_EXTMEM_9094 = 0x10;
+  REG_USB_EP_CFG1 = 2;
+  REG_USB_EP_CFG2 = 0x10;
   return;
 }
 
@@ -4837,16 +5310,16 @@ undefined1 FUN_CODE_1d12(undefined1 param_1,char *param_2)
 
 
 
-void FUN_CODE_1d1d(void)
+void usb_set_transfer_flag(void)
 
 {
-  DAT_EXTMEM_0b2e = 1;
+  G_USB_TRANSFER_FLAG = 1;
   return;
 }
 
 
 
-byte link_enable(void)
+byte nvme_get_data_ctrl_upper(void)
 
 {
   byte bVar1;
@@ -4857,7 +5330,7 @@ byte link_enable(void)
 
 
 
-void link_disable(byte *param_1)
+void nvme_set_data_ctrl_bit7(byte *param_1)
 
 {
   *param_1 = *param_1 & 0x7f | 0x80;
@@ -4866,7 +5339,7 @@ void link_disable(byte *param_1)
 
 
 
-void FUN_CODE_1d32(undefined1 param_1,undefined1 param_2)
+void nvme_store_idata_16(undefined1 param_1,undefined1 param_2)
 
 {
   BANK2_R7 = param_1;
@@ -4876,19 +5349,19 @@ void FUN_CODE_1d32(undefined1 param_1,undefined1 param_2)
 
 
 
-void FUN_CODE_1d39(char param_1)
+void usb_add_masked_counter(char param_1)
 
 {
   char cVar1;
   
-  cVar1 = DAT_EXTMEM_014e;
-  DAT_EXTMEM_014e = cVar1 + param_1 & 0x1f;
+  cVar1 = G_USB_INDEX_COUNTER;
+  G_USB_INDEX_COUNTER = cVar1 + param_1 & 0x1f;
   return;
 }
 
 
 
-void FUN_CODE_1d43(char param_1)
+void usb_init_pcie_txn_state(char param_1)
 
 {
   undefined1 uVar1;
@@ -4901,25 +5374,25 @@ void FUN_CODE_1d43(char param_1)
   byte bVar8;
   undefined1 *puVar9;
   
-  DAT_EXTMEM_0aaa = 0;
-  uVar1 = DAT_EXTMEM_05a6;
-  puVar9 = &DAT_EXTMEM_05d3;
-  FUN_CODE_0dd1(uVar1,0x22);
-  DAT_EXTMEM_0aa8 = *puVar9;
-  cVar6 = REG_SYS_STATUS_SECONDARY;
-  DAT_EXTMEM_0aa9 =
+  G_FLASH_RESET_0AAA = 0;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
+  puVar9 = &G_EP_CONFIG_MULT_BASE;
+  mul_add_index(uVar1,0x22);
+  G_FLASH_ERROR_0 = *puVar9;
+  cVar6 = G_SYS_STATUS_SECONDARY;
+  G_FLASH_ERROR_1 =
        *(undefined1 *)
         CONCAT11('\x05' - (((0xb7U < (byte)(cVar6 * '\x14')) << 7) >> 7),cVar6 * '\x14' + 0x48);
-  bVar8 = DAT_EXTMEM_0564;
+  bVar8 = G_EP_QUEUE_CTRL;
   if ((bVar8 >> 3 & 1) == 0) {
     if ((bVar8 >> 2 & 1) == 1) {
-      uVar1 = DAT_EXTMEM_0565;
+      uVar1 = G_EP_QUEUE_STATUS;
       DAT_EXTMEM_0aab = uVar1;
-      uVar1 = DAT_EXTMEM_0568;
-      uVar2 = DAT_EXTMEM_0569;
+      uVar1 = G_BUF_OFFSET_HI;
+      uVar2 = G_BUF_OFFSET_LO;
       param_1 = BANK0_R6;
       reg_wait_bit_clear(0x45e,uVar2,BANK0_R6,1,uVar1);
-      uVar1 = DAT_EXTMEM_0aa8;
+      uVar1 = G_FLASH_ERROR_0;
       bVar8 = 0;
       cVar6 = BANK0_R7 + '\x01';
       bVar7 = 0x10;
@@ -4927,7 +5400,7 @@ void FUN_CODE_1d43(char param_1)
         bVar8 = bVar8 << 1 | bVar7 >> 7;
         bVar7 = bVar7 << 1;
       }
-      uVar1 = DAT_EXTMEM_0aa9;
+      uVar1 = G_FLASH_ERROR_1;
       cVar6 = BANK0_R1 + '\x01';
       while (cVar6 = cVar6 + -1, cVar6 != '\0') {
         bVar7 = bVar7 >> 1 | bVar8 << 7;
@@ -4936,7 +5409,7 @@ void FUN_CODE_1d43(char param_1)
       bVar3 = DAT_EXTMEM_056a;
       bVar4 = DAT_EXTMEM_056b;
       if ((bVar3 < bVar8 - (((bVar4 < bVar7 + 1) << 7) >> 7)) << 7 < '\0') {
-        uVar1 = DAT_EXTMEM_0aa8;
+        uVar1 = G_FLASH_ERROR_0;
         bVar8 = 0;
         cVar6 = BANK0_R7 + '\x01';
         bVar7 = 8;
@@ -4950,31 +5423,31 @@ void FUN_CODE_1d43(char param_1)
           bVar8 = bVar8 >> 1 | bVar8 & 0x80;
         }
         if (bVar8 - (((bVar4 < bVar7 + 1) << 7) >> 7) <= bVar3) {
-          DAT_EXTMEM_0aaa = 1;
+          G_FLASH_RESET_0AAA = 1;
         }
       }
       else {
-        DAT_EXTMEM_0aaa = 2;
+        G_FLASH_RESET_0AAA = 2;
       }
     }
   }
   else {
-    uVar1 = DAT_EXTMEM_0565;
+    uVar1 = G_EP_QUEUE_STATUS;
     DAT_EXTMEM_0aab = uVar1;
   }
-  bVar8 = DAT_EXTMEM_0564;
+  bVar8 = G_EP_QUEUE_CTRL;
   if ((bVar8 & 0xf) != 0) {
     cVar5 = DAT_EXTMEM_0aab;
     cVar6 = cVar5 << 6;
     bVar8 = command_get_pending(cVar6,cVar5);
                     // WARNING: Subroutine does not return
-    phy_link_init(cVar6,bVar8 + 0x19,param_1 - (((0xe6 < bVar8) << 7) >> 7));
+    write_xdata_reg(cVar6,bVar8 + 0x19,param_1 - (((0xe6 < bVar8) << 7) >> 7));
   }
-  cVar6 = DAT_EXTMEM_0564;
+  cVar6 = G_EP_QUEUE_CTRL;
   if (cVar6 < '\0') {
-    FUN_CODE_16ff(FUN_CODE_0566);
+    dma_reg_wait_bit(FUN_CODE_0566);
                     // WARNING: Subroutine does not return
-    phy_link_init();
+    write_xdata_reg();
   }
   return;
 }
@@ -4993,16 +5466,16 @@ void FUN_CODE_23f7(undefined1 param_1)
   FUN_CODE_1659(param_1);
   cVar2 = dma_complex_transfer(*puVar3,0xaa3);
   transfer_func_161a(cVar2 + (-0x50 - (in_PSW >> 7)));
-  bVar1 = DAT_EXTMEM_0aa3;
+  bVar1 = G_STATE_COUNTER_HI;
   DAT_EXTMEM_c8d7 = bVar1 | 0x80;
-  FUN_CODE_16ff(0xaa2);
+  dma_reg_wait_bit(0xaa2);
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
 
-void FUN_CODE_2608(byte *param_1)
+void handler_2608(byte *param_1)
 
 {
   char cVar1;
@@ -5019,7 +5492,7 @@ void FUN_CODE_2608(byte *param_1)
   FUN_CODE_16de();
   DAT_EXTMEM_0aa7 = *param_1;
   do {
-    cVar4 = REG_SYS_STATUS_PRIMARY;
+    cVar4 = G_SYS_STATUS_PRIMARY;
     if (cVar4 == '\0') {
       DAT_INTMEM_56 = DAT_INTMEM_53;
     }
@@ -5033,8 +5506,8 @@ void FUN_CODE_2608(byte *param_1)
     if (cVar4 == BANK0_R7) {
       bVar2 = REG_DMA_STATUS;
       REG_DMA_STATUS = bVar2 & 0xfe;
-      pbVar6 = &REG_SYS_STATUS_PRIMARY;
-      uVar3 = REG_SYS_STATUS_PRIMARY;
+      pbVar6 = &G_SYS_STATUS_PRIMARY;
+      uVar3 = G_SYS_STATUS_PRIMARY;
       FUN_CODE_168c(uVar3,bVar5 & 1);
       if (*pbVar6 != DAT_INTMEM_53) {
         FUN_CODE_0421(DAT_INTMEM_53);
@@ -5073,7 +5546,7 @@ void FUN_CODE_2608(byte *param_1)
     FUN_CODE_15d0();
     if (*pbVar6 == 1) {
       if ((DAT_INTMEM_54 >> 4 & 1) == 0) {
-        FUN_CODE_179d();
+        usb_calc_indexed_addr();
         *pbVar6 = 1;
       }
       else {
@@ -5081,7 +5554,7 @@ void FUN_CODE_2608(byte *param_1)
       }
     }
     else {
-      FUN_CODE_179d();
+      usb_calc_indexed_addr();
       *pbVar6 = *pbVar6 + 1;
       cVar1 = -(((0x1a < DAT_INTMEM_52) << 7) >> 7);
       uStack_1 = (byte *)CONCAT11(cVar1,DAT_INTMEM_52 - 0x1b);
@@ -5092,7 +5565,7 @@ void FUN_CODE_2608(byte *param_1)
       if ((DAT_INTMEM_54 >> 4 & 1) != 0) {
         if ((DAT_INTMEM_54 >> 6 & 1) == 0) {
           pbVar6 = (byte *)0x171;
-          cVar1 = REG_SCSI_CTRL;
+          cVar1 = G_SCSI_CTRL;
           if ((cVar1 == '\0') << 7 < '\0') {
             FUN_CODE_15c3(cVar1 + -1);
             if (*pbVar6 == BANK0_R6) {
@@ -5154,7 +5627,7 @@ void FUN_CODE_2608(byte *param_1)
           bVar5 = DAT_EXTMEM_c508;
           DAT_EXTMEM_c508 = bVar5 & 0xc0 | DAT_INTMEM_52;
           puVar7 = (undefined1 *)0xaf5;
-          DAT_EXTMEM_0af5 = DAT_INTMEM_52;
+          G_EP_DISPATCH_OFFSET = DAT_INTMEM_52;
           FUN_CODE_53a7();
         }
         else {
@@ -5183,7 +5656,7 @@ void FUN_CODE_2608(byte *param_1)
 void FUN_CODE_280a(void)
 
 {
-  usb_check_buffer_ready(3,0x47,0xb);
+  dma_setup_transfer(3,0x47,0xb);
   return;
 }
 
@@ -5210,7 +5683,7 @@ void FUN_CODE_2814(undefined1 param_1,undefined1 param_2,char param_3)
   FUN_CODE_3f4a();
   DAT_INTMEM_3a = param_3;
   if (param_3 != '\0') {
-    if ((param_3 == '\x05') && (cVar4 = DAT_EXTMEM_07e5, cVar4 == '\x01')) {
+    if ((param_3 == '\x05') && (cVar4 = G_TRANSFER_ACTIVE, cVar4 == '\x01')) {
       bVar6 = DAT_EXTMEM_0052;
       DAT_EXTMEM_0052 = bVar6 | 0x40;
     }
@@ -5220,16 +5693,16 @@ void FUN_CODE_2814(undefined1 param_1,undefined1 param_2,char param_3)
   cVar4 = FUN_CODE_1c9f(uVar1);
   if (cVar4 != '\0') {
     DAT_EXTMEM_0470 = 10;
-    DAT_EXTMEM_0472 = param_1;
-    pbVar9 = &DAT_EXTMEM_0473;
-    DAT_EXTMEM_0473 = param_2;
+    G_DMA_LOAD_PARAM1 = param_1;
+    pbVar9 = &G_DMA_LOAD_PARAM2;
+    G_DMA_LOAD_PARAM2 = param_2;
     cVar4 = '\0';
     FUN_CODE_11a2();
     if (cVar4 != '\0') {
       DAT_INTMEM_3e = BANK1_R5;
       FUN_CODE_1b3f();
       DAT_INTMEM_3c = *pbVar9;
-      link_configure();
+      nvme_clear_status_bit1();
       bVar7 = DAT_EXTMEM_0a83;
       bVar6 = REG_NVME_CTRL_STATUS;
       REG_NVME_CTRL_STATUS = bVar6 & 0xfe | (bVar7 >> 1 & 1) == 0;
@@ -5243,34 +5716,34 @@ void FUN_CODE_2814(undefined1 param_1,undefined1 param_2,char param_3)
       uVar2 = DAT_EXTMEM_0057;
       REG_NVME_CMD = uVar1;
       REG_NVME_CMD_OPCODE = uVar2;
-      pbVar9 = &DAT_EXTMEM_0474;
-      bVar6 = DAT_EXTMEM_0474;
-      bVar5 = link_enable();
+      pbVar9 = &G_STATE_HELPER_41;
+      bVar6 = G_STATE_HELPER_41;
+      bVar5 = nvme_get_data_ctrl_upper();
       *pbVar9 = bVar6 | bVar5;
       puVar10 = (undefined1 *)0xc412;
       bVar6 = REG_NVME_CTRL_STATUS;
       REG_NVME_CTRL_STATUS = bVar6 & 0xfd;
       if ((bVar7 >> 1 & 1) != 1) {
         FUN_CODE_1b07();
-        cVar4 = FUN_CODE_1b88();
+        cVar4 = usb_calc_addr_009f();
         if (cVar4 == BANK0_R7) {
-          FUN_CODE_1cb7(BANK1_R5);
+          nvme_calc_addr_012b(BANK1_R5);
           *puVar10 = 0;
         }
         pbVar9 = &DAT_EXTMEM_0216;
         cVar4 = DAT_EXTMEM_0216;
         bVar6 = cVar4 + DAT_INTMEM_3c & 0x1f;
-        bVar7 = FUN_CODE_1c56();
+        bVar7 = nvme_get_dev_status_upper();
         *pbVar9 = bVar7 | bVar6;
         cVar8 = FUN_CODE_1b07();
         if (cVar8 == '\x01') {
           usb_func_1b47();
         }
-        bVar6 = link_get_status();
+        bVar6 = nvme_get_cmd_param_upper();
         *pbVar9 = bVar6 | DAT_INTMEM_3c;
-        pcVar13 = &DAT_EXTMEM_053a;
-        cVar8 = DAT_EXTMEM_053a;
-        FUN_CODE_1c88(DAT_INTMEM_3c + 0x94);
+        pcVar13 = &G_NVME_PARAM_053A;
+        cVar8 = G_NVME_PARAM_053A;
+        nvme_calc_addr_01xx(DAT_INTMEM_3c + 0x94);
         *pcVar13 = cVar8;
         cVar8 = FUN_CODE_1af9();
         if (cVar8 == '\0') {
@@ -5283,7 +5756,7 @@ void FUN_CODE_2814(undefined1 param_1,undefined1 param_2,char param_3)
           *pcVar13 = cVar4;
           FUN_CODE_1b3b();
           if (*pcVar13 == '\0') {
-            link_set_speed();
+            nvme_add_to_global_053a();
           }
         }
         return;
@@ -5293,20 +5766,20 @@ void FUN_CODE_2814(undefined1 param_1,undefined1 param_2,char param_3)
       if (cVar4 != '\0') {
         FUN_CODE_1c7e();
         uVar1 = BANK0_R4;
-        FUN_CODE_1bae();
+        usb_get_idata_0x12_field();
         BANK0_R0 = uVar1;
         usb_func_1b60();
         cVar4 = '\x03';
         do {
           cVar4 = cVar4 + -1;
         } while (cVar4 != '\0');
-        FUN_CODE_1d32();
+        nvme_store_idata_16();
       }
       bVar6 = 1;
       FUN_CODE_5359();
       DAT_INTMEM_3b = bVar6;
       FUN_CODE_1b07();
-      cVar4 = FUN_CODE_1b88();
+      cVar4 = usb_calc_addr_009f();
       for (DAT_INTMEM_3d = cVar4 - bVar6; DAT_INTMEM_3d != '\0'; DAT_INTMEM_3d = DAT_INTMEM_3d + -1)
       {
         FUN_CODE_4f37();
@@ -5316,24 +5789,24 @@ void FUN_CODE_2814(undefined1 param_1,undefined1 param_2,char param_3)
         cVar4 = FUN_CODE_1b89();
         bVar6 = cVar4 - 1;
         cVar4 = -1 - (((cVar4 != '\0') << 7) >> 7);
-        uVar1 = DAT_EXTMEM_0218;
+        uVar1 = G_BUF_ADDR_HI;
         sVar11 = 0x219;
-        uVar2 = DAT_EXTMEM_0219;
+        uVar2 = G_BUF_ADDR_LO;
         flash_func_0bfd(uVar1,uVar2);
         BANK3_R1 = BANK2_R7 - bVar6;
         BANK3_R0 = BANK2_R6 - (cVar4 - (((BANK2_R7 < bVar6) << 7) >> 7));
       }
       else {
-        FUN_CODE_1ba5();
+        usb_read_buf_addr_pair();
         BANK3_R0 = BANK0_R6;
         BANK3_R1 = BANK0_R7;
       }
-      FUN_CODE_1cc1();
+      nvme_set_ep_queue_ctrl_84();
       *(byte *)(sVar11 + 1) = DAT_INTMEM_3c;
       *(undefined1 *)(sVar11 + 2) = 2;
-      usb_func_1bf6(DAT_INTMEM_3b);
+      nvme_calc_buffer_offset(DAT_INTMEM_3b);
       usb_func_1ad4(DAT_INTMEM_3e,0x567);
-      FUN_CODE_1d43();
+      usb_init_pcie_txn_state();
       pcVar12 = (code *)&DAT_EXTMEM_0216;
       cVar4 = DAT_EXTMEM_0216;
       bVar7 = FUN_CODE_1c55(cVar4 + DAT_INTMEM_3c);
@@ -5341,11 +5814,11 @@ void FUN_CODE_2814(undefined1 param_1,undefined1 param_2,char param_3)
       cVar4 = FUN_CODE_1b07();
       if (cVar4 == '\x01') {
         pcVar12 = (code *)0x475;
-        uVar1 = DAT_EXTMEM_0475;
+        uVar1 = G_STATE_HELPER_42;
         bVar7 = FUN_CODE_1c55(uVar1);
         usb_check_status(bVar6 | bVar7);
       }
-      bVar6 = link_get_status();
+      bVar6 = nvme_get_cmd_param_upper();
       *pcVar12 = (code)(bVar6 | DAT_INTMEM_3c);
       DAT_INTMEM_3b = DAT_INTMEM_3b + 1 & 0x1f;
       power_check_status(DAT_INTMEM_3b);
@@ -5364,7 +5837,7 @@ void FUN_CODE_2814(undefined1 param_1,undefined1 param_2,char param_3)
       }
       return;
     }
-    cVar4 = DAT_EXTMEM_07e5;
+    cVar4 = G_TRANSFER_ACTIVE;
     if (cVar4 == '\0') {
       return;
     }
@@ -5433,7 +5906,7 @@ LAB_CODE_2ad8:
       FUN_CODE_504f();
       DAT_EXTMEM_0a84 = *puVar7;
     }
-    DAT_EXTMEM_06e6 = 0;
+    G_STATE_FLAG_06E6 = 0;
     cVar5 = DAT_EXTMEM_0a86;
     if (cVar5 != '\0') {
       FUN_CODE_0511(0,0x28,3);
@@ -5442,18 +5915,18 @@ LAB_CODE_2ad8:
         bVar3 = DAT_EXTMEM_0b3f;
         if (bVar4 <= bVar3) break;
         do {
-          bVar4 = DAT_EXTMEM_cef3;
+          bVar4 = REG_CPU_LINK_CEF3;
           if ((bVar4 >> 3 & 1) == 1) goto LAB_CODE_2b27;
           bVar4 = REG_TIMER0_CSR;
         } while ((bVar4 >> 1 & 1) == 0);
-        DAT_EXTMEM_06e6 = 1;
+        G_STATE_FLAG_06E6 = 1;
         uVar1 = DAT_EXTMEM_0a86;
         DAT_EXTMEM_0b3f = uVar1;
 LAB_CODE_2b27:
-        cVar5 = DAT_EXTMEM_06e6;
+        cVar5 = G_STATE_FLAG_06E6;
         if (cVar5 == '\0') {
-          DAT_EXTMEM_cef3 = 8;
-          FUN_CODE_2608();
+          REG_CPU_LINK_CEF3 = 8;
+          handler_2608();
         }
       }
       FUN_CODE_050c(bVar3 - bVar4);
@@ -5467,10 +5940,10 @@ LAB_CODE_2b27:
     DAT_EXTMEM_b298 = bVar4 & 0xfb | 4;
     bVar4 = DAT_EXTMEM_b298;
     DAT_EXTMEM_b298 = bVar4 & 0xfb;
-    cVar5 = DAT_EXTMEM_000a;
-    DAT_EXTMEM_000a = cVar5 + -1;
+    cVar5 = G_EP_CHECK_FLAG;
+    G_EP_CHECK_FLAG = cVar5 + -1;
     uVar1 = DAT_EXTMEM_0a83;
-    DAT_EXTMEM_0af5 = uVar1;
+    G_EP_DISPATCH_OFFSET = uVar1;
     startup_init();
     cVar5 = DAT_EXTMEM_0a83;
     DAT_EXTMEM_c488 = cVar5;
@@ -5493,7 +5966,7 @@ LAB_CODE_2b27:
       DAT_EXTMEM_0a85 = cVar5;
       if ((((cVar5 != '\0') && (cVar5 = DAT_EXTMEM_0a85, cVar5 != '\b')) && (cVar5 != -0x78)) &&
          (cVar5 != '\t')) {
-        usb_check_buffer_ready(0,0,0xb);
+        dma_setup_transfer(0,0,0xb);
         uVar1 = DAT_EXTMEM_0a84;
         usb_parse_descriptor(0,uVar1);
         puVar7 = &DAT_EXTMEM_0a84;
@@ -5523,7 +5996,7 @@ void FUN_CODE_2bea(undefined1 param_1,undefined1 param_2,char param_3)
   if (param_3 != '\0') {
     return;
   }
-  FUN_CODE_1d1d();
+  usb_set_transfer_flag();
   bVar1 = DAT_EXTMEM_0a83;
   if ((bVar1 >> 1 & 1) != 1) {
     DAT_EXTMEM_07ea = 1;
@@ -5534,9 +6007,9 @@ void FUN_CODE_2bea(undefined1 param_1,undefined1 param_2,char param_3)
   }
   REG_NVME_COUNT_HIGH = param_1;
   REG_NVME_ERROR = param_2;
-  reg_modify_bits(0xc4cc);
+  xdata_load_dword(0xc4cc);
                     // WARNING: Subroutine does not return
-  reg_clear_bit(9);
+  idata_store_dword(9);
 }
 
 
@@ -5563,15 +6036,15 @@ void FUN_CODE_2db7(void)
     if (_0_1 == 1) {
       puVar7 = &DAT_EXTMEM_ce00;
       DAT_EXTMEM_ce00 = 1;
-      FUN_CODE_1c88();
+      nvme_calc_addr_01xx();
       *puVar7 = 0;
       DAT_EXTMEM_07ea = 1;
       *(undefined1 *)CONCAT11('\x01' - (((0x8e < DAT_INTMEM_3c) << 7) >> 7),DAT_INTMEM_3c + 0x71) =
            0;
     }
     else {
-      puVar7 = &REG_SYS_STATUS_PRIMARY;
-      cVar1 = REG_SYS_STATUS_PRIMARY;
+      puVar7 = &G_SYS_STATUS_PRIMARY;
+      cVar1 = G_SYS_STATUS_PRIMARY;
       FUN_CODE_1bec();
       DAT_INTMEM_3a = *puVar7;
       uVar2 = 0;
@@ -5579,9 +6052,9 @@ void FUN_CODE_2db7(void)
         uVar2 = 0x40;
       }
       FUN_CODE_2f67(uVar2);
-      FUN_CODE_1be8();
+      nvme_get_config_offset();
       *puVar7 = DAT_INTMEM_3a;
-      DAT_EXTMEM_06e6 = 1;
+      G_STATE_FLAG_06E6 = 1;
     }
     *(undefined1 *)CONCAT11(-(((0xa6 < DAT_INTMEM_3c) << 7) >> 7),DAT_INTMEM_3c + 0x59) =
          DAT_INTMEM_3b;
@@ -5595,7 +6068,7 @@ void FUN_CODE_2db7(void)
     }
     FUN_CODE_1b30(DAT_INTMEM_3c + 8);
     *pbVar6 = bVar3;
-    FUN_CODE_1c0f();
+    nvme_calc_idata_offset();
     BANK1_R5 = *pbVar6;
   }
   else {
@@ -5616,7 +6089,7 @@ void FUN_CODE_2db7(void)
       }
       return;
     }
-    uVar2 = DAT_EXTMEM_0474;
+    uVar2 = G_STATE_HELPER_41;
     pbVar6 = (byte *)0xce36;
     DAT_EXTMEM_ce36 = uVar2;
     if (_0_1 != 1) {
@@ -5626,24 +6099,24 @@ void FUN_CODE_2db7(void)
     }
     FUN_CODE_1b3f(DAT_INTMEM_3c + 0x4e);
     DAT_INTMEM_3d = *pbVar6;
-    bVar3 = DAT_EXTMEM_053a;
+    bVar3 = G_NVME_PARAM_053A;
     DAT_EXTMEM_ce3a = bVar3 | DAT_INTMEM_3d;
     if (_0_1 == 1) {
       DAT_EXTMEM_ce00 = 1;
-      puVar7 = &DAT_EXTMEM_053a;
-      uVar2 = DAT_EXTMEM_053a;
-      FUN_CODE_1c88(DAT_INTMEM_3d + 0x94);
+      puVar7 = &G_NVME_PARAM_053A;
+      uVar2 = G_NVME_PARAM_053A;
+      nvme_calc_addr_01xx(DAT_INTMEM_3d + 0x94);
       *puVar7 = uVar2;
       pbVar6 = &DAT_EXTMEM_07ea;
     }
     else {
-      cVar1 = REG_SYS_STATUS_PRIMARY;
+      cVar1 = G_SYS_STATUS_PRIMARY;
       uVar2 = 0;
       if (cVar1 == '\x01') {
         uVar2 = 0x40;
       }
       FUN_CODE_2f67(uVar2);
-      pbVar6 = &DAT_EXTMEM_06e6;
+      pbVar6 = &G_STATE_FLAG_06E6;
     }
     *pbVar6 = 1;
     bVar3 = 0x60;
@@ -5655,19 +6128,19 @@ void FUN_CODE_2db7(void)
     cVar1 = FUN_CODE_1b0b(DAT_INTMEM_3c + 0x71);
     *pbVar6 = cVar1 - 1U;
     if (cVar1 - 1U == 0) {
-      FUN_CODE_1c0f();
+      nvme_calc_idata_offset();
       BANK1_R5 = *pbVar6;
-      cVar1 = FUN_CODE_1b96();
+      cVar1 = usb_get_ep_config_indexed();
       FUN_CODE_1c43(cVar1 + DAT_INTMEM_3d);
     }
     else {
-      cVar1 = FUN_CODE_1b96();
+      cVar1 = usb_get_ep_config_indexed();
       bVar3 = cVar1 + DAT_INTMEM_3d & 0x1f;
       FUN_CODE_1b3f(DAT_INTMEM_3c + 0x4e);
       *pbVar6 = bVar3;
       FUN_CODE_1b3f(DAT_INTMEM_3c + 0x4e);
       if (*pbVar6 == 0) {
-        link_set_speed();
+        nvme_add_to_global_053a();
       }
       FUN_CODE_1b30(DAT_INTMEM_3c + 8);
       *pbVar6 = *pbVar6 | 0x80;
@@ -5678,7 +6151,7 @@ void FUN_CODE_2db7(void)
       DAT_EXTMEM_044d = 1;
     }
   }
-  FUN_CODE_1d1d();
+  usb_set_transfer_flag();
   return;
 }
 
@@ -5696,28 +6169,28 @@ void FUN_CODE_2f67(byte param_1)
 
 
 
-void FUN_CODE_2f80(void)
+void main_loop(void)
 
 {
   byte bVar1;
   byte bVar2;
   char cVar3;
   
-  DAT_EXTMEM_0a59 = 0;
-  FUN_CODE_5418(0xcc32);
-  FUN_CODE_04d0();
-  FUN_CODE_5284();
-  FUN_CODE_04b2();
-  FUN_CODE_4fb6();
-  FUN_CODE_0327();
-  bVar2 = DAT_EXTMEM_09f9;
+  G_LOOP_STATE = 0;
+  reg_set_bit_0(0xcc32);
+  handler_04d0_timer_link();
+  phy_config_link_params();
+  handler_04b2_reserved();
+  handler_4fb6();
+  handler_0327_usb_power_init();
+  bVar2 = G_EVENT_FLAGS;
   if ((bVar2 & 0x83) != 0) {
     if ((bVar2 & 0x81) != 0) {
-      FUN_CODE_0494();
+      handler_0494_event();
     }
-    FUN_CODE_0606();
-    FUN_CODE_0589();
-    FUN_CODE_0525();
+    handler_0606_error_state();
+    handler_0589_phy_config();
+    handler_0525_flash_cmd();
   }
   PX0 = 0;
   PX1 = 0;
@@ -5727,33 +6200,33 @@ void FUN_CODE_2f80(void)
   do {
     do {
       EA = 0;
-      bVar2 = DAT_EXTMEM_0ae2;
+      bVar2 = G_SYSTEM_STATE_0AE2;
       if ((bVar2 != 0) && (bVar2 != 0x10)) {
-        cVar3 = DAT_EXTMEM_0a59;
+        cVar3 = G_LOOP_STATE;
         if (cVar3 == '\0') {
           cVar3 = DAT_EXTMEM_0ae8;
-          if ((cVar3 == '\0') && (cVar3 = DAT_EXTMEM_09fa, cVar3 == '\x04')) {
-            DAT_EXTMEM_0a59 = 1;
+          if ((cVar3 == '\0') && (cVar3 = G_EVENT_CTRL_09FA, cVar3 == '\x04')) {
+            G_LOOP_STATE = 1;
             DAT_EXTMEM_0b39 = 0;
             UNK_EXTMEM_0002 = 0xff;
             FUN_CODE_04e9();
           }
           else {
-            DAT_EXTMEM_0a59 = 2;
+            G_LOOP_STATE = 2;
           }
         }
-        cVar3 = DAT_EXTMEM_0a59;
+        cVar3 = G_LOOP_STATE;
         if (((cVar3 == '\x01') && (FUN_CODE_0516(), bVar2 != 0)) && (FUN_CODE_0430(), bVar2 != 0)) {
-          DAT_EXTMEM_0a59 = 2;
-          DAT_EXTMEM_06e6 = 1;
+          G_LOOP_STATE = 2;
+          G_STATE_FLAG_06E6 = 1;
           FUN_CODE_045d();
         }
-        cVar3 = DAT_EXTMEM_0a59;
+        cVar3 = G_LOOP_STATE;
         if (cVar3 == '\x02') {
-          bVar2 = REG_POWER_STATUS;
+          bVar2 = REG_POWER_STATUS_92C2;
           bVar2 = bVar2 & 0x40;
           if (bVar2 != 0) {
-            bVar2 = DAT_EXTMEM_91c0;
+            bVar2 = REG_USB_PHY_CTRL_91C0;
             bVar2 = bVar2 & 2;
             if (bVar2 != 0) {
               FUN_CODE_0322();
@@ -5763,8 +6236,8 @@ void FUN_CODE_2f80(void)
       }
       EA = 1;
       FUN_CODE_0507();
-      bVar1 = DAT_EXTMEM_09f9;
-      if (((bVar1 & 0x83) != 0) && (cVar3 = DAT_EXTMEM_06ec, cVar3 != '\0')) {
+      bVar1 = G_EVENT_FLAGS;
+      if (((bVar1 & 0x83) != 0) && (cVar3 = G_MISC_FLAG_06EC, cVar3 != '\0')) {
         EA = 0;
         FUN_CODE_061f();
         cVar3 = DAT_EXTMEM_0ab6;
@@ -5794,10 +6267,10 @@ void FUN_CODE_2f80(void)
       cVar3 = FUN_CODE_541f();
       if (cVar3 != '\0') {
         EA = 0;
-        cVar3 = DAT_EXTMEM_0b41;
+        cVar3 = G_USB_STATE_0B41;
         if ((cVar3 != '\0') && (bVar1 = REG_TIMER1_CSR, (bVar1 >> 1 & 1) != 0)) {
           REG_TIMER1_CSR = 2;
-          FUN_CODE_04d5();
+          handler_04d5();
         }
         EA = 1;
       }
@@ -5844,7 +6317,7 @@ LAB_CODE_3101:
         FUN_CODE_3419();
       }
       else {
-        nvme_command_handler(0);
+        dma_store_to_0a7d(0);
       }
       FUN_CODE_043a();
     }
@@ -5854,12 +6327,152 @@ LAB_CODE_3101:
 
 
 
-void nvme_reset_controller(void)
+void timer1_check_and_ack(byte param_1)
+
+{
+  byte bVar1;
+  char cVar2;
+  
+  do {
+    bVar1 = REG_TIMER1_CSR;
+    if ((bVar1 >> 1 & 1) != 0) {
+      REG_TIMER1_CSR = 2;
+      handler_04d5();
+    }
+    do {
+      EA = 1;
+      do {
+        cVar2 = DAT_EXTMEM_0ae9;
+        if (cVar2 != '\x0f') {
+          EA = 0;
+          FUN_CODE_04e4();
+          EA = 1;
+        }
+        if (DAT_INTMEM_6a == '\v') {
+          EA = 0;
+          DAT_EXTMEM_0a5a = 0;
+          cVar2 = DAT_EXTMEM_0af8;
+          if (cVar2 == '\0') {
+            bVar1 = REG_TIMER2_CSR;
+            if ((bVar1 & 1) == 1) {
+              FUN_CODE_0516();
+              if ((param_1 != 0) && (FUN_CODE_0430(), param_1 != 0)) goto LAB_CODE_3101;
+            }
+            else {
+              bVar1 = REG_TIMER2_CSR;
+              if ((bVar1 >> 1 & 1) == 1) {
+                cVar2 = DAT_EXTMEM_044b;
+                if (cVar2 == '\0') {
+                  DAT_EXTMEM_044c = 1;
+                }
+                FUN_CODE_0430();
+                goto LAB_CODE_3101;
+              }
+              FUN_CODE_043a();
+              REG_TIMER2_CSR = 1;
+              DAT_EXTMEM_0b39 = 0;
+            }
+          }
+          else {
+LAB_CODE_3101:
+            DAT_EXTMEM_0a5a = 1;
+          }
+          cVar2 = DAT_EXTMEM_0a5a;
+          if (cVar2 != '\0') {
+            DAT_INTMEM_6a = '\0';
+            bVar1 = REG_USB_STATUS;
+            if ((bVar1 & 1) == 0) {
+              FUN_CODE_3419();
+            }
+            else {
+              dma_store_to_0a7d(0);
+            }
+            FUN_CODE_043a();
+          }
+          EA = 1;
+        }
+        EA = 0;
+        param_1 = G_SYSTEM_STATE_0AE2;
+        if ((param_1 != 0) && (param_1 != 0x10)) {
+          cVar2 = G_LOOP_STATE;
+          if (cVar2 == '\0') {
+            cVar2 = DAT_EXTMEM_0ae8;
+            if ((cVar2 == '\0') && (cVar2 = G_EVENT_CTRL_09FA, cVar2 == '\x04')) {
+              G_LOOP_STATE = 1;
+              DAT_EXTMEM_0b39 = 0;
+              UNK_EXTMEM_0002 = 0xff;
+              FUN_CODE_04e9();
+            }
+            else {
+              G_LOOP_STATE = 2;
+            }
+          }
+          cVar2 = G_LOOP_STATE;
+          if (((cVar2 == '\x01') && (FUN_CODE_0516(), param_1 != 0)) &&
+             (FUN_CODE_0430(), param_1 != 0)) {
+            G_LOOP_STATE = 2;
+            G_STATE_FLAG_06E6 = 1;
+            FUN_CODE_045d();
+          }
+          cVar2 = G_LOOP_STATE;
+          if (cVar2 == '\x02') {
+            param_1 = REG_POWER_STATUS_92C2;
+            param_1 = param_1 & 0x40;
+            if (param_1 != 0) {
+              param_1 = REG_USB_PHY_CTRL_91C0;
+              param_1 = param_1 & 2;
+              if (param_1 != 0) {
+                FUN_CODE_0322();
+              }
+            }
+          }
+        }
+        EA = 1;
+        FUN_CODE_0507();
+        bVar1 = G_EVENT_FLAGS;
+        if (((bVar1 & 0x83) != 0) && (cVar2 = G_MISC_FLAG_06EC, cVar2 != '\0')) {
+          EA = 0;
+          FUN_CODE_061f();
+          cVar2 = DAT_EXTMEM_0ab6;
+          if (cVar2 != '\0') {
+            FUN_CODE_0601();
+          }
+          EA = 1;
+        }
+        cVar2 = DAT_EXTMEM_07b7;
+        if (cVar2 != '\0') {
+          EA = 0;
+          FUN_CODE_052a();
+          EA = 1;
+        }
+        cVar2 = FUN_CODE_541f();
+        if (cVar2 != '\0') {
+          EA = 0;
+          FUN_CODE_0359();
+          EA = 1;
+        }
+        cVar2 = FUN_CODE_541f();
+        if (cVar2 != '\0') {
+          EA = 0;
+          FUN_CODE_480c();
+          EA = 1;
+        }
+        cVar2 = FUN_CODE_541f();
+      } while (cVar2 == '\0');
+      EA = 0;
+      cVar2 = G_USB_STATE_0B41;
+    } while (cVar2 == '\0');
+  } while( true );
+}
+
+
+
+void usb_set_transfer_active_flag(void)
 
 {
   byte bVar1;
   
-  DAT_EXTMEM_0af2 = 1;
+  G_TRANSFER_FLAG_0AF2 = 1;
   bVar1 = REG_USB_EP0_CONFIG;
   REG_USB_EP0_CONFIG = bVar1 & 0xfe | 1;
   return;
@@ -5888,11 +6501,11 @@ void nvme_check_completion(byte *param_1)
 
 
 
-void reg_clear_bit(void)
+void idata_store_dword(void)
 
 {
                     // WARNING: Subroutine does not return
-  reg_clear_bit();
+  idata_store_dword();
 }
 
 
@@ -5900,31 +6513,31 @@ void reg_clear_bit(void)
 byte FUN_CODE_313f(byte param_1,byte param_2,byte param_3,byte param_4)
 
 {
-  reg_write_byte();
+  idata_load_dword();
   return param_1 | param_2 | param_3 | param_4;
 }
 
 
 
-void nvme_queue_setup(void)
+void usb_copy_status_to_buffer(void)
 
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_911f;
+  uVar1 = REG_USB_STATUS_1F;
   REG_BUFFER_PTR_HIGH = uVar1;
-  uVar1 = DAT_EXTMEM_9120;
+  uVar1 = REG_USB_STATUS_20;
   REG_BUFFER_LENGTH_LOW = uVar1;
-  uVar1 = DAT_EXTMEM_9121;
+  uVar1 = REG_USB_STATUS_21;
   REG_BUFFER_STATUS = uVar1;
-  uVar1 = DAT_EXTMEM_9122;
+  uVar1 = REG_USB_STATUS_22;
   REG_BUFFER_LENGTH_HIGH = uVar1;
   return;
 }
 
 
 
-char FUN_CODE_3168(void)
+char usb_clear_idata_indexed(void)
 
 {
   *(undefined1 *)CONCAT11(-(((0x3d < DAT_INTMEM_38) << 7) >> 7),DAT_INTMEM_38 - 0x3e) = 0;
@@ -5943,13 +6556,13 @@ char FUN_CODE_3179(void)
 
 
 
-undefined1 FUN_CODE_3181(void)
+undefined1 usb_read_status_pair(void)
 
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_910d;
-  uVar1 = DAT_EXTMEM_910e;
+  uVar1 = REG_USB_STATUS_0D;
+  uVar1 = REG_USB_STATUS_0E;
   return uVar1;
 }
 
@@ -5969,13 +6582,13 @@ void nvme_process_cmd(char param_1)
 
 
 
-undefined1 FUN_CODE_31a5(void)
+undefined1 usb_read_transfer_params(void)
 
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_0afa;
-  uVar1 = DAT_EXTMEM_0afb;
+  uVar1 = G_TRANSFER_PARAMS_HI;
+  uVar1 = G_TRANSFER_PARAMS_LO;
   return uVar1;
 }
 
@@ -6128,7 +6741,7 @@ char usb_get_endpoint_config(char param_1)
 void FUN_CODE_322e(undefined1 param_1)
 
 {
-  reg_set_bit(9,0,0,param_1);
+  idata_load_dword_alt(9,0,0,param_1);
   reg_read_byte();
   return;
 }
@@ -6184,8 +6797,8 @@ char usb_convert_speed(void)
 void FUN_CODE_3267(void)
 
 {
-  DAT_EXTMEM_9093 = 2;
-  DAT_EXTMEM_9094 = 0x10;
+  REG_USB_EP_CFG1 = 2;
+  REG_USB_EP_CFG2 = 0x10;
   return;
 }
 
@@ -6269,7 +6882,7 @@ void nvme_io_handler(char param_1)
   
   if (DAT_INTMEM_6a != '\x02') {
 LAB_CODE_33ff:
-    nvme_reset_controller();
+    usb_set_transfer_active_flag();
     nvme_read_status();
     bVar2 = REG_USB_STATUS;
     if ((bVar2 & 1) != 0) {
@@ -6281,16 +6894,16 @@ LAB_CODE_33ff:
   cVar1 = UNK_EXTMEM_0002;
   if (cVar1 == -0x1d) {
 LAB_CODE_330b:
-    reg_write_byte(0x6b);
+    idata_load_dword(0x6b);
     uVar4 = BANK0_R7;
     uVar3 = BANK0_R6;
-    FUN_CODE_3181();
+    usb_read_status_pair();
     FUN_CODE_3279();
     BANK0_R6 = uVar3;
     BANK0_R7 = uVar4;
     FUN_CODE_0cab();
                     // WARNING: Subroutine does not return
-    reg_clear_bit(0x6b);
+    idata_store_dword(0x6b);
   }
   if (cVar1 != -7) {
     if (cVar1 == -5) goto LAB_CODE_330b;
@@ -6301,7 +6914,7 @@ LAB_CODE_330b:
     FUN_CODE_3280();
     FUN_CODE_04a3();
     if (param_1 == '\0') {
-      usb_check_buffer_ready(0,3,3);
+      dma_setup_transfer(0,3,3);
     }
     bVar2 = REG_USB_STATUS;
     if ((bVar2 & 1) == 0) {
@@ -6314,16 +6927,16 @@ LAB_CODE_330b:
     DAT_INTMEM_6a = 5;
     return;
   }
-  reg_write_byte(0x6b);
+  idata_load_dword(0x6b);
   uVar4 = BANK0_R7;
   uVar3 = BANK0_R6;
-  FUN_CODE_3181();
+  usb_read_status_pair();
   FUN_CODE_3279();
   BANK0_R6 = uVar3;
   BANK0_R7 = uVar4;
   FUN_CODE_0cab();
                     // WARNING: Subroutine does not return
-  reg_clear_bit(0x6b);
+  idata_store_dword(0x6b);
 }
 
 
@@ -6337,7 +6950,7 @@ void FUN_CODE_3419(char param_1)
   undefined1 uVar4;
   char *pcVar5;
   
-  cVar1 = DAT_EXTMEM_0b41;
+  cVar1 = G_USB_STATE_0B41;
   if (cVar1 != '\0') {
     param_1 = '\x01';
     parse_descriptor();
@@ -6347,7 +6960,7 @@ void FUN_CODE_3419(char param_1)
     DAT_EXTMEM_053b = 0;
     DAT_EXTMEM_00c2 = 0;
     DAT_EXTMEM_0517 = 0;
-    DAT_EXTMEM_014e = 0;
+    G_USB_INDEX_COUNTER = 0;
     DAT_EXTMEM_00e5 = 0;
     DAT_EXTMEM_ce88 = 0;
     do {
@@ -6357,55 +6970,55 @@ void FUN_CODE_3419(char param_1)
     if ((((bVar2 >> 1 & 1) == 0) && (bVar2 = DAT_EXTMEM_ce86, (bVar2 >> 4 & 1) == 0)) &&
        (cVar1 = DAT_EXTMEM_0af8, cVar1 == '\x01')) {
       FUN_CODE_4c98();
-      DAT_EXTMEM_053a = 0;
+      G_NVME_PARAM_053A = 0;
       uVar4 = DAT_EXTMEM_ce55;
       DAT_EXTMEM_009f = uVar4;
       uVar4 = DAT_EXTMEM_009f;
       FUN_CODE_5359();
-      DAT_EXTMEM_0b00 = uVar4;
+      G_USB_PARAM_0B00 = uVar4;
       DAT_EXTMEM_012b = uVar4;
       bVar2 = DAT_EXTMEM_0aff;
       DAT_INTMEM_39 = DAT_EXTMEM_009f;
       cVar1 = (DAT_INTMEM_39 < bVar2 + 1) << 7;
       if (cVar1 < '\0') {
-        REG_SCSI_CTRL = 0;
+        G_SCSI_CTRL = 0;
       }
       else {
-        REG_SCSI_CTRL = DAT_INTMEM_39 - (bVar2 - (cVar1 >> 7));
-        DAT_EXTMEM_053a = 0x20;
+        G_SCSI_CTRL = DAT_INTMEM_39 - (bVar2 - (cVar1 >> 7));
+        G_NVME_PARAM_053A = 0x20;
         DAT_INTMEM_39 = bVar2;
       }
       DAT_EXTMEM_ce36 = 0;
       for (DAT_INTMEM_38 = 0; DAT_INTMEM_38 < DAT_INTMEM_39; DAT_INTMEM_38 = DAT_INTMEM_38 + 1) {
         FUN_CODE_3212(DAT_INTMEM_38 - DAT_INTMEM_39,0xce8a);
-        bVar2 = DAT_EXTMEM_0b00;
+        bVar2 = G_USB_PARAM_0B00;
         bVar3 = DAT_EXTMEM_ce01;
         DAT_EXTMEM_ce01 = bVar2 | bVar3 & 0xc0;
-        uVar4 = REG_SYS_STATUS_SECONDARY;
-        pcVar5 = &REG_EP_CONFIG_ARRAY;
-        FUN_CODE_0dd1(uVar4,0x14);
+        uVar4 = G_SYS_STATUS_SECONDARY;
+        pcVar5 = &G_EP_CONFIG_ARRAY;
+        mul_add_index(uVar4,0x14);
         DAT_INTMEM_3a = DAT_INTMEM_38 * *pcVar5;
         DAT_EXTMEM_ce3a = DAT_INTMEM_3a;
         DAT_EXTMEM_ce00 = 3;
         do {
           cVar1 = DAT_EXTMEM_ce00;
         } while (cVar1 != '\0');
-        cVar1 = DAT_EXTMEM_0b00;
-        DAT_EXTMEM_0b00 = cVar1 + 1U & 0x1f;
+        cVar1 = G_USB_PARAM_0B00;
+        G_USB_PARAM_0B00 = cVar1 + 1U & 0x1f;
         bVar2 = DAT_EXTMEM_ce89;
         if ((bVar2 >> 2 & 1) != 1) {
-          uVar4 = DAT_EXTMEM_0b00;
+          uVar4 = G_USB_PARAM_0B00;
           power_check_status(uVar4);
         }
       }
       DAT_EXTMEM_0b01 = 1;
       DAT_EXTMEM_07e8 = 1;
-      DAT_EXTMEM_0b2e = 1;
-      DAT_EXTMEM_06e6 = 1;
+      G_USB_TRANSFER_FLAG = 1;
+      G_STATE_FLAG_06E6 = 1;
       DAT_EXTMEM_0b2f = 0;
       UNK_EXTMEM_0001 = 0;
-      nvme_queue_setup();
-      DAT_EXTMEM_d80c = 0;
+      usb_copy_status_to_buffer();
+      REG_BUFFER_XFER_START = 0;
       DAT_INTMEM_6f = 0;
       DAT_INTMEM_70 = 0;
       DAT_INTMEM_71 = 0;
@@ -6427,7 +7040,7 @@ void FUN_CODE_3419(char param_1)
       FUN_CODE_5112();
       return;
     }
-    nvme_reset_controller();
+    usb_set_transfer_active_flag();
     nvme_read_status();
   }
   return;
@@ -6446,12 +7059,12 @@ void FUN_CODE_3578(undefined1 param_1)
   byte *pbVar6;
   undefined1 *puVar7;
   
-  DAT_EXTMEM_0aa1 = param_1;
-  cVar4 = DAT_EXTMEM_07ef;
+  G_LOG_PROCESSED_INDEX = param_1;
+  cVar4 = G_SYS_FLAGS_07EF;
   if (cVar4 == '\0') {
-    cVar4 = FUN_CODE_1743();
+    cVar4 = usb_get_sys_status_offset();
     pcVar5 = (char *)0x5a6;
-    DAT_EXTMEM_05a6 = cVar4;
+    G_PCIE_TXN_COUNT_LO = cVar4;
     protocol_dispatch();
     FUN_CODE_043f();
     if ((cVar4 != '\0') && (FUN_CODE_1579(), *pcVar5 == '\x04')) {
@@ -6464,7 +7077,7 @@ void FUN_CODE_3578(undefined1 param_1)
       FUN_CODE_3bcd();
       if (cVar4 != '\0') {
 LAB_CODE_360f:
-        transfer_func_1787();
+        usb_set_done_flag();
         puVar7 = &DAT_EXTMEM_044b;
         DAT_EXTMEM_044b = 0;
         FUN_CODE_1579();
@@ -6473,14 +7086,14 @@ LAB_CODE_360f:
         DAT_EXTMEM_07eb = 0;
         return;
       }
-      cVar4 = DAT_EXTMEM_0aa1;
+      cVar4 = G_LOG_PROCESSED_INDEX;
       if (cVar4 != '\0') {
-        uVar2 = DAT_EXTMEM_05a6;
+        uVar2 = G_PCIE_TXN_COUNT_LO;
         pbVar6 = &DAT_EXTMEM_05d4;
-        FUN_CODE_0dd1(uVar2,0x22);
+        mul_add_index(uVar2,0x22);
         if ((*pbVar6 >> 2 & 1) == 0) {
           FUN_CODE_0426(0x14);
-          reg_test_bit(0xb220,0,0x46,0x40,1);
+          xdata_store_dword(0xb220,0,0x46,0x40,1);
           FUN_CODE_0453();
           do {
             cVar4 = '\x04';
@@ -6494,8 +7107,8 @@ LAB_CODE_360f:
                 bVar3 = DAT_EXTMEM_b455;
               } while ((bVar3 & 2) == 0);
               DAT_EXTMEM_b455 = 2;
-              puVar7 = &DAT_EXTMEM_0aa1;
-              cVar4 = DAT_EXTMEM_0aa1;
+              puVar7 = &G_LOG_PROCESSED_INDEX;
+              cVar4 = G_LOG_PROCESSED_INDEX;
               if (cVar4 != '\x03') {
                 FUN_CODE_0449(0x19);
                 interface_ready_check(1,0x2b,2);
@@ -6506,10 +7119,10 @@ LAB_CODE_360f:
                 }
                 DAT_EXTMEM_0aa2 = bVar1;
                 REG_PCIE_STATUS = 8;
-                puVar7 = &DAT_EXTMEM_0aa1;
-                cVar4 = DAT_EXTMEM_0aa1;
+                puVar7 = &G_LOG_PROCESSED_INDEX;
+                cVar4 = G_LOG_PROCESSED_INDEX;
                 if (cVar4 != '\x01') {
-                  transfer_func_1787();
+                  usb_set_done_flag();
                   DAT_EXTMEM_044b = 0;
                   puVar7 = (undefined1 *)0xaa2;
                   cVar4 = DAT_EXTMEM_0aa2;
@@ -6570,9 +7183,9 @@ void FUN_CODE_36ab(void)
     DAT_EXTMEM_ce44 = bVar2 & 0xf | cVar4 << 4;
     bVar2 = DAT_EXTMEM_ce45;
     DAT_EXTMEM_ce45 = bVar3 | bVar2 & 0xf0;
-    reg_modify_bits(FUN_CODE_0543);
-    reg_test_bit(0xce76);
-    reg_modify_bits(0x53f);
+    xdata_load_dword(FUN_CODE_0543);
+    xdata_store_dword(0xce76);
+    xdata_load_dword(0x53f);
     DAT_EXTMEM_ce75 = bVar3;
     uVar1 = DAT_EXTMEM_053d;
     DAT_EXTMEM_ce70 = uVar1;
@@ -6601,9 +7214,9 @@ void FUN_CODE_36ab(void)
       bVar2 = bVar2 << 4;
       bVar3 = DAT_EXTMEM_ce46;
       DAT_EXTMEM_ce46 = bVar3 & 0xf | bVar2;
-      reg_modify_bits(FUN_CODE_0557);
-      reg_test_bit(0xce7b);
-      reg_modify_bits(0x553);
+      xdata_load_dword(FUN_CODE_0557);
+      xdata_store_dword(0xce7b);
+      xdata_load_dword(0x553);
       DAT_EXTMEM_ce7a = bVar2;
       uVar1 = DAT_EXTMEM_0551;
       DAT_EXTMEM_ce71 = uVar1;
@@ -6682,27 +7295,27 @@ void FUN_CODE_39e4(void)
   undefined1 *puVar6;
   
   DAT_EXTMEM_044b = 0;
-  REG_SYSTEM_CTRL_0000 = 0;
-  pbVar4 = &DAT_EXTMEM_c8d8;
+  G_SYSTEM_CTRL = 0;
+  pbVar4 = &REG_DMA_STATUS2;
   transfer_func_16f6();
   *pbVar4 = *pbVar4 & 0xfe;
   pbVar4 = &DAT_EXTMEM_c8d7;
   DAT_EXTMEM_c8d7 = 0;
-  transfer_func_16f3();
+  dma_clear_status();
   *pbVar4 = *pbVar4 & 0xfe;
   DAT_EXTMEM_c8d5 = 0;
   DAT_EXTMEM_0579 = 0;
   pcVar5 = (code *)0x464;
-  REG_SYS_STATUS_PRIMARY = 0;
+  G_SYS_STATUS_PRIMARY = 0;
   bVar1 = 0;
   transfer_func_17e3(0,0xa0,1);
-  FUN_CODE_4a57(1);
+  dma_config_channel(1);
   transfer_func_17e3(0xa0,0);
-  FUN_CODE_4a57(0);
-  transfer_func_175d(3);
-  FUN_CODE_4a57(3);
-  transfer_func_175d(0,2);
-  FUN_CODE_4a57(2);
+  dma_config_channel(0);
+  dma_init_channel_b8(3);
+  dma_config_channel(3);
+  dma_init_channel_b8(0,2);
+  dma_config_channel(2);
   bVar2 = 0;
   do {
     FUN_CODE_1660();
@@ -6719,16 +7332,16 @@ void FUN_CODE_39e4(void)
     bVar2 = bVar2 + 1;
     cVar3 = (bVar2 < 4) << 7;
   } while (bVar2 != 4);
-  transfer_func_1795();
+  dma_clear_state_counters();
   while( true ) {
-    FUN_CODE_172c();
+    dma_check_state_counter();
     if (-1 < cVar3) break;
     cVar3 = (0x81 < bVar1) << 7;
     transfer_func_16c3(5,bVar1 + 0x7e,1);
   }
-  transfer_func_1795();
+  dma_clear_state_counters();
   while( true ) {
-    FUN_CODE_172c();
+    dma_check_state_counter();
     if (-1 < cVar3) break;
     cVar3 = (0xc3 < bVar1) << 7;
     transfer_func_16c3(5,bVar1 + 0x3c,1);
@@ -6746,8 +7359,8 @@ void FUN_CODE_39e4(void)
     *puVar6 = 0;
     cVar3 = cVar3 + '\x01';
   } while (cVar3 != '\x04');
-  transfer_func_1795();
-  while (bVar1 = DAT_EXTMEM_0aa3, puVar6 = &DAT_EXTMEM_0aa4, bVar2 = DAT_EXTMEM_0aa4,
+  dma_clear_state_counters();
+  while (bVar1 = G_STATE_COUNTER_HI, puVar6 = &G_STATE_COUNTER_LO, bVar2 = G_STATE_COUNTER_LO,
         bVar1 < (byte)-(((bVar2 < 0x20) << 7) >> 7)) {
     FUN_CODE_169a();
     *puVar6 = 0xff;
@@ -6759,7 +7372,7 @@ void FUN_CODE_39e4(void)
 
 
 
-void FUN_CODE_3adb(undefined1 param_1)
+void handler_3adb(undefined1 param_1)
 
 {
   byte bVar1;
@@ -6774,8 +7387,8 @@ void FUN_CODE_3adb(undefined1 param_1)
   byte *pbVar10;
   char *pcVar11;
   
-  puVar8 = &DAT_EXTMEM_0aaa;
-  DAT_EXTMEM_0aaa = param_1;
+  puVar8 = &G_FLASH_RESET_0AAA;
+  G_FLASH_RESET_0AAA = param_1;
   FUN_CODE_16a2();
   puVar9 = &DAT_EXTMEM_0aac;
   FUN_CODE_16b7(*puVar8);
@@ -6786,7 +7399,7 @@ void FUN_CODE_3adb(undefined1 param_1)
   REG_DMA_STATUS = bVar7 & 0xfb;
   bVar7 = DAT_EXTMEM_0aac;
   bVar5 = (byte)((ushort)bVar7 * 0x10);
-  cVar3 = DAT_EXTMEM_0aaa;
+  cVar3 = G_FLASH_RESET_0AAA;
   if (cVar3 == '\0') {
     bVar1 = 0;
   }
@@ -6800,8 +7413,8 @@ void FUN_CODE_3adb(undefined1 param_1)
   if (bVar7 != (bVar5 & 1)) {
     transfer_func_17ed();
     cVar6 = FUN_CODE_15af();
-    pbVar10 = &DAT_EXTMEM_0aaa;
-    cVar3 = DAT_EXTMEM_0aaa;
+    pbVar10 = &G_FLASH_RESET_0AAA;
+    cVar3 = G_FLASH_RESET_0AAA;
     cVar2 = '\0';
     if (cVar3 != '\0') {
       cVar2 = '\x04';
@@ -6812,18 +7425,18 @@ void FUN_CODE_3adb(undefined1 param_1)
     transfer_func_17ed();
     bVar7 = FUN_CODE_15af();
     bVar7 = bVar7 >> 1 & 7;
-    FUN_CODE_176b(DAT_INTMEM_54);
+    usb_calc_queue_addr(DAT_INTMEM_54);
     *pbVar10 = bVar7;
                     // WARNING: Subroutine does not return
     flash_func_0bc8();
   }
-  transfer_func_16f3();
-  pcVar11 = &DAT_EXTMEM_0aaa;
-  uVar4 = DAT_EXTMEM_0aaa;
+  dma_clear_status();
+  pcVar11 = &G_FLASH_RESET_0AAA;
+  uVar4 = G_FLASH_RESET_0AAA;
   FUN_CODE_16a4(uVar4);
   cVar3 = DAT_EXTMEM_0aac;
   if (cVar3 != *pcVar11) {
-    pcVar11 = &DAT_EXTMEM_0aaa;
+    pcVar11 = &G_FLASH_RESET_0AAA;
     FUN_CODE_16a2();
     *pcVar11 = cVar3;
     puVar8 = &DAT_EXTMEM_0aab;
@@ -6846,22 +7459,22 @@ undefined1 FUN_CODE_3bcd(char param_1,undefined1 param_2)
   char in_PSW;
   undefined1 *puVar5;
   
-  DAT_EXTMEM_0aa3 = param_2;
+  G_STATE_COUNTER_HI = param_2;
   uVar1 = 1;
   FUN_CODE_5359(1);
   cVar2 = dma_complex_transfer(uVar1,0xaa4);
   transfer_func_161a(cVar2 + (-0x60 - (in_PSW >> 7)));
-  uVar1 = DAT_EXTMEM_0aa4;
+  uVar1 = G_STATE_COUNTER_LO;
   DAT_EXTMEM_c8d7 = uVar1;
-  FUN_CODE_16ff(0xaa3);
+  dma_reg_wait_bit(0xaa3);
   cVar2 = FUN_CODE_1564();
   FUN_CODE_1804(cVar2 + '\x03');
-  bVar3 = DAT_EXTMEM_0aa3;
+  bVar3 = G_STATE_COUNTER_HI;
   if (bVar3 == 0) {
     uVar1 = FUN_CODE_15dc();
     bVar3 = command_get_pending(uVar1);
                     // WARNING: Subroutine does not return
-    phy_link_init(uVar1,bVar3 + 4,param_1 - (((0xfb < bVar3) << 7) >> 7));
+    write_xdata_reg(uVar1,bVar3 + 4,param_1 - (((0xfb < bVar3) << 7) >> 7));
   }
   cVar2 = (bVar3 < 9) << 7;
   if (bVar3 == 9) {
@@ -6870,12 +7483,12 @@ undefined1 FUN_CODE_3bcd(char param_1,undefined1 param_2)
     FUN_CODE_1564(uVar1,bVar3 + 4,param_1 - (((0xfb < bVar3) << 7) >> 7));
     FUN_CODE_17fd();
                     // WARNING: Subroutine does not return
-    phy_link_init(4);
+    write_xdata_reg(4);
   }
-  bVar3 = DAT_EXTMEM_c8d8;
-  DAT_EXTMEM_c8d8 = bVar3 & 0xfe;
-  puVar5 = &REG_SYS_STATUS_PRIMARY;
-  uVar1 = REG_SYS_STATUS_PRIMARY;
+  bVar3 = REG_DMA_STATUS2;
+  REG_DMA_STATUS2 = bVar3 & 0xfe;
+  puVar5 = &G_SYS_STATUS_PRIMARY;
+  uVar1 = G_SYS_STATUS_PRIMARY;
   FUN_CODE_16e9(uVar1);
   power_check_status(*puVar5);
   DAT_EXTMEM_00e2 = 0;
@@ -6886,19 +7499,19 @@ undefined1 FUN_CODE_3bcd(char param_1,undefined1 param_2)
   DAT_EXTMEM_04f7 = 0;
   DAT_EXTMEM_0aa5 = 0x80;
   do {
-    cVar4 = REG_SYS_STATUS_PRIMARY;
+    cVar4 = G_SYS_STATUS_PRIMARY;
     uVar1 = 2;
     if (cVar4 != '\0') {
       uVar1 = 8;
     }
     FUN_CODE_4977(uVar1);
     if (cVar4 != '\0') {
-      transfer_func_1787();
+      usb_set_done_flag();
       goto LAB_CODE_3ca0;
     }
-    cVar2 = REG_SYS_STATUS_PRIMARY;
+    cVar2 = G_SYS_STATUS_PRIMARY;
     if (cVar2 == '\0') {
-      FUN_CODE_2608();
+      handler_2608();
     }
     cVar4 = DAT_EXTMEM_00e2;
     cVar2 = (cVar4 == '\0') << 7;
@@ -6909,7 +7522,7 @@ undefined1 FUN_CODE_3bcd(char param_1,undefined1 param_2)
   }
 LAB_CODE_3ca0:
   cVar4 = FUN_CODE_16d3(0xaa4);
-  FUN_CODE_4a57(0,0x40,cVar4 + (-0x60 - (cVar2 >> 7)),0);
+  dma_config_channel(0,0x40,cVar4 + (-0x60 - (cVar2 >> 7)),0);
   uVar1 = DAT_EXTMEM_0aa5;
   return uVar1;
 }
@@ -7031,7 +7644,7 @@ void FUN_CODE_3da1(char param_1,undefined1 param_2)
   short sVar8;
   
   pcVar5 = &DAT_CODE_0a7d;
-  DAT_EXTMEM_0a7d = param_2;
+  G_EP_DISPATCH_VAL3 = param_2;
   bVar3 = FUN_CODE_1c30(2);
   puVar6 = &DAT_EXTMEM_0007;
   uVar2 = BANK0_R7;
@@ -7045,29 +7658,29 @@ void FUN_CODE_3da1(char param_1,undefined1 param_2)
   if (cVar4 != '\0') {
     FUN_CODE_1c7e();
     uVar2 = BANK0_R4;
-    FUN_CODE_1bae();
+    usb_get_idata_0x12_field();
     BANK0_R0 = uVar2;
     usb_func_1b60();
     param_1 = '\x03';
     do {
       param_1 = param_1 + -1;
     } while (param_1 != '\0');
-    FUN_CODE_1d32();
+    nvme_store_idata_16();
   }
   uVar2 = 1;
   FUN_CODE_5359();
   DAT_INTMEM_3b = 0;
   DAT_INTMEM_3c = uVar2;
   do {
-    pbVar7 = &DAT_EXTMEM_0a7d;
+    pbVar7 = &G_EP_DISPATCH_VAL3;
     bVar3 = FUN_CODE_1b8d();
     if (bVar3 <= DAT_INTMEM_3b) {
 LAB_CODE_3e6e:
       uVar2 = DAT_EXTMEM_0456;
       power_check_status(uVar2);
-      pcVar5 = &DAT_EXTMEM_0a7d;
-      uVar2 = DAT_EXTMEM_0a7d;
-      FUN_CODE_1cb7(uVar2);
+      pcVar5 = &G_EP_DISPATCH_VAL3;
+      uVar2 = G_EP_DISPATCH_VAL3;
+      nvme_calc_addr_012b(uVar2);
       *pcVar5 = *pcVar5 + '\x01';
       return;
     }
@@ -7080,22 +7693,22 @@ LAB_CODE_3e6e:
         puVar1 = (undefined1 *)(param_1 + '\x01');
       }
       else {
-        FUN_CODE_1ba5();
+        usb_read_buf_addr_pair();
         puVar1 = &BANK3_R0;
       }
       *puVar1 = BANK0_R6;
       puVar1['\x01'] = BANK0_R7;
-      FUN_CODE_1cc1();
+      nvme_set_ep_queue_ctrl_84();
       *(undefined1 *)(sVar8 + 1) = DAT_INTMEM_3d;
       *(undefined1 *)(sVar8 + 2) = 1;
-      usb_func_1bf6(DAT_INTMEM_3c);
-      uVar2 = DAT_EXTMEM_0a7d;
+      nvme_calc_buffer_offset(DAT_INTMEM_3c);
+      uVar2 = G_EP_DISPATCH_VAL3;
       usb_func_1ad1(uVar2);
-      FUN_CODE_1d43();
+      usb_init_pcie_txn_state();
       goto LAB_CODE_3e6e;
     }
-    FUN_CODE_1ba5();
-    FUN_CODE_1c6d();
+    usb_read_buf_addr_pair();
+    nvme_subtract_idata_16();
     cVar4 = FUN_CODE_1b8d();
     if (cVar4 - 1U != DAT_INTMEM_3b) {
       FUN_CODE_4f37();
@@ -7126,11 +7739,12 @@ void nvme_util_check_command_ready(byte param_1)
         DAT_INTMEM_39) {
       while (pcVar4 = (char *)CONCAT11(-(((0x3d < DAT_INTMEM_38) << 7) >> 7),DAT_INTMEM_38 - 0x3e),
             *pcVar4 != DAT_INTMEM_39) {
-        bVar2 = DAT_EXTMEM_cef3;
+        bVar2 = REG_CPU_LINK_CEF3;
         if (((bVar2 >> 3 & 1) == 1) ||
-           ((cVar1 = DAT_EXTMEM_05ac, cVar1 != '\0' && (cVar1 = DAT_EXTMEM_cef2, cVar1 < '\0')))) {
-          DAT_EXTMEM_cef3 = 8;
-          FUN_CODE_2608();
+           ((cVar1 = DAT_EXTMEM_05ac, cVar1 != '\0' && (cVar1 = REG_CPU_LINK_CEF2, cVar1 < '\0'))))
+        {
+          REG_CPU_LINK_CEF3 = 8;
+          handler_2608();
         }
         else {
           FUN_CODE_0395();
@@ -7141,13 +7755,13 @@ void nvme_util_check_command_ready(byte param_1)
       }
       FUN_CODE_3179();
       if (*pcVar4 != '\0') {
-        usb_check_buffer_ready(3,0x47,0xb);
+        dma_setup_transfer(3,0x47,0xb);
       }
       FUN_CODE_3179();
       if (*pcVar4 == '\0') {
         bVar2 = DAT_EXTMEM_c508;
         DAT_EXTMEM_c508 = bVar2 & 0xc0 | DAT_INTMEM_38;
-        DAT_EXTMEM_0af5 = DAT_INTMEM_38;
+        G_EP_DISPATCH_OFFSET = DAT_INTMEM_38;
         FUN_CODE_53a7();
       }
       else {
@@ -7164,7 +7778,7 @@ void nvme_util_check_command_ready(byte param_1)
     param_1 = DAT_INTMEM_38;
     FUN_CODE_45d0();
     DAT_EXTMEM_c512 = 0xff;
-    bVar2 = DAT_EXTMEM_c520;
+    bVar2 = REG_NVME_LINK_STATUS;
   } while ((bVar2 & 1) != 0);
   return;
 }
@@ -7180,10 +7794,10 @@ void FUN_CODE_3f4a(char param_1)
   undefined1 uVar4;
   char cVar5;
   
-  cVar5 = DAT_EXTMEM_07ef;
+  cVar5 = G_SYS_FLAGS_07EF;
   if (cVar5 == '\0') {
     FUN_CODE_1c5d(0x464);
-    DAT_EXTMEM_07e5 = 0;
+    G_TRANSFER_ACTIVE = 0;
     FUN_CODE_1c4a();
     cVar5 = UNK_EXTMEM_0002;
     if (cVar5 == '\0') {
@@ -7204,7 +7818,7 @@ LAB_CODE_3f82:
       }
       cVar5 = FUN_CODE_1c90();
       if (cVar5 == '\x04') {
-        cVar1 = DAT_EXTMEM_06e5;
+        cVar1 = G_MAX_LOG_ENTRIES;
         cVar5 = DAT_EXTMEM_044b;
         if ((cVar5 == cVar1) && (cVar5 = DAT_EXTMEM_0af8, cVar5 == '\0')) {
           bVar2 = DAT_EXTMEM_b480;
@@ -7222,7 +7836,7 @@ LAB_CODE_3f82:
       cVar5 = DAT_EXTMEM_06e8;
       if ((cVar5 == '\0') &&
          ((FUN_CODE_043f(), param_1 == '\0' ||
-          (cVar5 = REG_SYS_STATUS_PRIMARY,
+          (cVar5 = G_SYS_STATUS_PRIMARY,
           *(char *)CONCAT11('\x05' - (((0x81U < (byte)(cVar5 * '\n')) << 7) >> 7),
                             cVar5 * '\n' + 0x7e) == '\x0f')))) goto LAB_CODE_3fda;
       cVar5 = DAT_EXTMEM_044c;
@@ -7240,7 +7854,7 @@ LAB_CODE_3fda:
     uVar3 = 0;
     uVar4 = 0x3a;
   }
-  usb_check_buffer_ready(uVar3,uVar4,2);
+  dma_setup_transfer(uVar3,uVar4,2);
   return;
 }
 
@@ -7257,22 +7871,22 @@ void FUN_CODE_4013(undefined1 *param_1)
   
   uVar3 = FUN_CODE_3298();
   *param_1 = uVar3;
-  FUN_CODE_31a5();
+  usb_read_transfer_params();
   FUN_CODE_322e();
   if (-1 < in_PSW) {
-    reg_write_byte(9);
+    idata_load_dword(9);
     uVar2 = BANK0_R7;
     uVar3 = BANK0_R6;
-    uVar4 = FUN_CODE_31a5();
+    uVar4 = usb_read_transfer_params();
     uVar1 = BANK0_R6;
     BANK0_R6 = uVar3;
     BANK0_R7 = uVar2;
     FUN_CODE_0cab(0,0,uVar1,uVar4);
                     // WARNING: Subroutine does not return
-    reg_clear_bit(9);
+    idata_store_dword(9);
   }
                     // WARNING: Subroutine does not return
-  reg_clear_bit(9,0,0,0,0);
+  idata_store_dword(9,0,0,0,0);
 }
 
 
@@ -7288,7 +7902,7 @@ void FUN_CODE_4042(undefined1 param_1,undefined1 param_2)
   byte bVar6;
   byte *pbVar7;
   
-  flash_func_0c64(param_1,param_2);
+  flash_add_to_xdata16(param_1,param_2);
   bVar2 = DAT_EXTMEM_0afc;
   cVar4 = bVar2 - 0x10;
   if (0xf < bVar2) {
@@ -7312,11 +7926,11 @@ void FUN_CODE_4042(undefined1 param_1,undefined1 param_2)
   else {
     uVar5 = 0x80;
   }
-  DAT_EXTMEM_0a7d = uVar5;
+  G_EP_DISPATCH_VAL3 = uVar5;
   DAT_EXTMEM_0a7e = 0;
   uVar5 = DAT_EXTMEM_0afc;
   uVar1 = DAT_EXTMEM_0afd;
-  flash_func_0c64(uVar5,&DAT_CODE_0a7d,uVar1);
+  flash_add_to_xdata16(uVar5,&DAT_CODE_0a7d,uVar1);
   pbVar7 = &DAT_EXTMEM_0afe;
   bVar2 = DAT_EXTMEM_0afe;
   bVar6 = FUN_CODE_3298();
@@ -7324,8 +7938,8 @@ void FUN_CODE_4042(undefined1 param_1,undefined1 param_2)
   cVar3 = '\0';
   cVar4 = '\0';
   while( true ) {
-    bVar2 = DAT_EXTMEM_0afb;
-    bVar6 = DAT_EXTMEM_0afa;
+    bVar2 = G_TRANSFER_PARAMS_LO;
+    bVar6 = G_TRANSFER_PARAMS_HI;
     bVar2 = cVar4 - (((bVar2 < cVar3 + 1U) << 7) >> 7);
     if (bVar6 < bVar2) break;
     uVar5 = DAT_EXTMEM_0a7e;
@@ -7354,7 +7968,7 @@ void FUN_CODE_40d9(void)
   
   if (DAT_INTMEM_6a == '\t') {
     pcVar6 = s_https___support_microsoft_com_en_CODE_06cb + 0x1b;
-    DAT_EXTMEM_06e6 = 1;
+    G_STATE_FLAG_06E6 = 1;
     cVar4 = BANK1_R5;
     cVar5 = FUN_CODE_1b0b(BANK1_R5 + 'q',BANK1_R5);
     if (cVar5 == '\0') {
@@ -7374,12 +7988,12 @@ void FUN_CODE_40d9(void)
     if (DAT_INTMEM_6a != '\n') {
       if (DAT_INTMEM_6a == '\x01') {
         FUN_CODE_5321(1);
-        link_start_training();
+        usb_ep_config_bulk();
         return;
       }
       if (DAT_INTMEM_6a == '\x02') {
         FUN_CODE_5321(0);
-        link_check_training();
+        usb_ep_config_int();
         return;
       }
       if (DAT_INTMEM_6a == '\x03') {
@@ -7425,7 +8039,7 @@ void FUN_CODE_40d9(void)
       *puVar7 = 0xf4;
     }
   }
-  FUN_CODE_1d1d();
+  usb_set_transfer_flag();
   return;
 }
 
@@ -7448,7 +8062,7 @@ void FUN_CODE_419d(undefined1 param_1)
   bVar3 = DAT_EXTMEM_0052;
   DAT_EXTMEM_0052 = bVar3 | 0x10;
   cVar1 = usb_event_handler();
-  uVar2 = usb_start_transfer(cVar1 + '\x04');
+  uVar2 = usb_setup_endpoint(cVar1 + '\x04');
   DAT_EXTMEM_0053 = uVar2;
   DAT_EXTMEM_0054 = 0;
   bVar3 = reg_poll(uVar2);
@@ -7476,126 +8090,136 @@ void FUN_CODE_425f(undefined1 param_1)
   }
   else {
     if (cVar2 != '\x02') {
-      DAT_EXTMEM_0afa = 0;
-      DAT_EXTMEM_0afb = 0x40;
+      G_TRANSFER_PARAMS_HI = 0;
+      G_TRANSFER_PARAMS_LO = 0x40;
       goto LAB_CODE_4297;
     }
     uVar1 = 4;
   }
-  DAT_EXTMEM_0afa = uVar1;
-  DAT_EXTMEM_0afb = 0;
+  G_TRANSFER_PARAMS_HI = uVar1;
+  G_TRANSFER_PARAMS_LO = 0;
 LAB_CODE_4297:
-  reg_write_byte(9);
-  reg_set_bit(0x6b);
+  idata_load_dword(9);
+  idata_load_dword_alt(0x6b);
   cVar2 = '\0';
   reg_read_byte();
   if (cVar2 < '\0') {
-    reg_write_byte(0x6b);
+    idata_load_dword(0x6b);
     uVar1 = 9;
   }
   else {
-    reg_set_bit(9);
+    idata_load_dword_alt(9);
     uVar1 = BANK0_R0;
-    reg_write_byte(0x6b);
+    idata_load_dword(0x6b);
     BANK0_R0 = uVar1;
     FUN_CODE_0cab();
     uVar1 = 0x6f;
   }
                     // WARNING: Subroutine does not return
-  reg_clear_bit(uVar1);
+  idata_store_dword(uVar1);
 }
 
 
 
-void FUN_CODE_431a(void)
+void main(void)
+
+{
+  undefined1 *puVar1;
+  
+  puVar1 = (undefined1 *)0xff;
+  do {
+    *puVar1 = 0;
+    puVar1 = puVar1 + -1;
+  } while (puVar1 != (undefined1 *)0x0);
+  SP = 0x72;
+  jump_bank_0_entry();
+  process_init_table();
+  return;
+}
+
+
+
+void process_init_table(void)
 
 {
   char cVar1;
-  undefined1 *puVar2;
-  byte bVar3;
-  byte *pbVar4;
+  byte bVar2;
+  byte *pbVar3;
+  byte bVar4;
   byte bVar5;
-  byte bVar6;
+  byte *pbVar6;
   byte *pbVar7;
-  byte *pbVar8;
   
-  puVar2 = (undefined1 *)0xff;
-  do {
-    *puVar2 = 0;
-    puVar2 = puVar2 + -1;
-  } while (puVar2 != (undefined1 *)0x0);
-  SP = 0x72;
-  cmd_dispatch();
-  pbVar7 = &DAT_CODE_0648;
+  pbVar6 = &init_data_table;
   while( true ) {
-    bVar3 = 1;
-    bVar5 = *pbVar7;
-    if (bVar5 == 0) {
-      FUN_CODE_2f80();
+    bVar2 = 1;
+    bVar4 = *pbVar6;
+    if (bVar4 == 0) {
+      main_loop();
       return;
     }
-    bVar6 = bVar5 & 0x3f;
-    pbVar8 = pbVar7 + 1;
-    if (bVar6 >> 5 != 0) {
-      bVar3 = bVar5 & 0x1f;
-      bVar6 = pbVar7[1];
-      pbVar8 = pbVar7 + 2;
-      if (bVar6 != 0) {
-        bVar3 = bVar3 + 1;
+    bVar5 = bVar4 & 0x3f;
+    pbVar7 = pbVar6 + 1;
+    if (bVar5 >> 5 != 0) {
+      bVar2 = bVar4 & 0x1f;
+      bVar5 = pbVar6[1];
+      pbVar7 = pbVar6 + 2;
+      if (bVar5 != 0) {
+        bVar2 = bVar2 + 1;
       }
     }
-    pbVar7 = pbVar8;
-    if ((bVar5 & 0xe0) == 0xe0) break;
-    cVar1 = CARRY1(bVar5 & 0xc0,bVar5 & 0xc0) << 7;
-    if ((bVar5 & 0x40) == 0) {
-      pbVar4 = (byte *)*pbVar7;
-      pbVar7 = pbVar7 + 1;
+    pbVar6 = pbVar7;
+    if ((bVar4 & 0xe0) == 0xe0) break;
+    cVar1 = CARRY1(bVar4 & 0xc0,bVar4 & 0xc0) << 7;
+    if ((bVar4 & 0x40) == 0) {
+      pbVar3 = (byte *)*pbVar6;
+      pbVar6 = pbVar6 + 1;
       do {
-        bVar3 = *pbVar7;
-        pbVar7 = pbVar7 + 1;
+        bVar2 = *pbVar6;
+        pbVar6 = pbVar6 + 1;
         if (cVar1 < '\0') {
-          *(byte *)ZEXT12(pbVar4) = bVar3;
+          *(byte *)ZEXT12(pbVar3) = bVar2;
         }
         else {
-          *pbVar4 = bVar3;
+          *pbVar3 = bVar2;
         }
-        pbVar4 = pbVar4 + '\x01';
-        bVar6 = bVar6 - 1;
-      } while (bVar6 != 0);
+        pbVar3 = pbVar3 + '\x01';
+        bVar5 = bVar5 - 1;
+      } while (bVar5 != 0);
     }
     else if (cVar1 < '\0') {
       do {
-        bVar3 = *pbVar7;
-        pbVar7 = pbVar7 + 1;
-        pbVar4 = (byte *)((bVar3 << 1) >> 4 | 0x20);
-        bVar5 = *(byte *)((ushort)((bVar3 & 7) + 0xc) + 0x433e);
-        if ((char)bVar3 < '\0') {
-          bVar5 = bVar5 | *pbVar4;
+        bVar2 = *pbVar6;
+        pbVar6 = pbVar6 + 1;
+        pbVar3 = (byte *)((bVar2 << 1) >> 4 | 0x20);
+        bVar4 = *(byte *)((ushort)((bVar2 & 7) + 0xc) + 0x433e);
+        if ((char)bVar2 < '\0') {
+          bVar4 = bVar4 | *pbVar3;
         }
         else {
-          bVar5 = ~bVar5 & *pbVar4;
+          bVar4 = ~bVar4 & *pbVar3;
         }
-        *pbVar4 = bVar5;
-        bVar6 = bVar6 - 1;
-      } while (bVar6 != 0);
+        *pbVar3 = bVar4;
+        bVar5 = bVar5 - 1;
+      } while (bVar5 != 0);
     }
     else {
-      pbVar8 = *(byte **)pbVar7;
-      pbVar7 = pbVar7 + 2;
+      pbVar7 = *(byte **)pbVar6;
+      pbVar6 = pbVar6 + 2;
       do {
         do {
-          bVar5 = *pbVar7;
+          bVar4 = *pbVar6;
+          pbVar6 = pbVar6 + 1;
+          *pbVar7 = bVar4;
           pbVar7 = pbVar7 + 1;
-          *pbVar8 = bVar5;
-          pbVar8 = pbVar8 + 1;
-          bVar6 = bVar6 - 1;
-        } while (bVar6 != 0);
-        bVar3 = bVar3 - 1;
-      } while (bVar3 != 0);
+          bVar5 = bVar5 - 1;
+        } while (bVar5 != 0);
+        bVar2 = bVar2 - 1;
+      } while (bVar2 != 0);
     }
   }
                     // WARNING: Subroutine does not return
-  phy_link_init(pbVar7[3],pbVar7[2],pbVar7[1],*pbVar7);
+  write_xdata_reg(pbVar6[3],pbVar6[2],pbVar6[1],*pbVar6);
 }
 
 
@@ -7617,11 +8241,11 @@ void FUN_CODE_43d3(byte param_1)
     bVar1 = DAT_EXTMEM_0a8d;
     if ((bVar1 >> 1 & 1) != 0) {
       cVar2 = usb_event_handler();
-      usb_start_transfer(cVar2 + '\x13');
+      usb_setup_endpoint(cVar2 + '\x13');
       uVar3 = 0;
 LAB_CODE_4442:
                     // WARNING: Subroutine does not return
-      reg_clear_bit(uVar3,0x6b);
+      idata_store_dword(uVar3,0x6b);
     }
     bVar1 = DAT_EXTMEM_0a8d;
     if ((bVar1 >> 2 & 1) != 0) {
@@ -7634,26 +8258,26 @@ LAB_CODE_4442:
     if ((bVar1 >> 3 & 1) != 0) {
       cVar2 = usb_event_handler();
       usb_reset_interface(cVar2 + '\x15');
-      uVar3 = reg_modify_bits();
+      uVar3 = xdata_load_dword();
       goto LAB_CODE_4442;
     }
     bVar1 = DAT_EXTMEM_0a8d;
     if ((bVar1 >> 4 & 1) != 0) {
       cVar2 = usb_event_handler();
       usb_reset_interface(cVar2 + '\x19');
-      uVar3 = reg_modify_bits();
+      uVar3 = xdata_load_dword();
       goto LAB_CODE_4442;
     }
   }
   bVar1 = DAT_EXTMEM_0a8d;
   if ((bVar1 >> 5 & 1) != 0) {
-    reg_set_bit(0x6b,0,0,0,0);
+    idata_load_dword_alt(0x6b,0,0,0,0);
     cVar2 = reg_read_byte();
     if (cVar2 == '\0') goto LAB_CODE_447b;
   }
   bVar1 = DAT_EXTMEM_0a8d;
   if ((bVar1 >> 6 & 1) != 0) {
-    reg_set_bit(0x6b,0,0,0x40,0);
+    idata_load_dword_alt(0x6b,0,0,0x40,0);
     cVar2 = -0x80;
     reg_read_byte();
     if (-1 < cVar2) {
@@ -7673,7 +8297,7 @@ void FUN_CODE_4469(undefined1 param_1)
 {
   char cVar1;
   
-  reg_set_bit(0x6b,param_1,param_1,0x40);
+  idata_load_dword_alt(0x6b,param_1,param_1,0x40);
   cVar1 = -0x80;
   reg_read_byte();
   if (-1 < cVar1) {
@@ -7686,7 +8310,7 @@ void FUN_CODE_4469(undefined1 param_1)
 
 
 
-undefined1 FUN_CODE_4486(undefined1 param_1)
+undefined1 timer0_isr(undefined1 param_1)
 
 {
   byte bVar1;
@@ -7707,49 +8331,49 @@ undefined1 FUN_CODE_4486(undefined1 param_1)
   uVar4 = BANK0_R2;
   uVar3 = BANK0_R1;
   uVar2 = BANK0_R0;
-  bVar1 = DAT_EXTMEM_c806;
+  bVar1 = REG_INT_SYSTEM;
   if ((bVar1 & 1) != 0) {
-    cmd_get_status();
+    handler_0520_system_int();
   }
-  bVar1 = DAT_EXTMEM_cc33;
+  bVar1 = REG_CPU_EXEC_STATUS_2;
   if ((bVar1 >> 2 & 1) != 0) {
-    DAT_EXTMEM_cc33 = 4;
-    cmd_execute();
+    REG_CPU_EXEC_STATUS_2 = 4;
+    handler_0390();
   }
-  bVar1 = DAT_EXTMEM_c80a;
+  bVar1 = REG_INT_PCIE_NVME;
   if ((bVar1 >> 6 & 1) != 0) {
-    transfer_prepare();
+    handler_052f_pcie_nvme_event();
   }
-  bVar1 = DAT_EXTMEM_09f9;
+  bVar1 = G_EVENT_FLAGS;
   if ((bVar1 & 0x83) != 0) {
-    bVar1 = DAT_EXTMEM_c80a;
+    bVar1 = REG_INT_PCIE_NVME;
     if ((bVar1 >> 5 & 1) != 0) {
-      command_validate();
+      handler_061a_bank1_a066();
     }
-    bVar1 = DAT_EXTMEM_c80a;
+    bVar1 = REG_INT_PCIE_NVME;
     if ((bVar1 >> 4 & 1) != 0) {
-      status_update();
+      handler_0593_bank0_c105();
     }
-    bVar1 = DAT_EXTMEM_ec06;
+    bVar1 = REG_NVME_EVENT_STATUS;
     if ((bVar1 & 1) != 0) {
-      DAT_EXTMEM_ec04 = 1;
-      bVar1 = DAT_EXTMEM_0af1;
+      REG_NVME_EVENT_ACK = 1;
+      bVar1 = G_STATE_FLAG_0AF1;
       if ((bVar1 >> 5 & 1) != 0) {
-        bVar1 = DAT_EXTMEM_e7e3;
-        DAT_EXTMEM_e7e3 = bVar1 & 0xbf;
-        bVar1 = DAT_EXTMEM_e7e3;
-        DAT_EXTMEM_e7e3 = bVar1 & 0x7f;
+        bVar1 = REG_PHY_LINK_CTRL;
+        REG_PHY_LINK_CTRL = bVar1 & 0xbf;
+        bVar1 = REG_PHY_LINK_CTRL;
+        REG_PHY_LINK_CTRL = bVar1 & 0x7f;
       }
-      setup_data_structures();
+      timer0_poll_handler_0499();
     }
-    bVar1 = DAT_EXTMEM_c80a;
+    bVar1 = REG_INT_PCIE_NVME;
     if ((bVar1 & 0xf) != 0) {
-      buffer_allocate();
+      handler_0570_bank1_e911();
     }
   }
-  bVar1 = DAT_EXTMEM_c806;
+  bVar1 = REG_INT_SYSTEM;
   if ((bVar1 >> 4 & 1) != 0) {
-    completion_process();
+    handler_0642_bank1_ef4e();
   }
   BANK0_R7 = uVar9;
   BANK0_R6 = uVar8;
@@ -7794,18 +8418,18 @@ void FUN_CODE_4532(void)
     } while( true );
   }
   if ((DAT_INTMEM_3a >> 2 & 1) != 0) {
-    DAT_EXTMEM_9300 = 4;
-    DAT_EXTMEM_91d1 = 2;
-    DAT_EXTMEM_9301 = 0x40;
-    DAT_EXTMEM_9301 = 0x80;
-    DAT_EXTMEM_91d1 = 8;
-    DAT_EXTMEM_91d1 = 1;
+    REG_BUF_CFG_9300 = 4;
+    REG_USB_PHY_CTRL_91D1 = 2;
+    REG_BUF_CFG_9301 = 0x40;
+    REG_BUF_CFG_9301 = 0x80;
+    REG_USB_PHY_CTRL_91D1 = 8;
+    REG_USB_PHY_CTRL_91D1 = 1;
     DAT_EXTMEM_01b6 = 0;
     nvme_check_completion(0xcc30);
-    DAT_EXTMEM_06e6 = 1;
+    G_STATE_FLAG_06E6 = 1;
     FUN_CODE_032c();
     FUN_CODE_0340();
-    FUN_CODE_0327();
+    handler_0327_usb_power_init();
   }
   return;
 }
@@ -7825,11 +8449,11 @@ void FUN_CODE_45d0(void)
   FUN_CODE_166f();
   bVar2 = *pbVar4;
   if (bVar2 == 1) {
-    FUN_CODE_1752();
+    usb_calc_addr_with_offset();
     DAT_EXTMEM_ce6f = *pbVar4;
     return;
   }
-  FUN_CODE_1752();
+  usb_calc_addr_with_offset();
   bVar1 = *pbVar4;
   FUN_CODE_15d4();
   if (1 < *pbVar4) {
@@ -7837,7 +8461,7 @@ void FUN_CODE_45d0(void)
     bVar1 = DAT_EXTMEM_0578;
     bVar2 = FUN_CODE_1646();
   }
-  uVar3 = FUN_CODE_17cd(bVar1);
+  uVar3 = usb_shift_right_3(bVar1);
   if (2 < bVar2) {
     if (bVar2 < 5) {
       bVar2 = bVar1 >> 2 & 1;
@@ -7888,7 +8512,7 @@ void FUN_CODE_466b(void)
   char *pcVar4;
   undefined1 *puVar5;
   
-  cVar1 = DAT_EXTMEM_07ef;
+  cVar1 = G_SYS_FLAGS_07EF;
   if (cVar1 != '\0') {
     return;
   }
@@ -7896,14 +8520,14 @@ void FUN_CODE_466b(void)
   if (cVar1 != '\0') {
     return;
   }
-  bVar2 = DAT_EXTMEM_c656;
+  bVar2 = REG_PHY_EXT_56;
   if ((bVar2 >> 5 & 1) != 1) {
     FUN_CODE_04e9();
     return;
   }
-  uVar3 = FUN_CODE_1743();
-  pcVar4 = &DAT_EXTMEM_05a6;
-  DAT_EXTMEM_05a6 = uVar3;
+  uVar3 = usb_get_sys_status_offset();
+  pcVar4 = &G_PCIE_TXN_COUNT_LO;
+  G_PCIE_TXN_COUNT_LO = uVar3;
   FUN_CODE_157d();
   DAT_EXTMEM_0a8e = *pcVar4;
   if (*pcVar4 == '\x10') {
@@ -7913,14 +8537,14 @@ void FUN_CODE_466b(void)
   if (cVar1 == -0x80) {
     transfer_func_1633(0xb480);
     puVar5 = (undefined1 *)0x5a6;
-    uVar3 = DAT_EXTMEM_05a6;
+    uVar3 = G_PCIE_TXN_COUNT_LO;
     protocol_dispatch(uVar3);
     FUN_CODE_519e(0);
     FUN_CODE_1579();
     *puVar5 = 3;
     interface_ready_check(0,199,3);
-    puVar5 = &DAT_EXTMEM_06ea;
-    cVar1 = DAT_EXTMEM_06ea;
+    puVar5 = &G_ERROR_CODE_06EA;
+    cVar1 = G_ERROR_CODE_06EA;
     if (cVar1 == -2) {
       return;
     }
@@ -7933,7 +8557,7 @@ void FUN_CODE_466b(void)
   if ((cVar1 != -0x7f) && (cVar1 != '\x0f')) {
     return;
   }
-  transfer_func_1787();
+  usb_set_done_flag();
   FUN_CODE_045d();
   return;
 }
@@ -7952,54 +8576,54 @@ void nvme_util_get_queue_depth(undefined1 *param_1,undefined1 param_2,undefined1
   char in_PSW;
   byte *pbVar7;
   
-  DAT_EXTMEM_0a7d = param_3;
+  G_EP_DISPATCH_VAL3 = param_3;
   DAT_EXTMEM_0a7e = param_2;
   FUN_CODE_1b77();
   FUN_CODE_1c1b();
   if (-1 < in_PSW) {
-    FUN_CODE_1ba5();
+    usb_read_buf_addr_pair();
     param_1[-1] = BANK0_R6;
     *param_1 = BANK0_R7;
-    FUN_CODE_1c6d();
+    nvme_subtract_idata_16();
   }
-  FUN_CODE_1cc1();
-  uVar2 = DAT_EXTMEM_0a7d;
-  DAT_EXTMEM_0565 = uVar2;
+  nvme_set_ep_queue_ctrl_84();
+  uVar2 = G_EP_DISPATCH_VAL3;
+  G_EP_QUEUE_STATUS = uVar2;
   cVar3 = DAT_EXTMEM_0a7e;
   uVar2 = 2;
   if (cVar3 == '\x01') {
     uVar2 = 1;
   }
   usb_func_1aad(uVar2);
-  FUN_CODE_1d43();
+  usb_init_pcie_txn_state();
   bVar4 = REG_NVME_DATA_CTRL;
   REG_NVME_DATA_CTRL = bVar4 & 0x7f;
-  cVar3 = REG_SCSI_CTRL;
+  cVar3 = G_SCSI_CTRL;
   if ((cVar3 == '\0') << 7 < '\0') {
     usb_func_1b47(cVar3 + -1);
   }
   else {
     cVar6 = DAT_EXTMEM_0216;
-    pbVar7 = &DAT_EXTMEM_0a7d;
-    cVar1 = DAT_EXTMEM_0a7d;
+    pbVar7 = &G_EP_DISPATCH_VAL3;
+    cVar1 = G_EP_DISPATCH_VAL3;
     bVar4 = cVar1 + cVar6;
-    bVar5 = FUN_CODE_1c56();
+    bVar5 = nvme_get_dev_status_upper();
     *pbVar7 = bVar5 | bVar4;
   }
-  pbVar7 = &DAT_EXTMEM_0a7d;
-  bVar4 = DAT_EXTMEM_0a7d;
-  bVar5 = link_get_status();
+  pbVar7 = &G_EP_DISPATCH_VAL3;
+  bVar4 = G_EP_DISPATCH_VAL3;
+  bVar5 = nvme_get_cmd_param_upper();
   *pbVar7 = bVar4 | bVar5;
   cVar6 = cVar3 + -1;
   if (cVar3 != '\0') {
     uVar2 = DAT_EXTMEM_0216;
-    FUN_CODE_1d39(uVar2);
+    usb_add_masked_counter(uVar2);
     cVar6 = FUN_CODE_4f37();
   }
-  FUN_CODE_1cae(cVar6);
+  nvme_inc_circular_counter(cVar6);
   cVar3 = DAT_EXTMEM_0a7e;
   if (cVar3 == '\0') {
-    uVar2 = DAT_EXTMEM_0b00;
+    uVar2 = G_USB_PARAM_0B00;
     power_check_status(uVar2);
   }
   return;
@@ -8049,7 +8673,7 @@ LAB_CODE_47db:
     *pbVar3 = *pbVar3 & 0xf7;
     goto LAB_CODE_47db;
   }
-  nvme_reset_controller();
+  usb_set_transfer_active_flag();
   nvme_read_status();
   bVar2 = REG_USB_STATUS;
   if ((bVar2 & 1) != 0) {
@@ -8081,16 +8705,16 @@ void FUN_CODE_480c(void)
       while( true ) {
         cVar1 = DAT_EXTMEM_0055;
         if (cVar1 == '\0') {
-          bVar2 = DAT_EXTMEM_cef3;
+          bVar2 = REG_CPU_LINK_CEF3;
           if ((bVar2 >> 3 & 1) != 0) {
-            DAT_EXTMEM_cef3 = 8;
-            FUN_CODE_2608();
+            REG_CPU_LINK_CEF3 = 8;
+            handler_2608();
           }
-          bVar2 = DAT_EXTMEM_c520;
+          bVar2 = REG_NVME_LINK_STATUS;
           if ((bVar2 >> 1 & 1) != 0) {
             nvme_util_clear_completion();
           }
-          bVar2 = DAT_EXTMEM_c520;
+          bVar2 = REG_NVME_LINK_STATUS;
           if ((bVar2 & 1) != 0) {
             nvme_util_check_command_ready();
           }
@@ -8120,7 +8744,7 @@ void FUN_CODE_480c(void)
           }
           DAT_EXTMEM_000b = 0;
         }
-        nvme_command_handler(0);
+        dma_store_to_0a7d(0);
       }
     }
   }
@@ -8137,15 +8761,15 @@ byte nvme_util_clear_completion(void)
   byte bVar3;
   char *pcVar4;
   
-  DAT_EXTMEM_06e6 = 1;
+  G_STATE_FLAG_06E6 = 1;
   DAT_INTMEM_39 = 0;
   do {
-    bVar3 = DAT_EXTMEM_c520;
+    bVar3 = REG_NVME_LINK_STATUS;
     if ((bVar3 >> 1 & 1) == 0) {
       return bVar3;
     }
-    REG_SYS_STATUS_PRIMARY = 0;
-    REG_SYS_STATUS_SECONDARY = 0;
+    G_SYS_STATUS_PRIMARY = 0;
+    G_SYS_STATUS_SECONDARY = 0;
     cVar1 = DAT_EXTMEM_0af8;
     if (cVar1 == '\0') {
       bVar3 = DAT_EXTMEM_c51e;
@@ -8206,7 +8830,7 @@ void FUN_CODE_4904(void)
   bVar1 = REG_NVME_DOORBELL;
   REG_NVME_DOORBELL = bVar1 & 0xef;
   DAT_INTMEM_6a = 0;
-  reg_test_bit(0xd800,0x55,0x53,0x42,0x53);
+  xdata_store_dword(0xd800,0x55,0x53,0x42,0x53);
   DAT_EXTMEM_901a = 0xd;
   REG_NVME_CMD_NSID = 1;
   bVar1 = REG_NVME_CMD_PRP1;
@@ -8226,16 +8850,16 @@ void FUN_CODE_4977(undefined1 param_1,undefined1 param_2)
   undefined1 uVar4;
   undefined1 *puVar5;
   
-  DAT_EXTMEM_0aa8 = param_2;
-  DAT_EXTMEM_0aa9 = param_1;
+  G_FLASH_ERROR_0 = param_2;
+  G_FLASH_ERROR_1 = param_1;
   do {
-    bVar3 = DAT_EXTMEM_0aa9;
+    bVar3 = G_FLASH_ERROR_1;
     if ((bVar3 >> 1 & 1) != 0) {
-      cVar1 = DAT_EXTMEM_0aa8;
+      cVar1 = G_FLASH_ERROR_0;
       if (cVar1 == '\0') {
-        bVar2 = DAT_EXTMEM_cef3;
+        bVar2 = REG_CPU_LINK_CEF3;
         if ((bVar2 >> 3 & 1) != 0) {
-          DAT_EXTMEM_cef3 = 8;
+          REG_CPU_LINK_CEF3 = 8;
           return;
         }
       }
@@ -8253,15 +8877,15 @@ void FUN_CODE_4977(undefined1 param_1,undefined1 param_2)
       }
     }
     if ((bVar3 & 1) != 0) {
-      cVar1 = DAT_EXTMEM_0aa8;
+      cVar1 = G_FLASH_ERROR_0;
       if (cVar1 == '\0') {
-        puVar5 = &DAT_EXTMEM_cef2;
-        cVar1 = DAT_EXTMEM_cef2;
+        puVar5 = &REG_CPU_LINK_CEF2;
+        cVar1 = REG_CPU_LINK_CEF2;
         if (cVar1 < '\0') {
           uVar4 = 0x80;
 LAB_CODE_49d5:
           *puVar5 = uVar4;
-          FUN_CODE_3adb(0);
+          handler_3adb(0);
           return;
         }
       }
@@ -8297,7 +8921,7 @@ char nvme_util_get_phase_tag(void)
   DAT_EXTMEM_0517 = cVar2 + '\x01';
   if (cVar2 + '\x01' == cVar3) {
     while (cVar3 = DAT_EXTMEM_00c2, cVar2 = DAT_EXTMEM_0517, cVar2 != BANK0_R7) {
-      bVar1 = DAT_EXTMEM_cef3;
+      bVar1 = REG_CPU_LINK_CEF3;
       if ((bVar1 >> 3 & 1) == 0) {
         FUN_CODE_0395();
         if (cVar3 != '\0') {
@@ -8305,21 +8929,21 @@ char nvme_util_get_phase_tag(void)
         }
       }
       else {
-        DAT_EXTMEM_cef3 = 8;
-        FUN_CODE_2608();
+        REG_CPU_LINK_CEF3 = 8;
+        handler_2608();
       }
     }
     cVar3 = DAT_EXTMEM_00e5;
     if (cVar3 != '\0') {
-      usb_check_buffer_ready(3,0x47,0xb);
+      dma_setup_transfer(3,0x47,0xb);
     }
     usb_setup_data_xfer();
   }
-  cVar3 = REG_SCSI_CTRL;
+  cVar3 = G_SCSI_CTRL;
   cVar2 = cVar3 + -1;
   if (cVar3 != '\0') {
-    cVar3 = REG_SCSI_CTRL;
-    REG_SCSI_CTRL = cVar3 + -1;
+    cVar3 = G_SCSI_CTRL;
+    G_SCSI_CTRL = cVar3 + -1;
     cVar3 = DAT_EXTMEM_0b01;
     if (cVar3 != '\0') {
       cVar3 = FUN_CODE_4eb3(0,DAT_INTMEM_38);
@@ -8332,7 +8956,7 @@ char nvme_util_get_phase_tag(void)
 
 
 
-void FUN_CODE_4a57(char param_1,char param_2,undefined1 param_3)
+void dma_config_channel(char param_1,char param_2,undefined1 param_3)
 
 {
   char cVar1;
@@ -8341,7 +8965,7 @@ void FUN_CODE_4a57(char param_1,char param_2,undefined1 param_3)
   
   cVar1 = (BANK0_R7 < 2) << 7;
   if (cVar1 < '\0') {
-    pbVar3 = &DAT_EXTMEM_c8d8;
+    pbVar3 = &REG_DMA_STATUS2;
     cVar1 = BANK0_R1;
   }
   else {
@@ -8349,25 +8973,45 @@ void FUN_CODE_4a57(char param_1,char param_2,undefined1 param_3)
     cVar1 = BANK0_R7 - ('\x02' - (cVar1 >> 7));
   }
   *pbVar3 = *pbVar3 & 0xfd | cVar1 * '\x02';
-  DAT_EXTMEM_c8b7 = 0;
-  bVar2 = DAT_EXTMEM_c8b6;
-  DAT_EXTMEM_c8b6 = bVar2 & 0xfb | 4;
-  bVar2 = DAT_EXTMEM_c8b6;
-  DAT_EXTMEM_c8b6 = bVar2 & 0xfe;
-  bVar2 = DAT_EXTMEM_c8b6;
-  DAT_EXTMEM_c8b6 = bVar2 & 0xfd;
-  bVar2 = DAT_EXTMEM_c8b6;
-  DAT_EXTMEM_c8b6 = bVar2 & 0x7f | 0x80;
-  DAT_EXTMEM_c8b2 = param_3;
-  DAT_EXTMEM_c8b3 = BANK0_R5;
-  DAT_EXTMEM_c8b4 = param_1 + (-1 - (((param_2 != '\0') << 7) >> 7));
-  DAT_EXTMEM_c8b5 = param_2 + -1;
-  DAT_EXTMEM_c8b8 = 1;
+  REG_DMA_CHAN_STATUS2 = 0;
+  bVar2 = REG_DMA_CHAN_CTRL2;
+  REG_DMA_CHAN_CTRL2 = bVar2 & 0xfb | 4;
+  bVar2 = REG_DMA_CHAN_CTRL2;
+  REG_DMA_CHAN_CTRL2 = bVar2 & 0xfe;
+  bVar2 = REG_DMA_CHAN_CTRL2;
+  REG_DMA_CHAN_CTRL2 = bVar2 & 0xfd;
+  bVar2 = REG_DMA_CHAN_CTRL2;
+  REG_DMA_CHAN_CTRL2 = bVar2 & 0x7f | 0x80;
+  REG_DMA_CHAN_AUX = param_3;
+  REG_DMA_CHAN_AUX1 = BANK0_R5;
+  REG_DMA_XFER_CNT_HI = param_1 + (-1 - (((param_2 != '\0') << 7) >> 7));
+  REG_DMA_XFER_CNT_LO = param_2 + -1;
+  REG_DMA_TRIGGER = 1;
   do {
-    bVar2 = DAT_EXTMEM_c8b8;
+    bVar2 = REG_DMA_TRIGGER;
   } while ((bVar2 & 1) == 1);
-  bVar2 = DAT_EXTMEM_c8b6;
-  DAT_EXTMEM_c8b6 = bVar2 & 0x7f;
+  bVar2 = REG_DMA_CHAN_CTRL2;
+  REG_DMA_CHAN_CTRL2 = bVar2 & 0x7f;
+  return;
+}
+
+
+
+void dma_start_transfer(char param_1,char param_2,undefined1 param_3)
+
+{
+  byte bVar1;
+  
+  REG_DMA_CHAN_AUX = param_3;
+  REG_DMA_CHAN_AUX1 = BANK0_R5;
+  REG_DMA_XFER_CNT_HI = param_1 + (-1 - (((param_2 != '\0') << 7) >> 7));
+  REG_DMA_XFER_CNT_LO = param_2 + -1;
+  REG_DMA_TRIGGER = 1;
+  do {
+    bVar1 = REG_DMA_TRIGGER;
+  } while ((bVar1 & 1) == 1);
+  bVar1 = REG_DMA_CHAN_CTRL2;
+  REG_DMA_CHAN_CTRL2 = bVar1 & 0x7f;
   return;
 }
 
@@ -8387,14 +9031,14 @@ void FUN_CODE_4b25(byte param_1)
   do {
     bVar2 = DAT_EXTMEM_ce89;
   } while ((bVar2 & 1) == 0);
-  pbVar3 = &REG_SYS_STATUS_PRIMARY;
-  cVar1 = REG_SYS_STATUS_PRIMARY;
+  pbVar3 = &G_SYS_STATUS_PRIMARY;
+  cVar1 = G_SYS_STATUS_PRIMARY;
   FUN_CODE_1bec();
   DAT_INTMEM_3c = *pbVar3;
   pbVar3 = &DAT_EXTMEM_ce36;
   DAT_EXTMEM_ce36 =
        *(undefined1 *)CONCAT11(-(((0xa6 < DAT_INTMEM_3b) << 7) >> 7),DAT_INTMEM_3b + 0x59);
-  FUN_CODE_1c88(param_1 + 0x94);
+  nvme_calc_addr_01xx(param_1 + 0x94);
   DAT_EXTMEM_ce3a = *pbVar3 | param_1;
   bVar2 = 0;
   if (cVar1 == '\x01') {
@@ -8405,7 +9049,7 @@ void FUN_CODE_4b25(byte param_1)
   usb_configure();
   DAT_INTMEM_3c = DAT_INTMEM_3c + 1 & 0x1f;
   power_check_status(DAT_INTMEM_3c);
-  FUN_CODE_1be8();
+  nvme_get_config_offset();
   *pbVar3 = DAT_INTMEM_3c;
   return;
 }
@@ -8421,33 +9065,33 @@ void FUN_CODE_4b8b(void)
   char *pcVar4;
   undefined1 *puVar5;
   
-  pcVar4 = &REG_SYS_STATUS_PRIMARY;
-  cVar2 = REG_SYS_STATUS_PRIMARY;
+  pcVar4 = &G_SYS_STATUS_PRIMARY;
+  cVar2 = G_SYS_STATUS_PRIMARY;
   FUN_CODE_165e(cVar2);
   DAT_INTMEM_53 = *pcVar4;
   bVar3 = DAT_INTMEM_53 + 1U & 3;
   FUN_CODE_1660(cVar2 + 'N',bVar3);
   FUN_CODE_1659(bVar3);
   FUN_CODE_0412(*pcVar4);
-  puVar5 = &REG_SYS_STATUS_PRIMARY;
-  cVar2 = REG_SYS_STATUS_PRIMARY;
+  puVar5 = &G_SYS_STATUS_PRIMARY;
+  cVar2 = G_SYS_STATUS_PRIMARY;
   if (cVar2 == '\0') {
     FUN_CODE_1677();
     *puVar5 = 0;
   }
   while( true ) {
-    cVar2 = REG_SYS_STATUS_PRIMARY;
+    cVar2 = G_SYS_STATUS_PRIMARY;
     uVar1 = 1;
     if (cVar2 != '\0') {
       uVar1 = 4;
     }
     FUN_CODE_4977(uVar1);
     if (cVar2 != '\0') break;
-    pcVar4 = &REG_SYS_STATUS_PRIMARY;
-    cVar2 = REG_SYS_STATUS_PRIMARY;
+    pcVar4 = &G_SYS_STATUS_PRIMARY;
+    cVar2 = G_SYS_STATUS_PRIMARY;
     if ((cVar2 == '\0') && (FUN_CODE_1677(), *pcVar4 != '\0')) {
-      FUN_CODE_176b(DAT_INTMEM_53);
-      if ((*pcVar4 == '\0') && (FUN_CODE_1779(DAT_INTMEM_53), *pcVar4 == '\0')) {
+      usb_calc_queue_addr(DAT_INTMEM_53);
+      if ((*pcVar4 == '\0') && (usb_calc_queue_addr_next(DAT_INTMEM_53), *pcVar4 == '\0')) {
         return;
       }
       return;
@@ -8458,7 +9102,7 @@ void FUN_CODE_4b8b(void)
 
 
 
-void FUN_CODE_4be6(void)
+void handler_4be6(void)
 
 {
   byte bVar1;
@@ -8472,17 +9116,17 @@ void FUN_CODE_4be6(void)
   DAT_EXTMEM_07f5 = 0;
   bVar1 = DAT_EXTMEM_cc35;
   DAT_EXTMEM_cc35 = bVar1 & 0xfe;
-  bVar1 = DAT_EXTMEM_c801;
-  DAT_EXTMEM_c801 = bVar1 & 0xef | 0x10;
+  bVar1 = REG_INT_CTRL_C801;
+  REG_INT_CTRL_C801 = bVar1 & 0xef | 0x10;
   bVar1 = DAT_EXTMEM_c800;
   DAT_EXTMEM_c800 = bVar1 & 0xfb | 4;
   bVar1 = DAT_EXTMEM_ca60;
   DAT_EXTMEM_ca60 = bVar1 & 0xf8 | 6;
   bVar1 = DAT_EXTMEM_ca60;
   DAT_EXTMEM_ca60 = bVar1 & 0xf7 | 8;
-  FUN_CODE_5418(0xc800);
-  pbVar2 = &DAT_EXTMEM_cc3b;
-  FUN_CODE_5418();
+  reg_set_bit_0(0xc800);
+  pbVar2 = &REG_CPU_CTRL_CC3B;
+  reg_set_bit_0();
   *pbVar2 = *pbVar2 & 0xfd | 2;
   FUN_CODE_03a4();
   FUN_CODE_0584();
@@ -8495,10 +9139,10 @@ void FUN_CODE_4be6(void)
 void FUN_CODE_4c40(void)
 
 {
-  DAT_EXTMEM_0ae2 = 0;
+  G_SYSTEM_STATE_0AE2 = 0;
   DAT_EXTMEM_07e7 = 0;
                     // WARNING: Subroutine does not return
-  phy_link_init(0,0xb3,5,1);
+  write_xdata_reg(0,0xb3,5,1);
 }
 
 
@@ -8510,10 +9154,10 @@ void FUN_CODE_4c98(void)
   byte bVar2;
   
   uVar1 = DAT_EXTMEM_0af4;
-  REG_SYS_STATUS_SECONDARY = uVar1;
-  bVar2 = REG_SYS_STATUS_SECONDARY;
-  REG_SYS_STATUS_PRIMARY =
-       *(undefined1 *)CONCAT11('\x05' - (((0x85 < bVar2) << 7) >> 7),bVar2 + 0x7a);
+  G_SYS_STATUS_SECONDARY = uVar1;
+  bVar2 = G_SYS_STATUS_SECONDARY;
+  G_SYS_STATUS_PRIMARY = *(undefined1 *)CONCAT11('\x05' - (((0x85 < bVar2) << 7) >> 7),bVar2 + 0x7a)
+  ;
   FUN_CODE_1c5d();
   if (bVar2 == 0) {
     bVar2 = REG_NVME_QUEUE_CFG;
@@ -8530,7 +9174,7 @@ void FUN_CODE_4c98(void)
     BANK1_R5 = 0;
     DAT_EXTMEM_0108 = 1;
   }
-  uVar1 = REG_SYS_STATUS_SECONDARY;
+  uVar1 = G_SYS_STATUS_SECONDARY;
   *(undefined1 *)CONCAT11('\x02' - (((0xe3 < BANK1_R5) << 7) >> 7),BANK1_R5 + 0x1c) = uVar1;
   return;
 }
@@ -8554,7 +9198,7 @@ void dma_transfer_handler(char param_1)
   if (cVar1 != '\0') {
     if (cVar1 != '\x03') {
 LAB_CODE_4d78:
-      nvme_reset_controller();
+      usb_set_transfer_active_flag();
       nvme_read_status();
       bVar2 = REG_USB_STATUS;
       if ((bVar2 & 1) != 0) {
@@ -8591,13 +9235,13 @@ void FUN_CODE_4d92(void)
   DAT_INTMEM_70 = 0;
   DAT_INTMEM_71 = 0;
   DAT_INTMEM_72 = 0;
-  DAT_EXTMEM_d80c = 0;
+  REG_BUFFER_XFER_START = 0;
   BANK1_R1 = 0;
   BANK1_R2 = 0;
   BANK1_R3 = 0;
   BANK1_R4 = 0;
   cVar1 = usb_event_handler();
-  uVar2 = usb_start_transfer(cVar1 + '\x0f');
+  uVar2 = usb_setup_endpoint(cVar1 + '\x0f');
   UNK_EXTMEM_0002 = uVar2;
   FUN_CODE_4c98();
   protocol_state_machine();
@@ -8614,7 +9258,7 @@ void usb_get_xfer_status(void)
 {
   byte bVar1;
   
-  DAT_EXTMEM_0b2e = 0;
+  G_USB_TRANSFER_FLAG = 0;
   DAT_INTMEM_6a = 0;
   usb_data_handler(0xc42a);
   usb_data_handler(0x900b);
@@ -8645,21 +9289,21 @@ void FUN_CODE_4e6d(void)
   undefined1 uVar3;
   undefined1 *puVar4;
   
-  cVar1 = REG_SYS_STATUS_PRIMARY;
+  cVar1 = G_SYS_STATUS_PRIMARY;
   uVar2 = 0xa0;
   if (cVar1 == '\x01') {
     uVar2 = 0xa8;
   }
-  DAT_EXTMEM_021a = uVar2;
-  DAT_EXTMEM_021b = 0;
-  uVar2 = REG_SYS_STATUS_SECONDARY;
+  G_BUF_BASE_HI = uVar2;
+  G_BUF_BASE_LO = 0;
+  uVar2 = G_SYS_STATUS_SECONDARY;
   uVar3 = ep_config_read(uVar2);
   DAT_EXTMEM_0216 = uVar3;
   puVar4 = &DAT_EXTMEM_054c;
-  FUN_CODE_0dd1(uVar2,0x14);
-  DAT_EXTMEM_0218 = *puVar4;
-  DAT_EXTMEM_0219 = puVar4[1];
-  uVar2 = REG_SYS_STATUS_SECONDARY;
+  mul_add_index(uVar2,0x14);
+  G_BUF_ADDR_HI = *puVar4;
+  G_BUF_ADDR_LO = puVar4[1];
+  uVar2 = G_SYS_STATUS_SECONDARY;
   uVar2 = FUN_CODE_1b9d(uVar2,0x54f);
   DAT_EXTMEM_0217 = uVar2;
   return;
@@ -8677,24 +9321,24 @@ void FUN_CODE_4eb3(char param_1,byte param_2)
   
   bVar1 = DAT_EXTMEM_ce8a;
   DAT_EXTMEM_ce8a = bVar1 & 0xfb;
-  bVar1 = DAT_EXTMEM_0b00;
+  bVar1 = G_USB_PARAM_0B00;
   bVar2 = DAT_EXTMEM_ce01;
   DAT_EXTMEM_ce01 = bVar1 | bVar2 & 0xc0;
-  bVar1 = DAT_EXTMEM_053a;
+  bVar1 = G_NVME_PARAM_053A;
   DAT_EXTMEM_ce3a = bVar1 | param_2;
   DAT_EXTMEM_ce00 = 3;
   do {
     puVar4 = &DAT_EXTMEM_ce00;
     cVar3 = DAT_EXTMEM_ce00;
   } while (cVar3 != '\0');
-  FUN_CODE_1cae();
+  nvme_inc_circular_counter();
   if (param_1 == '\0') {
     power_check_status(*puVar4);
   }
-  FUN_CODE_1b96();
-  cVar3 = FUN_CODE_1d39();
+  usb_get_ep_config_indexed();
+  cVar3 = usb_add_masked_counter();
   if (cVar3 == '\0') {
-    link_set_speed();
+    nvme_add_to_global_053a();
   }
   return;
 }
@@ -8709,22 +9353,22 @@ void nvme_util_advance_queue(void)
   char *pcVar2;
   undefined1 *puVar3;
   
-  FUN_CODE_1c22();
+  nvme_check_scsi_ctrl();
   if (-1 < in_PSW) {
     DAT_INTMEM_23 = 0;
     while( true ) {
       pcVar2 = &DAT_EXTMEM_053b;
       cVar1 = DAT_EXTMEM_053b;
       if (cVar1 + 1U <= DAT_INTMEM_23) break;
-      FUN_CODE_1ce4(DAT_INTMEM_23 - (cVar1 + 1U));
+      nvme_calc_addr_04b7(DAT_INTMEM_23 - (cVar1 + 1U));
       DAT_INTMEM_22 = *pcVar2;
-      puVar3 = &DAT_EXTMEM_014e;
-      cVar1 = DAT_EXTMEM_014e;
+      puVar3 = &G_USB_INDEX_COUNTER;
+      cVar1 = G_USB_INDEX_COUNTER;
       if (cVar1 == DAT_INTMEM_22) {
-        FUN_CODE_1ce4();
+        nvme_calc_addr_04b7();
         *puVar3 = 0xff;
-        cVar1 = REG_SCSI_CTRL;
-        REG_SCSI_CTRL = cVar1 + -1;
+        cVar1 = G_SCSI_CTRL;
+        G_SCSI_CTRL = cVar1 + -1;
         cVar1 = DAT_EXTMEM_0b01;
         if (cVar1 != '\0') {
           FUN_CODE_4eb3();
@@ -8744,16 +9388,16 @@ void nvme_util_advance_queue(void)
 void FUN_CODE_4f37(void)
 
 {
-  reg_write_byte(0x12);
-  reg_test_bit(0xc4c0);
+  idata_load_dword(0x12);
+  xdata_store_dword(0xc4c0);
   DAT_EXTMEM_c4c8 = BANK2_R1;
-  FUN_CODE_1ba5();
-  reg_test_bit(0xc4c4,0,0);
+  usb_read_buf_addr_pair();
+  xdata_store_dword(0xc4c4,0,0);
   DAT_EXTMEM_c4c9 = 0;
   usb_data_handler(0xc4ca);
-  reg_modify_bits(0xc4c0);
+  xdata_load_dword(0xc4c0);
                     // WARNING: Subroutine does not return
-  reg_clear_bit(0x12);
+  idata_store_dword(0x12);
 }
 
 
@@ -8792,30 +9436,30 @@ void FUN_CODE_4f77(undefined1 param_1)
 
 
 
-void FUN_CODE_4fb6(void)
+void handler_4fb6(void)
 
 {
   char cVar1;
   byte bVar2;
   
-  FUN_CODE_5305();
+  handler_5305();
   FUN_CODE_04b7();
   FUN_CODE_04bc();
-  FUN_CODE_4be6();
+  handler_4be6();
   FUN_CODE_032c();
   FUN_CODE_0539();
   FUN_CODE_04f8();
-  FUN_CODE_063d();
-  cVar1 = DAT_EXTMEM_0ae3;
+  handler_063d();
+  cVar1 = G_STATE_FLAG_0AE3;
   if (cVar1 != '\0') {
-    bVar2 = DAT_EXTMEM_cc32;
-    DAT_EXTMEM_cc32 = bVar2 & 0xfe;
+    bVar2 = REG_CPU_EXEC_STATUS;
+    REG_CPU_EXEC_STATUS = bVar2 & 0xfe;
   }
   do {
-    bVar2 = DAT_EXTMEM_c6b3;
+    bVar2 = REG_PHY_EXT_B3;
   } while ((bVar2 & 0x30) == 0);
   FUN_CODE_0462();
-  DAT_EXTMEM_06e6 = 1;
+  G_STATE_FLAG_06E6 = 1;
   FUN_CODE_0435();
   FUN_CODE_0340();
   return;
@@ -8831,7 +9475,7 @@ void core_handler_4ff2(short param_1,byte param_2)
   if ((param_2 & 1) == 0) {
     cVar1 = usb_event_handler();
     usb_reset_interface(cVar1 + '\x11');
-    reg_modify_bits();
+    xdata_load_dword();
     cVar1 = usb_func_1b20(0xe);
     cVar1 = usb_func_1b14(cVar1 + '\x15');
     cVar1 = cVar1 + '\x1b';
@@ -8934,7 +9578,7 @@ void FUN_CODE_5069(char param_1)
   FUN_CODE_3f4a();
   DAT_INTMEM_3b = param_1;
   if (param_1 != '\0') {
-    cVar1 = DAT_EXTMEM_07e5;
+    cVar1 = G_TRANSFER_ACTIVE;
     if (cVar1 != '\0') {
       DAT_EXTMEM_0af7 = 1;
     }
@@ -8942,9 +9586,9 @@ void FUN_CODE_5069(char param_1)
   }
   cVar1 = DAT_EXTMEM_044b;
   if ((cVar1 == '\x01') && (cVar1 = DAT_EXTMEM_0006, cVar1 != '\0')) {
-    usb_check_buffer_ready(0,0x3a,2);
+    dma_setup_transfer(0,0x3a,2);
   }
-  usb_setup_endpoint();
+  nvme_load_transfer_data();
   return;
 }
 
@@ -8958,8 +9602,8 @@ void startup_init(void)
   byte bVar3;
   char *pcVar4;
   
-  pcVar4 = &DAT_EXTMEM_0af5;
-  bVar3 = DAT_EXTMEM_0af5;
+  pcVar4 = &G_EP_DISPATCH_OFFSET;
+  bVar3 = G_EP_DISPATCH_OFFSET;
   if (bVar3 < 0x20) {
     FUN_CODE_31d5(bVar3 - 0x20,bVar3);
     *pcVar4 = '\0';
@@ -8998,7 +9642,7 @@ void FUN_CODE_5112(void)
 {
   byte bVar1;
   
-  nvme_queue_setup();
+  usb_copy_status_to_buffer();
   DAT_INTMEM_6b = DAT_EXTMEM_9126;
   DAT_INTMEM_6c = DAT_EXTMEM_9125;
   DAT_INTMEM_6d = DAT_EXTMEM_9124;
@@ -9049,12 +9693,12 @@ void FUN_CODE_519e(byte param_1)
   
   cVar2 = 'e';
   DAT_INTMEM_65 = 3;
-  uVar1 = DAT_EXTMEM_05a6;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
   pbVar3 = &DAT_EXTMEM_05ba;
   FUN_CODE_1580(uVar1);
   *(byte *)(cVar2 + -1) = *pbVar3 + 1;
   *(bool *)(cVar2 + -2) = 0xfe < *pbVar3;
-  reg_test_bit(0,0xb220,0,0,0,param_1 | 8);
+  xdata_store_dword(0,0xb220,0,0,0,param_1 | 8);
   FUN_CODE_044e();
   return;
 }
@@ -9125,58 +9769,59 @@ void FUN_CODE_5216(undefined1 param_1,undefined1 param_2)
 {
   char in_PSW;
   
-  FUN_CODE_31a5();
+  usb_read_transfer_params();
   FUN_CODE_322e();
   if (in_PSW < '\0') {
-    reg_write_byte(9);
+    idata_load_dword(9);
   }
   else {
-    param_2 = FUN_CODE_31a5();
+    param_2 = usb_read_transfer_params();
   }
-  REG_USB_SCSI_BUF_LEN = param_1;
-  DAT_EXTMEM_9008 = param_2;
-  DAT_EXTMEM_9093 = 8;
-  DAT_EXTMEM_9094 = 2;
+  REG_USB_SCSI_BUF_LEN_L = param_1;
+  REG_USB_SCSI_BUF_LEN_H = param_2;
+  REG_USB_EP_CFG1 = 8;
+  REG_USB_EP_CFG2 = 2;
   return;
 }
 
 
 
-void usb_check_buffer_ready(undefined1 param_1,undefined1 param_2,undefined1 param_3)
+void dma_setup_transfer(undefined1 param_1,undefined1 param_2,undefined1 param_3)
 
 {
   byte bVar1;
   
-  DAT_EXTMEM_0203 = param_3;
-  DAT_EXTMEM_020d = param_2;
-  DAT_EXTMEM_020e = param_1;
-  DAT_EXTMEM_07e5 = 1;
+  G_DMA_MODE_SELECT = param_3;
+  G_DMA_PARAM1 = param_2;
+  G_DMA_PARAM2 = param_1;
+  G_TRANSFER_ACTIVE = 1;
   bVar1 = REG_USB_STATUS;
   if ((bVar1 & 1) != 1) {
-    DAT_EXTMEM_d80c = 1;
-    usb_setup_endpoint();
+    REG_BUFFER_XFER_START = 1;
+    nvme_load_transfer_data();
   }
   return;
 }
 
 
 
-void FUN_CODE_5260(char param_1)
+void dma_check_scsi_status(char param_1)
 
 {
   byte bVar1;
   undefined1 uVar2;
   undefined1 *puVar3;
   
-  if ((param_1 == '\0') && (puVar3 = &DAT_EXTMEM_ce5c, bVar1 = DAT_EXTMEM_ce5c, (bVar1 & 1) != 0)) {
-    uVar2 = transfer_func_1709();
+  if ((param_1 == '\0') &&
+     (puVar3 = &REG_SCSI_DMA_COMPL, bVar1 = REG_SCSI_DMA_COMPL, (bVar1 & 1) != 0)) {
+    uVar2 = dma_set_scsi_param3();
   }
   else {
     if ((param_1 != '\x10') ||
-       (puVar3 = &DAT_EXTMEM_ce5c, bVar1 = DAT_EXTMEM_ce5c, (bVar1 >> 1 & 1) == 0)) {
+       (puVar3 = &REG_SCSI_DMA_COMPL, bVar1 = REG_SCSI_DMA_COMPL, (bVar1 >> 1 & 1) == 0)) {
       return;
     }
-    uVar2 = transfer_func_1713();
+    uVar2 = dma_set_scsi_param1();
   }
   *puVar3 = uVar2;
   return;
@@ -9184,25 +9829,25 @@ void FUN_CODE_5260(char param_1)
 
 
 
-void FUN_CODE_5284(void)
+void phy_config_link_params(void)
 
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_c65b;
-  DAT_EXTMEM_c65b = bVar1 & 0xf7 | 8;
-  bVar1 = DAT_EXTMEM_c656;
-  DAT_EXTMEM_c656 = bVar1 & 0xdf;
-  bVar1 = DAT_EXTMEM_c65b;
-  DAT_EXTMEM_c65b = bVar1 & 0xdf | 0x20;
-  bVar1 = DAT_EXTMEM_c62d;
-  DAT_EXTMEM_c62d = bVar1 & 0xe0 | 7;
+  bVar1 = REG_PHY_EXT_5B;
+  REG_PHY_EXT_5B = bVar1 & 0xf7 | 8;
+  bVar1 = REG_PHY_EXT_56;
+  REG_PHY_EXT_56 = bVar1 & 0xdf;
+  bVar1 = REG_PHY_EXT_5B;
+  REG_PHY_EXT_5B = bVar1 & 0xdf | 0x20;
+  bVar1 = REG_PHY_EXT_2D;
+  REG_PHY_EXT_2D = bVar1 & 0xe0 | 7;
   return;
 }
 
 
 
-void FUN_CODE_52a7(void)
+void usb_ep_process(void)
 
 {
   char cVar1;
@@ -9213,10 +9858,10 @@ void FUN_CODE_52a7(void)
     if (cVar1 != '\0') {
       FUN_CODE_4532();
     }
-    FUN_CODE_5409();
+    usb_ep_init_handler();
     return;
   }
-  nvme_reset_controller();
+  usb_set_transfer_active_flag();
   nvme_read_status();
   return;
 }
@@ -9233,7 +9878,7 @@ void FUN_CODE_52b1(undefined1 *param_1)
   if (cVar1 != '\0') {
     FUN_CODE_4532();
   }
-  FUN_CODE_5409();
+  usb_ep_init_handler();
   return;
 }
 
@@ -9258,7 +9903,7 @@ void FUN_CODE_52c7(byte param_1)
 
 
 
-void FUN_CODE_5305(void)
+void handler_5305(void)
 
 {
   byte bVar1;
@@ -9266,9 +9911,9 @@ void FUN_CODE_5305(void)
   byte bVar3;
   
   FUN_CODE_4c40();
-  bVar1 = DAT_EXTMEM_e795;
-  bVar2 = DAT_EXTMEM_e795;
-  bVar3 = DAT_EXTMEM_e795;
+  bVar1 = REG_FLASH_READY_STATUS;
+  bVar2 = REG_FLASH_READY_STATUS;
+  bVar3 = REG_FLASH_READY_STATUS;
   FUN_CODE_0534(bVar3 & 0x20,bVar2 & 2,bVar1 & 1);
   DAT_EXTMEM_07f6 = 1;
   return;
@@ -9322,8 +9967,8 @@ void FUN_CODE_5359(char param_1)
   byte bVar2;
   byte *pbVar3;
   
-  pbVar3 = &REG_SYS_STATUS_PRIMARY;
-  cVar1 = REG_SYS_STATUS_PRIMARY;
+  pbVar3 = &G_SYS_STATUS_PRIMARY;
+  cVar1 = G_SYS_STATUS_PRIMARY;
   FUN_CODE_16e9(cVar1);
   DAT_INTMEM_51 = *pbVar3;
   bVar2 = DAT_INTMEM_51 + param_1 & 0x1f;
@@ -9341,7 +9986,7 @@ void FUN_CODE_5373(byte param_1)
   
   bVar1 = DAT_EXTMEM_ce5d;
   if ((bVar1 & (&DAT_CODE_5b9a)[param_1]) != 0) {
-    FUN_CODE_17cd(param_1);
+    usb_shift_right_3(param_1);
     transfer_func_1607();
     return;
   }
@@ -9385,14 +10030,14 @@ void FUN_CODE_53a7(void)
   char cVar2;
   
   startup_init();
-  bVar1 = DAT_EXTMEM_000a;
+  bVar1 = G_EP_CHECK_FLAG;
   if (1 < bVar1) {
-    cVar2 = DAT_EXTMEM_000a;
-    DAT_EXTMEM_000a = cVar2 + -1;
+    cVar2 = G_EP_CHECK_FLAG;
+    G_EP_CHECK_FLAG = cVar2 + -1;
     return;
   }
-  DAT_EXTMEM_000a = 0;
-  FUN_CODE_5409();
+  G_EP_CHECK_FLAG = 0;
+  usb_ep_init_handler();
   return;
 }
 
@@ -9426,19 +10071,19 @@ void FUN_CODE_53d4(void)
 
 
 
-void FUN_CODE_5409(void)
+void usb_ep_init_handler(void)
 
 {
-  DAT_EXTMEM_0b2e = 0;
+  G_USB_TRANSFER_FLAG = 0;
   DAT_INTMEM_6a = 0;
-  DAT_EXTMEM_06e6 = 0;
-  FUN_CODE_039a();
+  G_STATE_FLAG_06E6 = 0;
+  handler_039a_buffer_dispatch();
   return;
 }
 
 
 
-void FUN_CODE_5418(byte *param_1)
+void reg_set_bit_0(byte *param_1)
 
 {
   *param_1 = *param_1 & 0xfe | 1;
@@ -9462,21 +10107,21 @@ void FUN_CODE_5426(void)
 
 {
   FUN_CODE_0426(0x14);
-  command_abort(0xb220);
+  dma_clear_dword(0xb220);
   FUN_CODE_0453();
   return;
 }
 
 
 
-void FUN_CODE_5442(void)
+void usb_ep_handler(void)
 
 {
   char cVar1;
   
-  cVar1 = DAT_EXTMEM_000a;
+  cVar1 = G_EP_CHECK_FLAG;
   if (cVar1 == '\0') {
-    FUN_CODE_5409();
+    usb_ep_init_handler();
   }
   return;
 }
@@ -9486,7 +10131,7 @@ void FUN_CODE_5442(void)
 void dma_start_transfer(void)
 
 {
-  usb_check_buffer_ready(0,0x24,5);
+  dma_setup_transfer(0,0x24,5);
   return;
 }
 
@@ -9495,7 +10140,7 @@ void dma_start_transfer(void)
 void FUN_CODE_5455(void)
 
 {
-  nvme_reset_controller();
+  usb_set_transfer_active_flag();
   nvme_read_status();
   return;
 }
@@ -10161,7 +10806,7 @@ void bank1_entry(byte param_1,char param_2)
   if (param_2 != '\0') {
     return;
   }
-  FUN_CODE_99f6();
+  pcie_set_idata_params();
   *puVar1 = 4;
   cVar5 = -1;
   FUN_CODE_994c(0xff);
@@ -10231,9 +10876,9 @@ void bank1_entry(byte param_1,char param_2)
   }
   FUN_CODE_995a();
   pcVar8 = &DAT_EXTMEM_05bc;
-  FUN_CODE_0dd1();
+  mul_add_index();
   if (*pcVar8 == '\0') {
-    uVar2 = DAT_EXTMEM_05a6;
+    uVar2 = G_PCIE_TXN_COUNT_LO;
     pcVar8 = &DAT_EXTMEM_05bb;
     FUN_CODE_99c0(uVar2);
     if (*pcVar8 == '\0') {
@@ -10283,13 +10928,13 @@ void bank1_entry(byte param_1,char param_2)
     DAT_INTMEM_25 = '\0';
     bVar4 = DAT_EXTMEM_8007;
     DAT_EXTMEM_8007 = bVar4 & 0xf8;
-    reg_modify_bits(0x8004);
-    uVar2 = DAT_EXTMEM_05a6;
+    xdata_load_dword(0x8004);
+    uVar2 = G_PCIE_TXN_COUNT_LO;
     FUN_CODE_9997(0x5c7,uVar2);
-    reg_test_bit();
-    reg_modify_bits(0x8008);
+    xdata_store_dword();
+    xdata_load_dword(0x8008);
     FUN_CODE_9996(0x5cb);
-    reg_test_bit();
+    xdata_store_dword();
     bVar4 = USB_SCSI_BUF_BASE;
     USB_SCSI_BUF_BASE = bVar4 & 7;
     uVar3 = USB_SCSI_BUF_BASE;
@@ -10316,9 +10961,9 @@ void bank1_entry(byte param_1,char param_2)
       FUN_CODE_e775();
       FUN_CODE_995a();
       uVar9 = 0x5c7;
-      FUN_CODE_0dd1();
-      reg_modify_bits();
-      reg_test_bit(uVar9,param_1 | 1);
+      mul_add_index();
+      xdata_load_dword();
+      xdata_store_dword(uVar9,param_1 | 1);
       DAT_INTMEM_65 = 0xf;
       DAT_INTMEM_63 = BANK0_R6;
       DAT_INTMEM_64 = BANK0_R7;
@@ -10331,7 +10976,7 @@ void bank1_entry(byte param_1,char param_2)
     }
     FUN_CODE_995a();
     pcVar8 = &DAT_EXTMEM_05cf;
-    FUN_CODE_0dd1();
+    mul_add_index();
     DAT_INTMEM_27 = *pcVar8;
     if (pcVar8[1] == '\0' && DAT_INTMEM_27 == '\0') {
       DAT_INTMEM_28 = 2;
@@ -10345,12 +10990,12 @@ void bank1_entry(byte param_1,char param_2)
     }
     cVar5 = '\0';
     FUN_CODE_e762();
-    reg_modify_bits(0x5af);
+    xdata_load_dword(0x5af);
     FUN_CODE_995a();
-    FUN_CODE_0dd1(0x5c7);
+    mul_add_index(0x5c7);
     FUN_CODE_0d9d();
     FUN_CODE_0c9e();
-    reg_test_bit(0x5af);
+    xdata_store_dword(0x5af);
     DAT_INTMEM_25 = 0;
     DAT_INTMEM_26 = 0;
     while (bVar4 = DAT_INTMEM_27 - (((DAT_INTMEM_26 < DAT_INTMEM_28) << 7) >> 7),
@@ -10392,13 +11037,13 @@ void bank1_entry(byte param_1,char param_2)
       return;
     }
   }
-  FUN_CODE_9a9c();
+  pcie_clear_address_regs();
   cVar5 = '@';
   FUN_CODE_d02a();
   if (cVar5 != '\0') {
     return;
   }
-  uVar2 = DAT_EXTMEM_05a6;
+  uVar2 = G_PCIE_TXN_COUNT_LO;
   puVar10 = &DAT_EXTMEM_05d2;
   pcie_trigger_transaction(uVar2);
   bVar4 = 0;
@@ -10410,9 +11055,9 @@ void bank1_entry(byte param_1,char param_2)
   }
   puVar11 = &UNK_EXTMEM_b230;
   DAT_INTMEM_25 = bVar4;
-  FUN_CODE_9a18(*puVar10);
+  pcie_setup_buffer_params(*puVar10);
   puVar11[1] = 0;
-  FUN_CODE_9a18(0xb234);
+  pcie_setup_buffer_params(0xb234);
   cVar5 = '\x02';
   bVar7 = DAT_INTMEM_26;
   do {
@@ -10421,7 +11066,7 @@ void bank1_entry(byte param_1,char param_2)
     bVar4 = bVar4 >> 1;
   } while (cVar5 != '\0');
   DAT_EXTMEM_b236 = bVar7;
-  FUN_CODE_9a18(0xb240);
+  pcie_setup_buffer_params(0xb240);
   bVar4 = DAT_INTMEM_26 * '\x02';
   cVar5 = '\x02';
   bVar7 = DAT_INTMEM_25 << 1 | CARRY1(DAT_INTMEM_26,DAT_INTMEM_26);
@@ -10431,7 +11076,7 @@ void bank1_entry(byte param_1,char param_2)
     bVar7 = bVar7 >> 1;
   } while (cVar5 != '\0');
   DAT_EXTMEM_b242 = bVar4;
-  FUN_CODE_9a18(0xb244);
+  pcie_setup_buffer_params(0xb244);
   bVar4 = DAT_INTMEM_25;
   bVar7 = DAT_INTMEM_26;
   flash_func_0bfd(0,3);
@@ -10454,8 +11099,8 @@ void FUN_CODE_839c(undefined1 param_1,undefined1 param_2,char param_3,byte param
 
 {
   FUN_CODE_e902();
-  reg_modify_bits(0x5af);
-  reg_test_bit(0x5af,param_1,param_2,param_3 - (((0xfb < param_4) << 7) >> 7),param_4 + 4);
+  xdata_load_dword(0x5af);
+  xdata_store_dword(0x5af,param_1,param_2,param_3 - (((0xfb < param_4) << 7) >> 7),param_4 + 4);
   return;
 }
 
@@ -10465,8 +11110,8 @@ void FUN_CODE_83b9(undefined1 param_1,undefined1 param_2,char param_3,byte param
 
 {
   FUN_CODE_e902();
-  reg_modify_bits(0x5af);
-  reg_test_bit(0x5af,param_1,param_2,param_3 - (((0xfb < param_4) << 7) >> 7),param_4 + 4);
+  xdata_load_dword(0x5af);
+  xdata_store_dword(0x5af,param_1,param_2,param_3 - (((0xfb < param_4) << 7) >> 7),param_4 + 4);
   return;
 }
 
@@ -10883,11 +11528,11 @@ LAB_CODE_8dfb:
 LAB_CODE_8fe0:
       cVar2 = DAT_EXTMEM_09f4;
       if (cVar2 == '\x03') {
-        DAT_EXTMEM_09f9 = 0x87;
+        G_EVENT_FLAGS = 0x87;
         DAT_EXTMEM_09fb = 3;
       }
       else if (cVar2 == '\x02') {
-        DAT_EXTMEM_09f9 = 6;
+        G_EVENT_FLAGS = 6;
         DAT_EXTMEM_09fb = 1;
       }
       else {
@@ -10897,12 +11542,12 @@ LAB_CODE_8fe0:
         else {
           uVar4 = 0xc1;
         }
-        DAT_EXTMEM_09f9 = uVar4;
+        G_EVENT_FLAGS = uVar4;
         DAT_EXTMEM_09fb = 2;
       }
-      bVar1 = DAT_EXTMEM_e795;
+      bVar1 = REG_FLASH_READY_STATUS;
       if ((bVar1 >> 5 & 1) != 1) {
-        DAT_EXTMEM_09f9 = 4;
+        G_EVENT_FLAGS = 4;
       }
       FUN_CODE_bbc7();
       cVar2 = DAT_EXTMEM_0a56;
@@ -10932,8 +11577,8 @@ undefined1 FUN_CODE_92b3(undefined1 param_1)
 void FUN_CODE_92bb(void)
 
 {
-  DAT_EXTMEM_06e6 = 1;
-  FUN_CODE_c00d();
+  G_STATE_FLAG_06E6 = 1;
+  pcie_error_handler();
   return;
 }
 
@@ -11046,7 +11691,7 @@ void FUN_CODE_95af(void)
 
 
 
-void FUN_CODE_95b6(void)
+void handler_95b6(void)
 
 {
   DAT_EXTMEM_cc9a = 0;
@@ -11068,7 +11713,7 @@ void FUN_CODE_95bf(void)
 
 
 
-void FUN_CODE_95c2(undefined1 *param_1)
+void timer0_csr_ack(undefined1 *param_1)
 
 {
   *param_1 = 4;
@@ -11218,8 +11863,8 @@ void FUN_CODE_9617(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_c801;
-  DAT_EXTMEM_c801 = bVar1 & 0xef | 0x10;
+  bVar1 = REG_INT_CTRL_C801;
+  REG_INT_CTRL_C801 = bVar1 & 0xef | 0x10;
   return;
 }
 
@@ -11253,7 +11898,7 @@ byte FUN_CODE_962e(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_07bd;
+  bVar1 = G_FLASH_OP_COUNTER;
   return bVar1 ^ 5;
 }
 
@@ -11311,7 +11956,7 @@ void FUN_CODE_9657(byte param_1,byte *param_2)
 void FUN_CODE_965d(void)
 
 {
-  DAT_EXTMEM_07bd = 5;
+  G_FLASH_OP_COUNTER = 5;
   return;
 }
 
@@ -11351,7 +11996,7 @@ byte FUN_CODE_9677(byte param_1)
 void FUN_CODE_9684(void)
 
 {
-  DAT_EXTMEM_07bd = 1;
+  G_FLASH_OP_COUNTER = 1;
   return;
 }
 
@@ -11388,7 +12033,7 @@ byte FUN_CODE_968f(byte *param_1)
 undefined1 FUN_CODE_969d(undefined1 param_1,undefined1 param_2)
 
 {
-  DAT_EXTMEM_07bd = param_1;
+  G_FLASH_OP_COUNTER = param_1;
   FUN_CODE_e1c6();
   return param_2;
 }
@@ -11599,8 +12244,8 @@ void FUN_CODE_9741(undefined1 *param_1,byte param_2,byte param_3)
     FUN_CODE_99c6();
     FUN_CODE_996a();
     if ((char)in_PSW < '\0') {
-      pbVar9 = &DAT_EXTMEM_05a6;
-      DAT_EXTMEM_05a6 = param_2;
+      pbVar9 = &G_PCIE_TXN_COUNT_LO;
+      G_PCIE_TXN_COUNT_LO = param_2;
       FUN_CODE_e77a(param_2);
       FUN_CODE_9923();
       bVar7 = *pbVar9;
@@ -11698,7 +12343,7 @@ void FUN_CODE_9741(undefined1 *param_1,byte param_2,byte param_3)
           in_PSW = (0xf5 < bVar7) << 7;
           FUN_CODE_9a02();
           param_2 = 4;
-          cVar5 = FUN_CODE_990c(0,0,0);
+          cVar5 = pcie_init_alt(0,0,0);
           if (cVar5 != '\0') {
             return;
           }
@@ -11706,10 +12351,10 @@ void FUN_CODE_9741(undefined1 *param_1,byte param_2,byte param_3)
         }
         FUN_CODE_99c7();
         while (FUN_CODE_996a(), (char)in_PSW < '\0') {
-          DAT_EXTMEM_05a6 = param_2;
+          G_PCIE_TXN_COUNT_LO = param_2;
           cVar5 = FUN_CODE_9a3b(0x22);
           if (cVar5 != '\0' || param_2 != 0) {
-            uVar1 = DAT_EXTMEM_05a6;
+            uVar1 = G_PCIE_TXN_COUNT_LO;
             FUN_CODE_998f(uVar1);
             *puVar3 = 0xf;
             FUN_CODE_995a();
@@ -11717,7 +12362,7 @@ void FUN_CODE_9741(undefined1 *param_1,byte param_2,byte param_3)
             in_PSW = (0xfe < bVar7) << 7;
             FUN_CODE_99b5();
             param_2 = 0x10;
-            cVar5 = FUN_CODE_990c(0x10,3,3);
+            cVar5 = pcie_init_alt(0x10,3,3);
             if (cVar5 != '\0') {
               return;
             }
@@ -11750,8 +12395,8 @@ void FUN_CODE_977c(undefined1 *param_1,char param_2,char param_3)
   
   FUN_CODE_996a();
   if (in_PSW < '\0') {
-    pbVar8 = &DAT_EXTMEM_05a6;
-    DAT_EXTMEM_05a6 = param_2;
+    pbVar8 = &G_PCIE_TXN_COUNT_LO;
+    G_PCIE_TXN_COUNT_LO = param_2;
     FUN_CODE_e77a(param_2);
     FUN_CODE_9923();
     bVar7 = *pbVar8;
@@ -11849,7 +12494,7 @@ void FUN_CODE_977c(undefined1 *param_1,char param_2,char param_3)
         in_PSW = (0xf5 < bVar7) << 7;
         FUN_CODE_9a02();
         param_2 = '\x04';
-        cVar5 = FUN_CODE_990c(0,0,0);
+        cVar5 = pcie_init_alt(0,0,0);
         if (cVar5 != '\0') {
           return;
         }
@@ -11857,10 +12502,10 @@ void FUN_CODE_977c(undefined1 *param_1,char param_2,char param_3)
       }
       FUN_CODE_99c7();
       while (FUN_CODE_996a(), in_PSW < '\0') {
-        DAT_EXTMEM_05a6 = param_2;
+        G_PCIE_TXN_COUNT_LO = param_2;
         cVar5 = FUN_CODE_9a3b(0x22);
         if (cVar5 != '\0' || param_2 != '\0') {
-          uVar1 = DAT_EXTMEM_05a6;
+          uVar1 = G_PCIE_TXN_COUNT_LO;
           FUN_CODE_998f(uVar1);
           *puVar3 = 0xf;
           FUN_CODE_995a();
@@ -11868,7 +12513,7 @@ void FUN_CODE_977c(undefined1 *param_1,char param_2,char param_3)
           in_PSW = (0xfe < bVar7) << 7;
           FUN_CODE_99b5();
           param_2 = '\x10';
-          cVar5 = FUN_CODE_990c(0x10,3,3);
+          cVar5 = pcie_init_alt(0x10,3,3);
           if (cVar5 != '\0') {
             return;
           }
@@ -12001,7 +12646,7 @@ void FUN_CODE_983f(char param_1,char *param_2,undefined1 *param_3,char param_4)
       in_PSW = (0xf5 < bVar2) << 7;
       FUN_CODE_9a02();
       param_4 = '\x04';
-      cVar3 = FUN_CODE_990c(0,0,0);
+      cVar3 = pcie_init_alt(0,0,0);
       if (cVar3 != '\0') {
         return;
       }
@@ -12009,10 +12654,10 @@ void FUN_CODE_983f(char param_1,char *param_2,undefined1 *param_3,char param_4)
     }
     FUN_CODE_99c7();
     while (FUN_CODE_996a(), in_PSW < '\0') {
-      DAT_EXTMEM_05a6 = param_4;
+      G_PCIE_TXN_COUNT_LO = param_4;
       cVar3 = FUN_CODE_9a3b(0x22);
       if (cVar3 != '\0' || param_4 != '\0') {
-        uVar1 = DAT_EXTMEM_05a6;
+        uVar1 = G_PCIE_TXN_COUNT_LO;
         FUN_CODE_998f(uVar1);
         *param_3 = 0xf;
         FUN_CODE_995a();
@@ -12020,7 +12665,7 @@ void FUN_CODE_983f(char param_1,char *param_2,undefined1 *param_3,char param_4)
         in_PSW = (0xfe < bVar2) << 7;
         FUN_CODE_99b5();
         param_4 = '\x10';
-        cVar3 = FUN_CODE_990c(0x10,3,3);
+        cVar3 = pcie_init_alt(0x10,3,3);
         if (cVar3 != '\0') {
           return;
         }
@@ -12049,16 +12694,16 @@ void pcie_init(void)
 
 {
                     // WARNING: Subroutine does not return
-  reg_clear_bit(0x66);
+  idata_store_dword(0x66);
 }
 
 
 
-void FUN_CODE_990c(void)
+void pcie_init_alt(void)
 
 {
                     // WARNING: Subroutine does not return
-  reg_clear_bit(0x66);
+  idata_store_dword(0x66);
 }
 
 
@@ -12068,11 +12713,11 @@ void FUN_CODE_9916(undefined1 param_1)
 {
   undefined1 uVar1;
   
-  DAT_EXTMEM_05a6 = param_1;
+  G_PCIE_TXN_COUNT_LO = param_1;
   FUN_CODE_e77a(param_1);
   DAT_INTMEM_65 = 1;
-  uVar1 = DAT_EXTMEM_05a6;
-  FUN_CODE_0dd1(uVar1,0x5c0,0x22);
+  uVar1 = G_PCIE_TXN_COUNT_LO;
+  mul_add_index(uVar1,0x5c0,0x22);
   return;
 }
 
@@ -12086,8 +12731,8 @@ void FUN_CODE_991a(undefined1 param_1,undefined1 *param_2)
   *param_2 = param_1;
   FUN_CODE_e77a(param_1);
   DAT_INTMEM_65 = 1;
-  uVar1 = DAT_EXTMEM_05a6;
-  FUN_CODE_0dd1(uVar1,0x5c0,0x22);
+  uVar1 = G_PCIE_TXN_COUNT_LO;
+  mul_add_index(uVar1,0x5c0,0x22);
   return;
 }
 
@@ -12098,8 +12743,8 @@ void FUN_CODE_9923(void)
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_05a6;
-  FUN_CODE_0dd1(uVar1,0x5c0,0x22);
+  uVar1 = G_PCIE_TXN_COUNT_LO;
+  mul_add_index(uVar1,0x5c0,0x22);
   return;
 }
 
@@ -12108,7 +12753,7 @@ void FUN_CODE_9923(void)
 void FUN_CODE_992a(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
@@ -12120,12 +12765,12 @@ void FUN_CODE_9930(void)
   undefined1 uVar1;
   byte *pbVar2;
   
-  uVar1 = DAT_EXTMEM_05a6;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
   pbVar2 = &DAT_EXTMEM_05bd;
-  FUN_CODE_0dd1(uVar1,0x22);
+  mul_add_index(uVar1,0x22);
   DAT_INTMEM_63 = 0xfb < *pbVar2;
   DAT_INTMEM_64 = *pbVar2 + 4;
-  reg_test_bit(0xb220,0,0,1,0x40);
+  xdata_store_dword(0xb220,0,0,1,0x40);
   return;
 }
 
@@ -12134,7 +12779,7 @@ void FUN_CODE_9930(void)
 void FUN_CODE_994b(void)
 
 {
-  reg_test_bit(0xb220,0,0);
+  xdata_store_dword(0xb220,0,0);
   return;
 }
 
@@ -12143,7 +12788,7 @@ void FUN_CODE_994b(void)
 void FUN_CODE_994c(undefined1 param_1)
 
 {
-  reg_test_bit(0xb220,param_1,param_1);
+  xdata_store_dword(0xb220,param_1,param_1);
   return;
 }
 
@@ -12152,7 +12797,7 @@ void FUN_CODE_994c(undefined1 param_1)
 void FUN_CODE_994d(undefined1 param_1)
 
 {
-  reg_test_bit(0xb220,param_1);
+  xdata_store_dword(0xb220,param_1);
   return;
 }
 
@@ -12161,7 +12806,7 @@ void FUN_CODE_994d(undefined1 param_1)
 void FUN_CODE_994e(void)
 
 {
-  reg_test_bit(0xb220);
+  xdata_store_dword(0xb220);
   return;
 }
 
@@ -12172,7 +12817,7 @@ undefined1 FUN_CODE_9954(void)
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_05a6;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
   return uVar1;
 }
 
@@ -12183,7 +12828,7 @@ undefined1 FUN_CODE_995a(void)
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_05a6;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
   return uVar1;
 }
 
@@ -12192,7 +12837,7 @@ undefined1 FUN_CODE_995a(void)
 void FUN_CODE_9962(void)
 
 {
-  FUN_CODE_0dd1(DAT_INTMEM_26,0x22);
+  mul_add_index(DAT_INTMEM_26,0x22);
   return;
 }
 
@@ -12201,7 +12846,7 @@ void FUN_CODE_9962(void)
 void FUN_CODE_9964(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
@@ -12213,7 +12858,7 @@ char FUN_CODE_996a(void)
   char cVar1;
   char cVar2;
   
-  cVar1 = DAT_EXTMEM_05a7;
+  cVar1 = G_PCIE_TXN_COUNT_HI;
   cVar2 = DAT_EXTMEM_0a5b;
   return cVar2 - cVar1;
 }
@@ -12223,7 +12868,7 @@ char FUN_CODE_996a(void)
 void FUN_CODE_9977(void)
 
 {
-  FUN_CODE_0dd1(0x5b6,0x22);
+  mul_add_index(0x5b6,0x22);
   return;
 }
 
@@ -12232,7 +12877,7 @@ void FUN_CODE_9977(void)
 void FUN_CODE_997a(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
@@ -12241,7 +12886,7 @@ void FUN_CODE_997a(void)
 void FUN_CODE_9980(undefined1 param_1)
 
 {
-  FUN_CODE_0dd1(param_1,0x5b8,0x22);
+  mul_add_index(param_1,0x5b8,0x22);
   return;
 }
 
@@ -12250,7 +12895,7 @@ void FUN_CODE_9980(undefined1 param_1)
 void FUN_CODE_9983(undefined1 param_1)
 
 {
-  FUN_CODE_0dd1(param_1,0x22);
+  mul_add_index(param_1,0x22);
   return;
 }
 
@@ -12259,7 +12904,7 @@ void FUN_CODE_9983(undefined1 param_1)
 void FUN_CODE_9984(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
@@ -12268,7 +12913,7 @@ void FUN_CODE_9984(void)
 void FUN_CODE_998a(undefined1 param_1)
 
 {
-  DAT_EXTMEM_05a6 = param_1;
+  G_PCIE_TXN_COUNT_LO = param_1;
   FUN_CODE_e77a(param_1);
   return;
 }
@@ -12278,7 +12923,7 @@ void FUN_CODE_998a(undefined1 param_1)
 void FUN_CODE_998b(undefined1 param_1)
 
 {
-  DAT_EXTMEM_05a6 = param_1;
+  G_PCIE_TXN_COUNT_LO = param_1;
   FUN_CODE_e77a(param_1);
   return;
 }
@@ -12307,7 +12952,7 @@ void FUN_CODE_998f(undefined1 param_1)
 void FUN_CODE_9996(undefined1 param_1)
 
 {
-  FUN_CODE_0dd1(param_1,0x22);
+  mul_add_index(param_1,0x22);
   return;
 }
 
@@ -12316,13 +12961,13 @@ void FUN_CODE_9996(undefined1 param_1)
 void FUN_CODE_9997(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
 
 
-void FUN_CODE_999d(void)
+void pcie_clear_and_trigger(void)
 
 {
   REG_PCIE_STATUS = 1;
@@ -12359,7 +13004,7 @@ void FUN_CODE_99b5(undefined1 param_1,char param_2,char param_3)
 void FUN_CODE_99bc(undefined1 param_1)
 
 {
-  FUN_CODE_0dd1(param_1,0x5b7,0x22);
+  mul_add_index(param_1,0x5b7,0x22);
   return;
 }
 
@@ -12368,7 +13013,7 @@ void FUN_CODE_99bc(undefined1 param_1)
 void FUN_CODE_99bf(undefined1 param_1)
 
 {
-  FUN_CODE_0dd1(param_1,0x22);
+  mul_add_index(param_1,0x22);
   return;
 }
 
@@ -12377,7 +13022,7 @@ void FUN_CODE_99bf(undefined1 param_1)
 void FUN_CODE_99c0(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
@@ -12426,7 +13071,7 @@ void FUN_CODE_99d1(char *param_1)
 void FUN_CODE_99d5(undefined1 *param_1)
 
 {
-  FUN_CODE_0dd1();
+  mul_add_index();
   DAT_INTMEM_63 = 0;
   DAT_INTMEM_64 = *param_1;
   return;
@@ -12476,7 +13121,7 @@ void pcie_read_status(byte *param_1)
 
 
 
-byte FUN_CODE_99eb(void)
+byte pcie_get_completion_status(void)
 
 {
   byte bVar1;
@@ -12487,7 +13132,7 @@ byte FUN_CODE_99eb(void)
 
 
 
-void FUN_CODE_99f6(void)
+void pcie_set_idata_params(void)
 
 {
   DAT_INTMEM_65 = 0xf;
@@ -12532,7 +13177,7 @@ void FUN_CODE_9a02(undefined1 param_1,char param_2)
 void FUN_CODE_9a09(undefined1 param_1)
 
 {
-  FUN_CODE_0dd1(param_1,0x22);
+  mul_add_index(param_1,0x22);
   return;
 }
 
@@ -12541,7 +13186,7 @@ void FUN_CODE_9a09(undefined1 param_1)
 void pcie_trigger_transaction(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
@@ -12553,13 +13198,13 @@ undefined1 FUN_CODE_9a10(void)
   undefined1 *puVar1;
   
   puVar1 = &DAT_EXTMEM_05bd;
-  FUN_CODE_0dd1();
+  mul_add_index();
   return *puVar1;
 }
 
 
 
-void FUN_CODE_9a18(undefined1 *param_1)
+void pcie_setup_buffer_params(undefined1 *param_1)
 
 {
   *param_1 = 0x34;
@@ -12582,7 +13227,7 @@ void pcie_set_byte_enables(undefined1 param_1)
 
 {
   REG_PCIE_BYTE_EN = param_1;
-  DAT_EXTMEM_b216 = 0x20;
+  REG_PCIE_TLP_LENGTH = 0x20;
   return;
 }
 
@@ -12592,7 +13237,7 @@ void FUN_CODE_9a33(undefined1 param_1,undefined1 *param_2)
 
 {
   *param_2 = param_1;
-  DAT_EXTMEM_b216 = 0x20;
+  REG_PCIE_TLP_LENGTH = 0x20;
   return;
 }
 
@@ -12604,7 +13249,7 @@ undefined1 FUN_CODE_9a3b(void)
   undefined *puVar1;
   
   puVar1 = &UNK_EXTMEM_05c2;
-  FUN_CODE_0dd1();
+  mul_add_index();
   return puVar1[1];
 }
 
@@ -12613,7 +13258,7 @@ undefined1 FUN_CODE_9a3b(void)
 undefined1 FUN_CODE_9a3e(short param_1)
 
 {
-  FUN_CODE_0dd1();
+  mul_add_index();
   return *(undefined1 *)(param_1 + 1);
 }
 
@@ -12629,7 +13274,7 @@ void FUN_CODE_9a46(undefined1 param_1,undefined1 *param_2)
 
 
 
-void pcie_check_link(byte param_1)
+void pcie_clear_reg_at_offset(byte param_1)
 
 {
   *(undefined1 *)CONCAT11(-0x4e - (((0xef < param_1) << 7) >> 7),param_1 + 0x10) = 0;
@@ -12638,7 +13283,7 @@ void pcie_check_link(byte param_1)
 
 
 
-byte FUN_CODE_9a60(void)
+byte pcie_get_link_speed(void)
 
 {
   byte bVar1;
@@ -12657,13 +13302,13 @@ undefined1 FUN_CODE_9a6c(void)
 
 
 
-undefined1 FUN_CODE_9a74(void)
+undefined1 pcie_read_completion_data(void)
 
 {
   undefined1 uVar1;
   
   REG_PCIE_STATUS = 2;
-  uVar1 = DAT_EXTMEM_b22c;
+  uVar1 = REG_PCIE_CPL_DATA;
   return uVar1;
 }
 
@@ -12678,21 +13323,21 @@ void pcie_wait_complete(undefined1 *param_1)
 
 
 
-void FUN_CODE_9a8a(void)
+void pcie_inc_txn_counters(void)
 
 {
   char cVar1;
   
-  cVar1 = DAT_EXTMEM_05a6;
-  DAT_EXTMEM_05a6 = cVar1 + '\x01';
-  cVar1 = DAT_EXTMEM_05a7;
-  DAT_EXTMEM_05a7 = cVar1 + '\x01';
+  cVar1 = G_PCIE_TXN_COUNT_LO;
+  G_PCIE_TXN_COUNT_LO = cVar1 + '\x01';
+  cVar1 = G_PCIE_TXN_COUNT_HI;
+  G_PCIE_TXN_COUNT_HI = cVar1 + '\x01';
   return;
 }
 
 
 
-void FUN_CODE_9a95(void)
+void pcie_write_status_complete(void)
 
 {
   REG_PCIE_STATUS = 4;
@@ -12701,7 +13346,7 @@ void FUN_CODE_9a95(void)
 
 
 
-void FUN_CODE_9a9c(void)
+void pcie_clear_address_regs(void)
 
 {
   DAT_INTMEM_63 = 0;
@@ -12714,18 +13359,18 @@ void FUN_CODE_9a9c(void)
 void FUN_CODE_9aa3(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
 
 
-char FUN_CODE_9aa9(void)
+char pcie_get_txn_count_hi(void)
 
 {
   char cVar1;
   
-  cVar1 = DAT_EXTMEM_05a7;
+  cVar1 = G_PCIE_TXN_COUNT_HI;
   return DAT_INTMEM_25 - cVar1;
 }
 
@@ -12744,7 +13389,7 @@ char FUN_CODE_9aba(void)
 {
   char cVar1;
   
-  cVar1 = DAT_EXTMEM_05a7;
+  cVar1 = G_PCIE_TXN_COUNT_HI;
   return DAT_INTMEM_26 - cVar1;
 }
 
@@ -12762,7 +13407,7 @@ void FUN_CODE_9ee5(undefined1 param_1)
   char *pcVar7;
   
   FUN_CODE_e775();
-  FUN_CODE_9a9c();
+  pcie_clear_address_regs();
   cVar2 = '@';
   FUN_CODE_d02a();
   if (cVar2 != '\0') {
@@ -12772,7 +13417,7 @@ void FUN_CODE_9ee5(undefined1 param_1)
   uVar3 = DAT_EXTMEM_8037;
   FUN_CODE_995a();
   puVar5 = &DAT_EXTMEM_05b9;
-  FUN_CODE_0dd1();
+  mul_add_index();
   *puVar5 = uVar3;
   pbVar6 = (byte *)0x8037;
   bVar4 = DAT_EXTMEM_8037;
@@ -12782,7 +13427,7 @@ void FUN_CODE_9ee5(undefined1 param_1)
       FUN_CODE_9954();
       puVar5 = &DAT_EXTMEM_05bb;
 LAB_CODE_9f48:
-      FUN_CODE_0dd1();
+      mul_add_index();
       *puVar5 = param_1;
     }
     else {
@@ -12821,7 +13466,7 @@ LAB_CODE_9f48:
         }
         bVar4 = DAT_EXTMEM_800e;
         bVar4 = bVar4 >> 2 & 3;
-        uVar3 = DAT_EXTMEM_05a6;
+        uVar3 = G_PCIE_TXN_COUNT_LO;
         pbVar6 = &DAT_EXTMEM_05c4;
         FUN_CODE_9964(uVar3);
         *pbVar6 = bVar4;
@@ -12844,7 +13489,7 @@ LAB_CODE_9f48:
         bVar4 = bVar4 & 0x1f;
         FUN_CODE_995a();
         pbVar6 = &DAT_EXTMEM_05c6;
-        FUN_CODE_0dd1();
+        mul_add_index();
         *pbVar6 = bVar4;
       }
       return;
@@ -12872,7 +13517,7 @@ LAB_CODE_9f48:
         FUN_CODE_995a();
         pcVar7 = &DAT_EXTMEM_05be;
       }
-      FUN_CODE_0dd1();
+      mul_add_index();
       *pcVar7 = cVar1;
       pcVar7[1] = cVar2;
     }
@@ -12915,9 +13560,9 @@ void FUN_CODE_a153(undefined1 param_1)
 {
   char cVar1;
   
-  DAT_EXTMEM_09fa = 4;
+  G_EVENT_CTRL_09FA = 4;
   FUN_CODE_d78a();
-  DAT_EXTMEM_0ae2 = param_1;
+  G_SYSTEM_STATE_0AE2 = param_1;
   FUN_CODE_95e4();
   FUN_CODE_e1c6();
   cVar1 = DAT_EXTMEM_07ba;
@@ -12942,8 +13587,8 @@ byte FUN_CODE_a183(char param_1,char param_2)
   char *pcVar7;
   
   DAT_EXTMEM_0a5b = param_2;
-  DAT_EXTMEM_05a6 = param_1;
-  DAT_EXTMEM_05a7 = param_1 + '\x01';
+  G_PCIE_TXN_COUNT_LO = param_1;
+  G_PCIE_TXN_COUNT_HI = param_1 + '\x01';
   DAT_INTMEM_25 = 0;
   DAT_INTMEM_26 = param_2;
   do {
@@ -12959,16 +13604,16 @@ byte FUN_CODE_a183(char param_1,char param_2)
       if ((bVar4 ^ 1) != 0) {
         return bVar4 ^ 1;
       }
-      FUN_CODE_9a8a();
+      pcie_inc_txn_counters();
       DAT_INTMEM_26 = DAT_INTMEM_26 + '\x01';
-      uVar1 = DAT_EXTMEM_05a6;
+      uVar1 = G_PCIE_TXN_COUNT_LO;
       uVar2 = DAT_EXTMEM_0a5b;
       DAT_EXTMEM_0a5f = DAT_INTMEM_25 << 3;
       FUN_CODE_e68f(uVar2,1,uVar1);
       FUN_CODE_e775();
       uVar2 = BANK0_R5;
       uVar1 = BANK0_R4;
-      reg_test_bit(0xa5f,0,0,0,DAT_INTMEM_26);
+      xdata_store_dword(0xa5f,0,0,0,DAT_INTMEM_26);
       cVar5 = DAT_EXTMEM_0a5b;
       BANK0_R4 = uVar1;
       BANK0_R5 = uVar2;
@@ -12976,7 +13621,7 @@ byte FUN_CODE_a183(char param_1,char param_2)
       if (cVar5 == -1) {
         return bVar4;
       }
-      FUN_CODE_99f6();
+      pcie_set_idata_params();
       *puVar3 = 1;
       bVar4 = 6;
       FUN_CODE_994c(0,4);
@@ -12996,30 +13641,30 @@ byte FUN_CODE_a183(char param_1,char param_2)
       FUN_CODE_db45(0,199,4);
       if ((cVar5 == '\0') &&
          ((cVar6 = DAT_EXTMEM_8002, cVar6 != '\0' || (cVar6 = DAT_EXTMEM_8003, cVar6 != '\0')))) {
-        FUN_CODE_9a8a();
+        pcie_inc_txn_counters();
         FUN_CODE_d3ed();
         DAT_INTMEM_27 = 0;
         do {
           DAT_INTMEM_62 = DAT_INTMEM_62 & 0xf8 | DAT_INTMEM_27;
           FUN_CODE_dde2();
           if (cVar5 == '\x02') {
-            uVar1 = DAT_EXTMEM_05a6;
+            uVar1 = G_PCIE_TXN_COUNT_LO;
             DAT_EXTMEM_0a5f = DAT_INTMEM_62;
             FUN_CODE_e68f(DAT_INTMEM_26,2,uVar1);
-            pcVar7 = &DAT_EXTMEM_05a6;
-            cVar5 = DAT_EXTMEM_05a6;
+            pcVar7 = &G_PCIE_TXN_COUNT_LO;
+            cVar5 = G_PCIE_TXN_COUNT_LO;
             cVar6 = cVar5 + -1;
             FUN_CODE_9977(cVar5);
             *pcVar7 = cVar6;
-            uVar1 = DAT_EXTMEM_05a6;
-            bVar4 = DAT_EXTMEM_06e5;
+            uVar1 = G_PCIE_TXN_COUNT_LO;
+            bVar4 = G_MAX_LOG_ENTRIES;
             *(undefined1 *)CONCAT11('\x05' - (((0x57 < bVar4) << 7) >> 7),bVar4 + 0xa8) = uVar1;
             cVar5 = bVar4 + 1;
             pcVar7 = &DAT_EXTMEM_05b5;
             FUN_CODE_99bf();
             *pcVar7 = cVar5;
-            cVar5 = DAT_EXTMEM_06e5;
-            DAT_EXTMEM_06e5 = cVar5 + '\x01';
+            cVar5 = G_MAX_LOG_ENTRIES;
+            G_MAX_LOG_ENTRIES = cVar5 + '\x01';
             break;
           }
           DAT_INTMEM_27 = DAT_INTMEM_27 + 1;
@@ -13059,16 +13704,16 @@ void FUN_CODE_a2de(char param_1)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(param_1 + '\x01');
+  write_xdata_reg(param_1 + '\x01');
 }
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -13077,7 +13722,7 @@ void FUN_CODE_a2eb(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(0xcc,0x3c);
+  write_xdata_reg(0xcc,0x3c);
 }
 
 
@@ -13086,16 +13731,16 @@ void FUN_CODE_a2f8(char param_1)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(param_1 + '\x01');
+  write_xdata_reg(param_1 + '\x01');
 }
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -13122,16 +13767,16 @@ void FUN_CODE_a308(byte param_1)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(param_1 & 0xf0 | 0xf);
+  write_xdata_reg(param_1 & 0xf0 | 0xf);
 }
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -13145,20 +13790,20 @@ void flash_func_0bc8(void)
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -13194,16 +13839,16 @@ void FUN_CODE_a344(byte param_1)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(param_1 & 0xf0 | 0xf);
+  write_xdata_reg(param_1 & 0xf0 | 0xf);
 }
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -13235,11 +13880,11 @@ void flash_func_0bc8(void)
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -13248,7 +13893,7 @@ void FUN_CODE_a365(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(0x66,0x3c);
+  write_xdata_reg(0x66,0x3c);
 }
 
 
@@ -13257,7 +13902,7 @@ void FUN_CODE_a367(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(0x3c);
+  write_xdata_reg(0x3c);
 }
 
 
@@ -13302,7 +13947,7 @@ void FUN_CODE_a38b(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(1,0x12,2);
+  write_xdata_reg(1,0x12,2);
 }
 
 
@@ -13323,7 +13968,7 @@ void FUN_CODE_a3cb(void)
   
   uVar1 = DAT_EXTMEM_0b19;
                     // WARNING: Subroutine does not return
-  phy_link_init(uVar1);
+  write_xdata_reg(uVar1);
 }
 
 
@@ -13332,16 +13977,16 @@ void FUN_CODE_a3d2(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(0x7b);
+  write_xdata_reg(0x7b);
 }
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -13350,7 +13995,7 @@ void FUN_CODE_a3db(byte param_1)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(param_1 & 0xef | 0x10);
+  write_xdata_reg(param_1 & 0xef | 0x10);
 }
 
 
@@ -13359,7 +14004,7 @@ void FUN_CODE_a3eb(byte param_1)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(param_1 & 0xf0 | 0xc);
+  write_xdata_reg(param_1 & 0xf0 | 0xc);
 }
 
 
@@ -13373,24 +14018,24 @@ void FUN_CODE_a522(void)
   
   cVar1 = FUN_CODE_a374(3);
   if (cVar1 < '\0') {
-    bVar2 = DAT_EXTMEM_0af1;
+    bVar2 = G_STATE_FLAG_0AF1;
     if (((bVar2 >> 4 & 1) != 0) &&
-       (pbVar3 = &DAT_EXTMEM_09fa, bVar2 = DAT_EXTMEM_09fa, (bVar2 & 0x81) != 0)) {
+       (pbVar3 = &G_EVENT_CTRL_09FA, bVar2 = G_EVENT_CTRL_09FA, (bVar2 & 0x81) != 0)) {
       bVar2 = FUN_CODE_a62d();
       *pbVar3 = bVar2 | 4;
     }
                     // WARNING: Subroutine does not return
-    phy_link_init(0x80,3,0x12,2);
+    write_xdata_reg(0x80,3,0x12,2);
   }
   cVar1 = FUN_CODE_a3c4(0x8f);
   if (cVar1 < '\0') {
                     // WARNING: Subroutine does not return
-    phy_link_init(0x80);
+    write_xdata_reg(0x80);
   }
   bVar2 = FUN_CODE_a34f();
   if ((bVar2 >> 1 & 1) != 0) {
                     // WARNING: Subroutine does not return
-    phy_link_init(2);
+    write_xdata_reg(2);
   }
                     // WARNING: Subroutine does not return
   flash_func_0bc8(7,0x12,2);
@@ -13534,7 +14179,7 @@ byte FUN_CODE_a66d(void)
   byte bVar2;
   
   bVar1 = DAT_EXTMEM_0acb;
-  bVar2 = DAT_EXTMEM_0af2;
+  bVar2 = G_TRANSFER_FLAG_0AF2;
   return bVar2 & bVar1;
 }
 
@@ -13625,8 +14270,8 @@ void FUN_CODE_a6c6(undefined1 param_1,undefined1 *param_2)
   REG_USB_EP0_CONFIG = bVar1 & 0xfe;
   bVar1 = REG_USB_EP0_CONFIG;
   REG_USB_EP0_CONFIG = bVar1 & 0x7f;
-  DAT_EXTMEM_9094 = 1;
-  DAT_EXTMEM_9094 = 8;
+  REG_USB_EP_CFG2 = 1;
+  REG_USB_EP_CFG2 = 8;
   return;
 }
 
@@ -13761,18 +14406,18 @@ void FUN_CODE_a740(undefined1 *param_1,char param_2)
   byte bVar3;
   byte bVar4;
   
-  REG_SYS_FLAGS_BASE = 0;
-  REG_SYS_FLAGS = 1;
+  G_SYS_FLAGS_BASE = 0;
+  G_SYS_FLAGS_07EC = 1;
   bVar3 = REG_USB_CONFIG;
   REG_USB_CONFIG = bVar3 & 0xfd;
   cVar1 = DAT_EXTMEM_0ae5;
   if (cVar1 == '\0') {
-    bVar3 = REG_POWER_CTRL;
-    REG_POWER_CTRL = bVar3 & 0xfe;
+    bVar3 = REG_POWER_CTRL_92C4;
+    REG_POWER_CTRL_92C4 = bVar3 & 0xfe;
     REG_TIMER1_CSR = 4;
     REG_TIMER1_CSR = 2;
   }
-  DAT_EXTMEM_07ee = 0;
+  G_SYS_FLAGS_07EE = 0;
   bVar3 = DAT_EXTMEM_9220;
   if ((bVar3 >> 2 & 1) != 0) {
     bVar3 = DAT_EXTMEM_9220;
@@ -13799,12 +14444,12 @@ void FUN_CODE_a740(undefined1 *param_1,char param_2)
   DAT_EXTMEM_0aa6 = bVar4 & 0xf;
   func_0xe93a();
   FUN_CODE_e73a();
-  bVar4 = DAT_EXTMEM_09f9;
+  bVar4 = G_EVENT_FLAGS;
   if ((bVar4 & 3) == 0) {
     FUN_CODE_9664();
-    DAT_EXTMEM_09fa = 4;
+    G_EVENT_CTRL_09FA = 4;
     FUN_CODE_d78a();
-    DAT_EXTMEM_0ae2 = bVar3;
+    G_SYSTEM_STATE_0AE2 = bVar3;
   }
   else {
     cVar1 = UNK_EXTMEM_07cc;
@@ -13819,7 +14464,7 @@ void FUN_CODE_a740(undefined1 *param_1,char param_2)
       FUN_CODE_dd12(0,4);
     }
     else {
-      if ((bVar4 != 2) || (cVar1 = DAT_EXTMEM_07bc, cVar1 != '\0')) {
+      if ((bVar4 != 2) || (cVar1 = G_FLASH_CMD_TYPE, cVar1 != '\0')) {
         FUN_CODE_9664();
         cVar1 = DAT_EXTMEM_0aa6;
         if (cVar1 == '\x01') {
@@ -13877,10 +14522,10 @@ void FUN_CODE_a840(void)
   
   bVar2 = DAT_EXTMEM_0aec;
   bVar3 = DAT_EXTMEM_0aed;
-  bVar4 = DAT_EXTMEM_ca81;
-  DAT_EXTMEM_ca81 = bVar4 & 0xfe;
+  bVar4 = REG_CA81;
+  REG_CA81 = bVar4 & 0xfe;
   if ((bVar2 == 3) && (bVar3 == 3)) {
-    bVar3 = DAT_EXTMEM_09fa;
+    bVar3 = G_EVENT_CTRL_09FA;
     if ((bVar3 & 0x81) == 0) {
       FUN_CODE_ced1();
       DAT_EXTMEM_0a5d = bVar2;
@@ -13902,7 +14547,7 @@ void FUN_CODE_a840(void)
       }
     }
   }
-  bVar4 = DAT_EXTMEM_09fa;
+  bVar4 = G_EVENT_CTRL_09FA;
   bVar4 = bVar4 & 0x81;
   if (bVar4 == 0) {
     if (2 < bVar2) goto LAB_CODE_a8d7;
@@ -13929,7 +14574,7 @@ LAB_CODE_a8de:
     bVar3 = bVar3 | 4;
   }
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar3);
+  write_xdata_reg(bVar3);
 }
 
 
@@ -13995,8 +14640,8 @@ void FUN_CODE_aa36(char param_1)
   else {
     REG_CMD_LBA_2 = 0;
   }
-  cVar5 = DAT_EXTMEM_07bc;
-  if ((cVar5 == '\0') && (cVar1 = DAT_EXTMEM_09f9, cVar1 < '\0')) {
+  cVar5 = G_FLASH_CMD_TYPE;
+  if ((cVar5 == '\0') && (cVar1 = G_EVENT_FLAGS, cVar1 < '\0')) {
     REG_CMD_LBA_3 = 0x54;
   }
   else {
@@ -14010,18 +14655,18 @@ void FUN_CODE_aa36(char param_1)
   uVar4 = DAT_EXTMEM_0a58;
   REG_CMD_TIMEOUT = uVar4;
   if (cVar6 == '\x02') {
-    bVar2 = DAT_EXTMEM_09f9;
+    bVar2 = G_EVENT_FLAGS;
     uVar4 = 2;
     if ((bVar2 & 3) != 0) {
       uVar4 = 3;
     }
-    DAT_EXTMEM_0aa8 = uVar4;
+    G_FLASH_ERROR_0 = uVar4;
     if ((char)bVar2 < '\0') {
-      bVar3 = DAT_EXTMEM_0aa8;
-      DAT_EXTMEM_0aa8 = bVar3 | 8;
+      bVar3 = G_FLASH_ERROR_0;
+      G_FLASH_ERROR_0 = bVar3 | 8;
     }
     if (cVar5 == '\0') {
-      uVar4 = DAT_EXTMEM_0aa8;
+      uVar4 = G_FLASH_ERROR_0;
       REG_CMD_PARAM_L = uVar4;
     }
     else {
@@ -14029,7 +14674,7 @@ void FUN_CODE_aa36(char param_1)
     }
     REG_CMD_PARAM_H = 0;
     DAT_EXTMEM_e434 = 0x80;
-    cVar6 = DAT_EXTMEM_07bc;
+    cVar6 = G_FLASH_CMD_TYPE;
     if ((cVar6 == '\0') && ((bVar2 & 3) != 0)) {
       DAT_EXTMEM_e435 = 0x6d;
       FUN_CODE_aafb();
@@ -14070,8 +14715,8 @@ void FUN_CODE_aa4f(void)
   else {
     REG_CMD_LBA_2 = 0;
   }
-  cVar4 = DAT_EXTMEM_07bc;
-  if ((cVar4 == '\0') && (cVar1 = DAT_EXTMEM_09f9, cVar1 < '\0')) {
+  cVar4 = G_FLASH_CMD_TYPE;
+  if ((cVar4 == '\0') && (cVar1 = G_EVENT_FLAGS, cVar1 < '\0')) {
     REG_CMD_LBA_3 = 0x54;
   }
   else {
@@ -14085,18 +14730,18 @@ void FUN_CODE_aa4f(void)
   uVar6 = DAT_EXTMEM_0a58;
   REG_CMD_TIMEOUT = uVar6;
   if (cVar5 == '\x02') {
-    bVar2 = DAT_EXTMEM_09f9;
+    bVar2 = G_EVENT_FLAGS;
     uVar6 = 2;
     if ((bVar2 & 3) != 0) {
       uVar6 = 3;
     }
-    DAT_EXTMEM_0aa8 = uVar6;
+    G_FLASH_ERROR_0 = uVar6;
     if ((char)bVar2 < '\0') {
-      bVar3 = DAT_EXTMEM_0aa8;
-      DAT_EXTMEM_0aa8 = bVar3 | 8;
+      bVar3 = G_FLASH_ERROR_0;
+      G_FLASH_ERROR_0 = bVar3 | 8;
     }
     if (cVar4 == '\0') {
-      uVar6 = DAT_EXTMEM_0aa8;
+      uVar6 = G_FLASH_ERROR_0;
       REG_CMD_PARAM_L = uVar6;
     }
     else {
@@ -14104,7 +14749,7 @@ void FUN_CODE_aa4f(void)
     }
     REG_CMD_PARAM_H = 0;
     DAT_EXTMEM_e434 = 0x80;
-    cVar5 = DAT_EXTMEM_07bc;
+    cVar5 = G_FLASH_CMD_TYPE;
     if ((cVar5 == '\0') && ((bVar2 & 3) != 0)) {
       DAT_EXTMEM_e435 = 0x6d;
       FUN_CODE_aafb();
@@ -14144,8 +14789,8 @@ void FUN_CODE_aa56(void)
   else {
     REG_CMD_LBA_2 = 0;
   }
-  cVar4 = DAT_EXTMEM_07bc;
-  if ((cVar4 == '\0') && (cVar1 = DAT_EXTMEM_09f9, cVar1 < '\0')) {
+  cVar4 = G_FLASH_CMD_TYPE;
+  if ((cVar4 == '\0') && (cVar1 = G_EVENT_FLAGS, cVar1 < '\0')) {
     REG_CMD_LBA_3 = 0x54;
   }
   else {
@@ -14159,18 +14804,18 @@ void FUN_CODE_aa56(void)
   uVar6 = DAT_EXTMEM_0a58;
   REG_CMD_TIMEOUT = uVar6;
   if (cVar5 == '\x02') {
-    bVar2 = DAT_EXTMEM_09f9;
+    bVar2 = G_EVENT_FLAGS;
     uVar6 = 2;
     if ((bVar2 & 3) != 0) {
       uVar6 = 3;
     }
-    DAT_EXTMEM_0aa8 = uVar6;
+    G_FLASH_ERROR_0 = uVar6;
     if ((char)bVar2 < '\0') {
-      bVar3 = DAT_EXTMEM_0aa8;
-      DAT_EXTMEM_0aa8 = bVar3 | 8;
+      bVar3 = G_FLASH_ERROR_0;
+      G_FLASH_ERROR_0 = bVar3 | 8;
     }
     if (cVar4 == '\0') {
-      uVar6 = DAT_EXTMEM_0aa8;
+      uVar6 = G_FLASH_ERROR_0;
       REG_CMD_PARAM_L = uVar6;
     }
     else {
@@ -14178,7 +14823,7 @@ void FUN_CODE_aa56(void)
     }
     REG_CMD_PARAM_H = 0;
     DAT_EXTMEM_e434 = 0x80;
-    cVar5 = DAT_EXTMEM_07bc;
+    cVar5 = G_FLASH_CMD_TYPE;
     if ((cVar5 == '\0') && ((bVar2 & 3) != 0)) {
       DAT_EXTMEM_e435 = 0x6d;
       FUN_CODE_aafb();
@@ -14216,8 +14861,8 @@ void FUN_CODE_aa60(undefined1 *param_1)
   else {
     REG_CMD_LBA_2 = 0;
   }
-  cVar4 = DAT_EXTMEM_07bc;
-  if ((cVar4 == '\0') && (cVar1 = DAT_EXTMEM_09f9, cVar1 < '\0')) {
+  cVar4 = G_FLASH_CMD_TYPE;
+  if ((cVar4 == '\0') && (cVar1 = G_EVENT_FLAGS, cVar1 < '\0')) {
     REG_CMD_LBA_3 = 0x54;
   }
   else {
@@ -14231,18 +14876,18 @@ void FUN_CODE_aa60(undefined1 *param_1)
   uVar6 = DAT_EXTMEM_0a58;
   REG_CMD_TIMEOUT = uVar6;
   if (cVar5 == '\x02') {
-    bVar2 = DAT_EXTMEM_09f9;
+    bVar2 = G_EVENT_FLAGS;
     uVar6 = 2;
     if ((bVar2 & 3) != 0) {
       uVar6 = 3;
     }
-    DAT_EXTMEM_0aa8 = uVar6;
+    G_FLASH_ERROR_0 = uVar6;
     if ((char)bVar2 < '\0') {
-      bVar3 = DAT_EXTMEM_0aa8;
-      DAT_EXTMEM_0aa8 = bVar3 | 8;
+      bVar3 = G_FLASH_ERROR_0;
+      G_FLASH_ERROR_0 = bVar3 | 8;
     }
     if (cVar4 == '\0') {
-      uVar6 = DAT_EXTMEM_0aa8;
+      uVar6 = G_FLASH_ERROR_0;
       REG_CMD_PARAM_L = uVar6;
     }
     else {
@@ -14250,7 +14895,7 @@ void FUN_CODE_aa60(undefined1 *param_1)
     }
     REG_CMD_PARAM_H = 0;
     DAT_EXTMEM_e434 = 0x80;
-    cVar5 = DAT_EXTMEM_07bc;
+    cVar5 = G_FLASH_CMD_TYPE;
     if ((cVar5 == '\0') && ((bVar2 & 3) != 0)) {
       DAT_EXTMEM_e435 = 0x6d;
       FUN_CODE_aafb();
@@ -14287,8 +14932,8 @@ void FUN_CODE_aa63(void)
   else {
     REG_CMD_LBA_2 = 0;
   }
-  cVar4 = DAT_EXTMEM_07bc;
-  if ((cVar4 == '\0') && (cVar1 = DAT_EXTMEM_09f9, cVar1 < '\0')) {
+  cVar4 = G_FLASH_CMD_TYPE;
+  if ((cVar4 == '\0') && (cVar1 = G_EVENT_FLAGS, cVar1 < '\0')) {
     REG_CMD_LBA_3 = 0x54;
   }
   else {
@@ -14302,18 +14947,18 @@ void FUN_CODE_aa63(void)
   uVar6 = DAT_EXTMEM_0a58;
   REG_CMD_TIMEOUT = uVar6;
   if (cVar5 == '\x02') {
-    bVar2 = DAT_EXTMEM_09f9;
+    bVar2 = G_EVENT_FLAGS;
     uVar6 = 2;
     if ((bVar2 & 3) != 0) {
       uVar6 = 3;
     }
-    DAT_EXTMEM_0aa8 = uVar6;
+    G_FLASH_ERROR_0 = uVar6;
     if ((char)bVar2 < '\0') {
-      bVar3 = DAT_EXTMEM_0aa8;
-      DAT_EXTMEM_0aa8 = bVar3 | 8;
+      bVar3 = G_FLASH_ERROR_0;
+      G_FLASH_ERROR_0 = bVar3 | 8;
     }
     if (cVar4 == '\0') {
-      uVar6 = DAT_EXTMEM_0aa8;
+      uVar6 = G_FLASH_ERROR_0;
       REG_CMD_PARAM_L = uVar6;
     }
     else {
@@ -14321,7 +14966,7 @@ void FUN_CODE_aa63(void)
     }
     REG_CMD_PARAM_H = 0;
     DAT_EXTMEM_e434 = 0x80;
-    cVar5 = DAT_EXTMEM_07bc;
+    cVar5 = G_FLASH_CMD_TYPE;
     if ((cVar5 == '\0') && ((bVar2 & 3) != 0)) {
       DAT_EXTMEM_e435 = 0x6d;
       FUN_CODE_aafb();
@@ -14392,13 +15037,13 @@ char FUN_CODE_ab16(char *param_1,char param_2)
   if (bVar4 < (byte)-cVar3) {
     return bVar4 + cVar3;
   }
-  uVar2 = DAT_EXTMEM_05a6;
+  uVar2 = G_PCIE_TXN_COUNT_LO;
   pbVar5 = &DAT_EXTMEM_05d4;
   FUN_CODE_c479(uVar2);
   if ((*pbVar5 & 1) == 0) {
     DAT_EXTMEM_b260 = 0;
-    puVar6 = &DAT_EXTMEM_05a6;
-    uVar2 = DAT_EXTMEM_05a6;
+    puVar6 = &G_PCIE_TXN_COUNT_LO;
+    uVar2 = G_PCIE_TXN_COUNT_LO;
     FUN_CODE_c4a3(uVar2,0x22);
     *puVar6 = 0;
   }
@@ -14414,14 +15059,14 @@ char FUN_CODE_ab16(char *param_1,char param_2)
   }
   bVar4 = DAT_EXTMEM_8007;
   bVar4 = bVar4 & 0xf;
-  uVar2 = DAT_EXTMEM_05a6;
+  uVar2 = G_PCIE_TXN_COUNT_LO;
   pbVar5 = &DAT_EXTMEM_05d2;
-  FUN_CODE_0dd1(uVar2,0x22);
+  mul_add_index(uVar2,0x22);
   *pbVar5 = bVar4;
   FUN_CODE_e762(0x24);
   FUN_CODE_abe9(3,0,3);
   FUN_CODE_e762(0x28);
-  reg_test_bit(0xb220,0,0x80,0,0);
+  xdata_store_dword(0xb220,0,0x80,0,0);
   FUN_CODE_e902();
   FUN_CODE_abd7(0x2c);
   FUN_CODE_e762(0x30);
@@ -14451,14 +15096,14 @@ char FUN_CODE_ab4e(byte *param_1,undefined1 param_2)
   *puVar4 = 3;
   bVar2 = DAT_EXTMEM_8007;
   bVar2 = bVar2 & 0xf;
-  uVar1 = DAT_EXTMEM_05a6;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
   pbVar5 = &DAT_EXTMEM_05d2;
-  FUN_CODE_0dd1(uVar1,0x22);
+  mul_add_index(uVar1,0x22);
   *pbVar5 = bVar2;
   FUN_CODE_e762(0x24);
   FUN_CODE_abe9(3,0,3);
   FUN_CODE_e762(0x28);
-  reg_test_bit(0xb220,0,0x80,0,0);
+  xdata_store_dword(0xb220,0,0x80,0,0);
   FUN_CODE_e902();
   FUN_CODE_abd7(0x2c);
   FUN_CODE_e762(0x30);
@@ -14480,14 +15125,14 @@ void FUN_CODE_ab7a(undefined1 *param_1)
   *param_1 = 0;
   bVar2 = DAT_EXTMEM_8007;
   bVar2 = bVar2 & 0xf;
-  uVar1 = DAT_EXTMEM_05a6;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
   pbVar3 = &DAT_EXTMEM_05d2;
-  FUN_CODE_0dd1(uVar1,0x22);
+  mul_add_index(uVar1,0x22);
   *pbVar3 = bVar2;
   FUN_CODE_e762(0x24);
   FUN_CODE_abe9(3,0,3);
   FUN_CODE_e762(0x28);
-  reg_test_bit(0xb220,0,0x80,0,0);
+  xdata_store_dword(0xb220,0,0x80,0,0);
   FUN_CODE_e902();
   FUN_CODE_abd7(0x2c);
   FUN_CODE_e762(0x30);
@@ -14510,6 +15155,16 @@ void FUN_CODE_abc2(void)
 
 
 
+void handler_abc9(void)
+
+{
+  FUN_CODE_abd7();
+  FUN_CODE_da13(1);
+  return;
+}
+
+
+
 void FUN_CODE_abd4(void)
 
 {
@@ -14522,7 +15177,7 @@ void FUN_CODE_abd7(void)
 
 {
   FUN_CODE_e762();
-  reg_test_bit(0xb220,0,0,0,0);
+  xdata_store_dword(0xb220,0,0,0,0);
   FUN_CODE_e902();
   return;
 }
@@ -14532,7 +15187,7 @@ void FUN_CODE_abd7(void)
 void FUN_CODE_abe9(void)
 
 {
-  reg_test_bit(0xb220,0);
+  xdata_store_dword(0xb220,0);
   FUN_CODE_e902();
   return;
 }
@@ -14548,10 +15203,10 @@ void pcie_set_address(void)
   byte bVar4;
   undefined1 *puVar5;
   
-  DAT_EXTMEM_06ea = 0;
+  G_ERROR_CODE_06EA = 0;
   DAT_INTMEM_51 = '\0';
   do {
-    pcie_check_link(DAT_INTMEM_51);
+    pcie_clear_reg_at_offset(DAT_INTMEM_51);
     DAT_INTMEM_51 = DAT_INTMEM_51 + '\x01';
   } while (DAT_INTMEM_51 != '\f');
   if ((DAT_INTMEM_60 & 1) == 0) {
@@ -14567,10 +15222,10 @@ void pcie_set_address(void)
     }
   }
   REG_PCIE_FMT_TYPE = uVar3;
-  DAT_EXTMEM_b213 = 1;
+  REG_PCIE_TLP_CTRL = 1;
   REG_PCIE_BYTE_EN = DAT_INTMEM_65 & 0xf;
-  REG_PCIE_ADDR_LOW = DAT_INTMEM_61;
-  DAT_EXTMEM_b219 = DAT_INTMEM_62;
+  REG_PCIE_ADDR_0 = DAT_INTMEM_61;
+  REG_PCIE_ADDR_1 = DAT_INTMEM_62;
   bVar4 = DAT_INTMEM_64 & 0xc0;
   cVar1 = '\x06';
   bVar2 = DAT_INTMEM_63 & 3;
@@ -14579,15 +15234,15 @@ void pcie_set_address(void)
     cVar1 = cVar1 + -1;
     bVar2 = bVar2 >> 1;
   } while (cVar1 != '\0');
-  bVar2 = DAT_EXTMEM_b21a;
-  DAT_EXTMEM_b21a = bVar2 & 0xf0 | bVar4;
-  bVar2 = DAT_EXTMEM_b21b;
+  bVar2 = REG_PCIE_ADDR_2;
+  REG_PCIE_ADDR_2 = bVar2 & 0xf0 | bVar4;
+  bVar2 = REG_PCIE_ADDR_3;
   FUN_CODE_9a33(bVar2 & 3 | DAT_INTMEM_64 * '\x04');
-  FUN_CODE_999d();
+  pcie_clear_and_trigger();
   do {
-    cVar1 = FUN_CODE_99eb();
+    cVar1 = pcie_get_completion_status();
   } while (cVar1 == '\0');
-  FUN_CODE_9a95();
+  pcie_write_status_complete();
   while( true ) {
     puVar5 = &REG_PCIE_STATUS;
     bVar2 = REG_PCIE_STATUS;
@@ -14595,17 +15250,85 @@ void pcie_set_address(void)
     bVar2 = REG_PCIE_STATUS;
     if ((bVar2 & 1) != 0) {
       REG_PCIE_STATUS = 1;
-      DAT_EXTMEM_06ea = 0xfe;
-      DAT_EXTMEM_06e6 = 1;
-      FUN_CODE_c00d();
+      G_ERROR_CODE_06EA = 0xfe;
+      G_STATE_FLAG_06E6 = 1;
+      pcie_error_handler();
       return;
     }
   }
-  cVar1 = FUN_CODE_9a74(bVar2 & 2);
-  if ((((cVar1 == '\0') && (puVar5[1] == '\0')) && (cVar1 = DAT_EXTMEM_b22b, cVar1 == '\x04')) &&
-     (((DAT_INTMEM_60 == 0 && (bVar2 = REG_PCIE_COMPL_STATUS, (bVar2 & 1) == 1)) ||
-      ((DAT_INTMEM_60 == 1 && (bVar2 = REG_PCIE_COMPL_STATUS, (bVar2 & 1) != 1)))))) {
-    FUN_CODE_9a60();
+  cVar1 = pcie_read_completion_data(bVar2 & 2);
+  if ((((cVar1 == '\0') && (puVar5[1] == '\0')) && (cVar1 = REG_PCIE_CPL_STATUS, cVar1 == '\x04'))
+     && (((DAT_INTMEM_60 == 0 && (bVar2 = REG_PCIE_COMPL_STATUS, (bVar2 & 1) == 1)) ||
+         ((DAT_INTMEM_60 == 1 && (bVar2 = REG_PCIE_COMPL_STATUS, (bVar2 & 1) != 1)))))) {
+    pcie_get_link_speed();
+    return;
+  }
+  return;
+}
+
+
+
+void pcie_setup_config_tlp(void)
+
+{
+  char cVar1;
+  byte bVar2;
+  undefined1 uVar3;
+  byte bVar4;
+  undefined1 *puVar5;
+  
+  if ((DAT_INTMEM_60 & 1) == 0) {
+    uVar3 = 4;
+    if (DAT_INTMEM_61 != '\0') {
+      uVar3 = 5;
+    }
+  }
+  else {
+    uVar3 = 0x44;
+    if (DAT_INTMEM_61 != '\0') {
+      uVar3 = 0x45;
+    }
+  }
+  REG_PCIE_FMT_TYPE = uVar3;
+  REG_PCIE_TLP_CTRL = 1;
+  REG_PCIE_BYTE_EN = DAT_INTMEM_65 & 0xf;
+  REG_PCIE_ADDR_0 = DAT_INTMEM_61;
+  REG_PCIE_ADDR_1 = DAT_INTMEM_62;
+  bVar4 = DAT_INTMEM_64 & 0xc0;
+  cVar1 = '\x06';
+  bVar2 = DAT_INTMEM_63 & 3;
+  do {
+    bVar4 = bVar4 >> 1 | bVar2 << 7;
+    cVar1 = cVar1 + -1;
+    bVar2 = bVar2 >> 1;
+  } while (cVar1 != '\0');
+  bVar2 = REG_PCIE_ADDR_2;
+  REG_PCIE_ADDR_2 = bVar2 & 0xf0 | bVar4;
+  bVar2 = REG_PCIE_ADDR_3;
+  FUN_CODE_9a33(bVar2 & 3 | DAT_INTMEM_64 * '\x04');
+  pcie_clear_and_trigger();
+  do {
+    cVar1 = pcie_get_completion_status();
+  } while (cVar1 == '\0');
+  pcie_write_status_complete();
+  while( true ) {
+    puVar5 = &REG_PCIE_STATUS;
+    bVar2 = REG_PCIE_STATUS;
+    if ((bVar2 & 2) != 0) break;
+    bVar2 = REG_PCIE_STATUS;
+    if ((bVar2 & 1) != 0) {
+      REG_PCIE_STATUS = 1;
+      G_ERROR_CODE_06EA = 0xfe;
+      G_STATE_FLAG_06E6 = 1;
+      pcie_error_handler();
+      return;
+    }
+  }
+  cVar1 = pcie_read_completion_data(bVar2 & 2);
+  if ((((cVar1 == '\0') && (puVar5[1] == '\0')) && (cVar1 = REG_PCIE_CPL_STATUS, cVar1 == '\x04'))
+     && (((DAT_INTMEM_60 == 0 && (bVar2 = REG_PCIE_COMPL_STATUS, (bVar2 & 1) == 1)) ||
+         ((DAT_INTMEM_60 == 1 && (bVar2 = REG_PCIE_COMPL_STATUS, (bVar2 & 1) != 1)))))) {
+    pcie_get_link_speed();
     return;
   }
   return;
@@ -14658,8 +15381,8 @@ void pcie_check_completion(void)
   DAT_EXTMEM_e400 = bVar1 & 0xc3 | 0x3c;
   bVar1 = DAT_EXTMEM_e409;
   DAT_EXTMEM_e409 = bVar1 & 0x7f;
-  bVar1 = DAT_EXTMEM_c809;
-  DAT_EXTMEM_c809 = bVar1 & 0xdf | 0x20;
+  bVar1 = REG_INT_CTRL_C809;
+  REG_INT_CTRL_C809 = bVar1 & 0xdf | 0x20;
   FUN_CODE_da51();
   DAT_EXTMEM_e40e = 0x8a;
   bVar1 = DAT_EXTMEM_e400;
@@ -14682,7 +15405,7 @@ void pcie_check_completion(void)
 
 
 
-void FUN_CODE_af5e(void)
+void debug_output_handler(void)
 
 {
   REG_UART_THR_RBR = 10;
@@ -14693,7 +15416,7 @@ void FUN_CODE_af5e(void)
 
 
 
-void FUN_CODE_b031(void)
+void handler_b031(void)
 
 {
                     // WARNING: Subroutine does not return
@@ -14716,64 +15439,228 @@ void FUN_CODE_b104(void)
   byte *pbVar9;
   
   pcVar8 = (char *)0xaa4;
-  reg_test_bit();
+  xdata_store_dword();
   DAT_INTMEM_51 = '\0';
   DAT_INTMEM_52 = 0;
+  uVar6 = FUN_CODE_b820();
+  uVar4 = 6;
+  FUN_CODE_be02(uVar6);
+  flash_set_mode_enable();
+  *pcVar8 = DAT_INTMEM_51;
+  pcVar8[1] = DAT_INTMEM_52;
+  pbVar9 = &REG_FLASH_CMD;
+  bVar7 = FUN_CODE_b848(2);
+  *pbVar9 = bVar7 | 3;
+  xdata_load_dword(0xaa4);
+  REG_FLASH_ADDR_LO = uVar4;
+  flash_set_addr_md(0xaa4);
+  flash_set_addr_hi(0xaa4);
+  cVar3 = G_FLASH_RESET_0AAA;
+  bVar2 = G_FLASH_ERROR_1;
+  bVar7 = G_FLASH_ERROR_0;
+  cVar5 = ((bVar2 < cVar3 + 1U) << 7) >> 7;
+  if ((byte)-cVar5 <= bVar7) {
+    uVar4 = G_FLASH_RESET_0AAA;
+    REG_FLASH_DATA_LEN = 0;
+    REG_FLASH_DATA_LEN_HI = cVar3;
+    FUN_CODE_0d9d(0xaa4,uVar4);
+    FUN_CODE_0c9e(0,0);
+    xdata_store_dword(0xaa4);
+    bVar2 = G_FLASH_RESET_0AAA;
+    bVar7 = G_FLASH_ERROR_1;
+    G_FLASH_ERROR_1 = bVar7 - bVar2;
+    cVar5 = G_FLASH_ERROR_0;
+    G_FLASH_ERROR_0 = cVar5 + (((bVar7 < bVar2) << 7) >> 7);
+    bVar1 = CARRY1(bVar2,DAT_INTMEM_52);
+    DAT_INTMEM_52 = bVar2 + DAT_INTMEM_52;
+    DAT_INTMEM_51 = DAT_INTMEM_51 - ((bVar1 << 7) >> 7);
+    flash_wait_and_poll();
+    return;
+  }
+  flash_set_data_len(bVar7 + cVar5,0xaa8);
+  G_FLASH_ERROR_0 = 0;
+  G_FLASH_ERROR_1 = 0;
+  REG_FLASH_CSR = 1;
   do {
-    uVar6 = FUN_CODE_b820();
-    uVar4 = 6;
-    FUN_CODE_be02(uVar6);
-    FUN_CODE_b8ae();
-    *pcVar8 = DAT_INTMEM_51;
-    pcVar8[1] = DAT_INTMEM_52;
-    pbVar9 = &REG_DMA_SRC_L;
-    bVar7 = FUN_CODE_b848(2);
-    *pbVar9 = bVar7 | 3;
-    reg_modify_bits(0xaa4);
-    REG_DMA_CHANNEL_SEL = uVar4;
-    FUN_CODE_b865(0xaa4);
-    FUN_CODE_b873(0xaa4);
-    cVar3 = DAT_EXTMEM_0aaa;
-    bVar2 = DAT_EXTMEM_0aa9;
-    bVar7 = DAT_EXTMEM_0aa8;
-    cVar5 = ((bVar2 < cVar3 + 1U) << 7) >> 7;
-    if ((bVar7 < (byte)-cVar5) << 7 < '\0') {
-      FUN_CODE_b888(bVar7 + cVar5,0xaa8);
-      DAT_EXTMEM_0aa8 = 0;
-      DAT_EXTMEM_0aa9 = 0;
-    }
-    else {
-      uVar4 = DAT_EXTMEM_0aaa;
-      REG_DMA_CHANNEL_STATUS = 0;
-      REG_DMA_LENGTH_LOW = cVar3;
-      FUN_CODE_0d9d(0xaa4,uVar4);
-      FUN_CODE_0c9e(0,0);
-      reg_test_bit(0xaa4);
-      bVar2 = DAT_EXTMEM_0aaa;
-      bVar7 = DAT_EXTMEM_0aa9;
-      DAT_EXTMEM_0aa9 = bVar7 - bVar2;
-      cVar5 = DAT_EXTMEM_0aa8;
-      DAT_EXTMEM_0aa8 = cVar5 + (((bVar7 < bVar2) << 7) >> 7);
-      bVar1 = CARRY1(bVar2,DAT_INTMEM_52);
-      DAT_INTMEM_52 = bVar2 + DAT_INTMEM_52;
-      DAT_INTMEM_51 = DAT_INTMEM_51 - ((bVar1 << 7) >> 7);
-    }
-    REG_DMA_BURST_SIZE = 1;
-    do {
-      bVar7 = REG_DMA_BURST_SIZE;
-    } while ((bVar7 & 1) == 1);
-    cVar5 = '\x01';
-    FUN_CODE_df47();
-    if (cVar5 == '\0') {
+    bVar7 = REG_FLASH_CSR;
+  } while ((bVar7 & 1) == 1);
+  cVar5 = '\x01';
+  FUN_CODE_df47();
+  if (cVar5 == '\0') {
+    return;
+  }
+  cVar5 = G_FLASH_ERROR_0;
+  if (cVar5 == '\0') {
+    cVar5 = G_FLASH_ERROR_1;
+  }
+  if (cVar5 != '\0') {
+    flash_error_handler();
+    return;
+  }
+  return;
+}
+
+
+
+void flash_error_handler(char *param_1)
+
+{
+  bool bVar1;
+  byte bVar2;
+  char cVar3;
+  undefined1 uVar4;
+  char cVar5;
+  undefined1 uVar6;
+  byte bVar7;
+  byte *pbVar8;
+  
+  uVar6 = FUN_CODE_b820();
+  uVar4 = 6;
+  FUN_CODE_be02(uVar6);
+  flash_set_mode_enable();
+  *param_1 = DAT_INTMEM_51;
+  param_1[1] = DAT_INTMEM_52;
+  pbVar8 = &REG_FLASH_CMD;
+  bVar7 = FUN_CODE_b848(2);
+  *pbVar8 = bVar7 | 3;
+  xdata_load_dword(0xaa4);
+  REG_FLASH_ADDR_LO = uVar4;
+  flash_set_addr_md(0xaa4);
+  flash_set_addr_hi(0xaa4);
+  cVar3 = G_FLASH_RESET_0AAA;
+  bVar2 = G_FLASH_ERROR_1;
+  bVar7 = G_FLASH_ERROR_0;
+  cVar5 = ((bVar2 < cVar3 + 1U) << 7) >> 7;
+  if ((byte)-cVar5 <= bVar7) {
+    uVar4 = G_FLASH_RESET_0AAA;
+    REG_FLASH_DATA_LEN = 0;
+    REG_FLASH_DATA_LEN_HI = cVar3;
+    FUN_CODE_0d9d(0xaa4,uVar4);
+    FUN_CODE_0c9e(0,0);
+    xdata_store_dword(0xaa4);
+    bVar2 = G_FLASH_RESET_0AAA;
+    bVar7 = G_FLASH_ERROR_1;
+    G_FLASH_ERROR_1 = bVar7 - bVar2;
+    cVar5 = G_FLASH_ERROR_0;
+    G_FLASH_ERROR_0 = cVar5 + (((bVar7 < bVar2) << 7) >> 7);
+    bVar1 = CARRY1(bVar2,DAT_INTMEM_52);
+    DAT_INTMEM_52 = bVar2 + DAT_INTMEM_52;
+    DAT_INTMEM_51 = DAT_INTMEM_51 - ((bVar1 << 7) >> 7);
+    flash_wait_and_poll();
+    return;
+  }
+  flash_set_data_len(bVar7 + cVar5,0xaa8);
+  G_FLASH_ERROR_0 = 0;
+  G_FLASH_ERROR_1 = 0;
+  REG_FLASH_CSR = 1;
+  do {
+    bVar7 = REG_FLASH_CSR;
+  } while ((bVar7 & 1) == 1);
+  cVar5 = '\x01';
+  FUN_CODE_df47();
+  if (cVar5 == '\0') {
+    return;
+  }
+  cVar5 = G_FLASH_ERROR_0;
+  if (cVar5 == '\0') {
+    cVar5 = G_FLASH_ERROR_1;
+  }
+  if (cVar5 != '\0') {
+    flash_error_handler();
+    return;
+  }
+  return;
+}
+
+
+
+void flash_wait_and_poll(void)
+
+{
+  byte bVar1;
+  char cVar2;
+  
+  REG_FLASH_CSR = 1;
+  do {
+    bVar1 = REG_FLASH_CSR;
+  } while ((bVar1 & 1) == 1);
+  cVar2 = '\x01';
+  FUN_CODE_df47();
+  if (cVar2 == '\0') {
+    return;
+  }
+  cVar2 = G_FLASH_ERROR_0;
+  if (cVar2 == '\0') {
+    cVar2 = G_FLASH_ERROR_1;
+  }
+  if (cVar2 != '\0') {
+    flash_error_handler();
+    return;
+  }
+  return;
+}
+
+
+
+void usb_power_init(void)
+
+{
+  char cVar1;
+  byte bVar2;
+  byte bVar3;
+  undefined1 *puVar4;
+  
+  bVar2 = REG_POWER_CTRL_92C0;
+  REG_POWER_CTRL_92C0 = bVar2 & 0x7f | 0x80;
+  REG_USB_PHY_CTRL_91D1 = 0xf;
+  REG_BUF_CFG_9300 = 0xc;
+  REG_BUF_CFG_9301 = 0xc0;
+  REG_BUF_CFG_9302 = 0xbf;
+  REG_INT_FLAGS_EX0 = 0x1f;
+  REG_USB_EP_CFG1 = 0xf;
+  REG_USB_PHY_CTRL_91C1 = 0xf0;
+  REG_BUF_CFG_9303 = 0x33;
+  REG_BUF_CFG_9304 = 0x3f;
+  REG_BUF_CFG_9305 = 0x40;
+  REG_USB_CONFIG = 0xe0;
+  REG_USB_EP0_LEN_H = 0xf0;
+  REG_USB_MODE_90E2 = 1;
+  bVar2 = REG_USB_EP_CTRL_905E;
+  REG_USB_EP_CTRL_905E = bVar2 & 0xfe;
+  REG_NVME_CMD_NSID = 1;
+  bVar2 = REG_NVME_CMD_PRP1;
+  REG_NVME_CMD_PRP1 = bVar2 & 0xfe;
+  handler_d07f(0);
+  handler_e214();
+  bVar2 = REG_USB_PHY_CTRL_91C3;
+  REG_USB_PHY_CTRL_91C3 = bVar2 & 0xdf;
+  bVar2 = REG_USB_PHY_CTRL_91C0;
+  REG_USB_PHY_CTRL_91C0 = bVar2 & 0xfe | 1;
+  bVar2 = REG_USB_PHY_CTRL_91C0;
+  REG_USB_PHY_CTRL_91C0 = bVar2 & 0xfe;
+  FUN_CODE_545c();
+  FUN_CODE_e50d(1,0x8f,4);
+  do {
+    bVar2 = DAT_EXTMEM_e318;
+    if ((bVar2 & 0x10) != 0) break;
+    bVar3 = REG_TIMER0_CSR;
+  } while ((bVar3 >> 1 & 1) == 0);
+  handler_e8ef(bVar2 & 0x10);
+  puVar4 = &REG_USB_PHY_CTRL_91C0;
+  bVar2 = REG_USB_PHY_CTRL_91C0;
+  if ((bVar2 & 0x18) == 0x10) {
+    puVar4 = &G_EVENT_FLAGS;
+    cVar1 = G_EVENT_FLAGS;
+    if (cVar1 == '\x04') {
+      FUN_CODE_bbb6();
+      *puVar4 = 1;
       return;
     }
-    pcVar8 = (char *)0xaa8;
-    cVar5 = DAT_EXTMEM_0aa8;
-    if (cVar5 == '\0') {
-      pcVar8 = (char *)0xaa9;
-      cVar5 = DAT_EXTMEM_0aa9;
-    }
-  } while (cVar5 != '\0');
+  }
+  else {
+    FUN_CODE_bbb6();
+    *puVar4 = 2;
+  }
   return;
 }
 
@@ -14786,7 +15673,7 @@ void FUN_CODE_b28c(void)
   char cVar2;
   undefined1 uVar3;
   
-  cVar2 = REG_SYS_FLAGS_BASE;
+  cVar2 = G_SYS_FLAGS_BASE;
   if (cVar2 == '\x05') {
     FUN_CODE_a714();
     return;
@@ -14889,6 +15776,72 @@ LAB_CODE_b495:
 
 
 
+void timer_tick_handler(void)
+
+{
+  char cVar1;
+  byte bVar2;
+  
+  bVar2 = REG_TIMER3_CSR;
+  if ((bVar2 >> 1 & 1) != 0) {
+    handler_e3d8();
+    REG_TIMER3_CSR = 2;
+  }
+  bVar2 = REG_CPU_STATUS_CC81;
+  if ((bVar2 >> 1 & 1) != 0) {
+    cVar1 = G_FLASH_OP_COUNTER;
+    if ((cVar1 == '\x0e') || (cVar1 == '\r')) {
+      REG_CPU_STATUS_CC81 = 2;
+      cVar1 = G_FLASH_CMD_TYPE;
+      if (cVar1 != '\0') {
+        handler_e529(0x3b);
+      }
+      handler_d676();
+    }
+    else {
+      handler_e90b();
+      REG_CPU_STATUS_CC81 = 2;
+    }
+  }
+  bVar2 = REG_CPU_STATUS_CC91;
+  if ((bVar2 >> 1 & 1) != 0) {
+    REG_CPU_STATUS_CC91 = 2;
+                    // WARNING: Subroutine does not return
+    flash_func_0bc8(0xf8,0x53,0xff);
+  }
+  bVar2 = DAT_EXTMEM_cc99;
+  if ((bVar2 >> 1 & 1) != 0) {
+    cVar1 = G_FLASH_CMD_TYPE;
+    if (cVar1 == '\x02') {
+      handler_e529(0x3c);
+      FUN_CODE_be8b();
+    }
+    else {
+      cVar1 = G_FLASH_CMD_TYPE;
+      if (cVar1 == '\x03') {
+        handler_e529(0xff);
+      }
+      else {
+        FUN_CODE_e883();
+        DAT_EXTMEM_cc99 = 2;
+      }
+    }
+  }
+  bVar2 = DAT_EXTMEM_ccd9;
+  if ((bVar2 >> 1 & 1) != 0) {
+    DAT_EXTMEM_ccd9 = 2;
+    DAT_EXTMEM_0719 = 2;
+  }
+  bVar2 = DAT_EXTMEM_ccf9;
+  if ((bVar2 >> 1 & 1) != 0) {
+    DAT_EXTMEM_ccf9 = 2;
+    FUN_CODE_df79();
+  }
+  return;
+}
+
+
+
 void FUN_CODE_b624(void)
 
 {
@@ -14905,7 +15858,7 @@ void FUN_CODE_b624(void)
   bVar2 = DAT_EXTMEM_07dc;
   if ((bVar2 < (byte)-(((bVar3 < 0x65) << 7) >> 7)) << 7 < '\0') {
     uVar4 = DAT_EXTMEM_07db;
-    REG_CMD_OPCODE = uVar4;
+    REG_CMD_PARAM = uVar4;
     uVar4 = DAT_EXTMEM_07da;
     REG_CMD_STATUS = uVar4;
     uVar4 = FUN_CODE_9675();
@@ -14917,7 +15870,7 @@ void FUN_CODE_b624(void)
     REG_CMD_TAG = 4;
   }
   else {
-    REG_CMD_OPCODE = 0x32;
+    REG_CMD_PARAM = 0x32;
     REG_CMD_STATUS = 0x90;
     REG_CMD_ISSUE = 1;
     REG_CMD_TAG = 4;
@@ -14951,9 +15904,9 @@ void FUN_CODE_b6cf(void)
   byte bVar2;
   byte bVar3;
   
-  cVar1 = REG_SYS_FLAGS_BASE;
+  cVar1 = G_SYS_FLAGS_BASE;
   if ((cVar1 != '\x05') && (cVar1 == '\x04')) {
-    cVar1 = DAT_EXTMEM_07ee;
+    cVar1 = G_SYS_FLAGS_07EE;
     bVar3 = 4;
     if (cVar1 != '\0') {
       bVar3 = DAT_EXTMEM_9206;
@@ -14997,8 +15950,8 @@ void FUN_CODE_b6cf(void)
       DAT_EXTMEM_9220 = bVar2 & 0xfb | 4;
     }
     DAT_EXTMEM_9092 = 8;
-    REG_SYS_FLAGS_BASE = 1;
-    FUN_CODE_d810(bVar3);
+    G_SYS_FLAGS_BASE = 1;
+    usb_buffer_handler(bVar3);
     return;
   }
   FUN_CODE_a714();
@@ -15015,11 +15968,11 @@ void FUN_CODE_b779(void)
   
   FUN_CODE_c270();
   FUN_CODE_ccb3();
-  cVar1 = DAT_EXTMEM_09f9;
+  cVar1 = G_EVENT_FLAGS;
   if (-1 < cVar1) {
     bVar2 = FUN_CODE_a334();
                     // WARNING: Subroutine does not return
-    phy_link_init(bVar2 & 0x3f | 0x80);
+    write_xdata_reg(bVar2 & 0x3f | 0x80);
   }
   FUN_CODE_a384();
                     // WARNING: Subroutine does not return
@@ -15031,9 +15984,9 @@ void FUN_CODE_b779(void)
 void FUN_CODE_b820(void)
 
 {
-  reg_test_bit(0xaad,0,0,0,0);
-  DAT_EXTMEM_0ab1 = 0;
-  DAT_EXTMEM_0ab2 = 0;
+  xdata_store_dword(0xaad,0,0,0,0);
+  G_FLASH_LEN_LO = 0;
+  G_FLASH_LEN_HI = 0;
   return;
 }
 
@@ -15042,9 +15995,9 @@ void FUN_CODE_b820(void)
 void FUN_CODE_b825(void)
 
 {
-  reg_test_bit(0xaad);
-  DAT_EXTMEM_0ab1 = 0;
-  DAT_EXTMEM_0ab2 = 0;
+  xdata_store_dword(0xaad);
+  G_FLASH_LEN_LO = 0;
+  G_FLASH_LEN_HI = 0;
   return;
 }
 
@@ -15053,8 +16006,8 @@ void FUN_CODE_b825(void)
 void FUN_CODE_b833(void)
 
 {
-  reg_test_bit(0xaad,0,0,0,0);
-  DAT_EXTMEM_0ab1 = 0;
+  xdata_store_dword(0xaad,0,0,0,0);
+  G_FLASH_LEN_LO = 0;
   return;
 }
 
@@ -15063,20 +16016,20 @@ void FUN_CODE_b833(void)
 void FUN_CODE_b838(void)
 
 {
-  reg_test_bit(0xaad);
-  DAT_EXTMEM_0ab1 = 0;
+  xdata_store_dword(0xaad);
+  G_FLASH_LEN_LO = 0;
   return;
 }
 
 
 
-byte FUN_CODE_b845(undefined1 param_1)
+byte flash_set_cmd(undefined1 param_1)
 
 {
   byte bVar1;
   
-  REG_DMA_SRC_L = param_1;
-  bVar1 = REG_DMA_DST_L;
+  REG_FLASH_CMD = param_1;
+  bVar1 = REG_FLASH_ADDR_LEN;
   return bVar1 & 0xfc;
 }
 
@@ -15088,7 +16041,7 @@ byte FUN_CODE_b848(undefined1 param_1,undefined1 *param_2)
   byte bVar1;
   
   *param_2 = param_1;
-  bVar1 = REG_DMA_DST_L;
+  bVar1 = REG_FLASH_ADDR_LEN;
   return bVar1 & 0xfc;
 }
 
@@ -15101,7 +16054,7 @@ void FUN_CODE_b850(undefined1 param_1,short param_2)
   
   *(undefined1 *)(param_2 + 1) = param_1;
   uVar1 = DAT_EXTMEM_0b21;
-  DAT_EXTMEM_0aaa = uVar1;
+  G_FLASH_RESET_0AAA = uVar1;
   return;
 }
 
@@ -15114,41 +16067,41 @@ void FUN_CODE_b851(undefined1 param_1,undefined1 *param_2)
   
   *param_2 = param_1;
   uVar1 = DAT_EXTMEM_0b21;
-  DAT_EXTMEM_0aaa = uVar1;
+  G_FLASH_RESET_0AAA = uVar1;
   return;
 }
 
 
 
-void FUN_CODE_b85b(void)
+void flash_set_mode_bit4(void)
 
 {
   byte bVar1;
   
-  bVar1 = REG_DMA_DST_H;
-  REG_DMA_DST_H = bVar1 & 0xef | 0x10;
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0xef | 0x10;
   return;
 }
 
 
 
-void FUN_CODE_b865(undefined1 param_1)
+void flash_set_addr_md(undefined1 param_1)
 
 {
-  reg_modify_bits();
+  xdata_load_dword();
   reg_read_word(8);
-  REG_DMA_CHANNEL_CTRL = param_1;
+  REG_FLASH_ADDR_MD = param_1;
   return;
 }
 
 
 
-void FUN_CODE_b873(undefined1 param_1)
+void flash_set_addr_hi(undefined1 param_1)
 
 {
-  reg_modify_bits();
+  xdata_load_dword();
   reg_read_word(0x10);
-  REG_DMA_SRC_H = param_1;
+  REG_FLASH_ADDR_HI = param_1;
   return;
 }
 
@@ -15163,24 +16116,24 @@ undefined1 FUN_CODE_b881(char param_1,char *param_2)
 
 
 
-void FUN_CODE_b888(undefined1 *param_1)
+void flash_set_data_len(undefined1 *param_1)
 
 {
-  REG_DMA_CHANNEL_STATUS = *param_1;
-  REG_DMA_LENGTH_LOW = param_1[1];
+  REG_FLASH_DATA_LEN = *param_1;
+  REG_FLASH_DATA_LEN_HI = param_1[1];
   return;
 }
 
 
 
-void FUN_CODE_b895(void)
+void flash_read_buffer_and_status(void)
 
 {
   byte bVar1;
   
   bVar1 = FLASH_BUFFER_BASE;
   FLASH_BUFFER_BASE = bVar1 & 99;
-  FUN_CODE_e3f9();
+  flash_read_status();
   return;
 }
 
@@ -15194,13 +16147,13 @@ undefined1 FUN_CODE_b8a2(void)
 
 
 
-void FUN_CODE_b8ae(void)
+void flash_set_mode_enable(void)
 
 {
   byte bVar1;
   
-  bVar1 = REG_DMA_DST_H;
-  REG_DMA_DST_H = bVar1 & 0xfe | 1;
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0xfe | 1;
   return;
 }
 
@@ -15218,7 +16171,7 @@ void FUN_CODE_b8b9(void)
 
 
 
-void FUN_CODE_b8c3(void)
+void handler_b8c3(void)
 
 {
                     // WARNING: Subroutine does not return
@@ -15257,7 +16210,7 @@ char FUN_CODE_ba06(void)
   } while ((bVar7 >> 2 & 1) == 1);
   uVar5 = REG_USB_EP0_STATUS;
   uVar4 = REG_USB_EP0_LEN_L;
-  flash_func_0c64(uVar5,0xada,uVar4);
+  flash_add_to_xdata16(uVar5,0xada,uVar4);
   cVar3 = REG_USB_EP0_STATUS;
   bVar1 = REG_USB_EP0_LEN_L;
   bVar7 = DAT_EXTMEM_0adf;
@@ -15290,8 +16243,47 @@ char FUN_CODE_ba06(void)
     }
     return bVar2 - bVar1;
   }
-  REG_SYS_FLAGS_BASE = 4;
+  G_SYS_FLAGS_BASE = 4;
   return '\x04';
+}
+
+
+
+void flash_cmd_handler(void)
+
+{
+  char cVar1;
+  byte bVar2;
+  
+  bVar2 = REG_FLASH_READY_STATUS;
+  if ((bVar2 >> 5 & 1) == 1) {
+    pcie_check_completion();
+    handler_b8c3();
+    handler_dd42(0);
+    handler_e6e7();
+    cVar1 = FLASH_BUFFER_BASE;
+    if (cVar1 == ':') {
+      G_FLASH_CMD_TYPE = 1;
+      G_FLASH_CMD_FLAG = 1;
+      handler_e4b4();
+                    // WARNING: Subroutine does not return
+      flash_func_0bc8(0xfb,0x21,0xff);
+    }
+    cVar1 = FLASH_BUFFER_BASE;
+    if (cVar1 == ';') {
+      G_FLASH_CMD_TYPE = 2;
+                    // WARNING: Subroutine does not return
+      flash_func_0bc8(0xb,0x22,0xff);
+    }
+    cVar1 = FLASH_BUFFER_BASE;
+    if (cVar1 == '<') {
+                    // WARNING: Subroutine does not return
+      flash_func_0bc8(0x25,0x22,0xff);
+    }
+    FUN_CODE_e81b(0x18,0x9c);
+    FUN_CODE_e352();
+  }
+  return;
 }
 
 
@@ -15481,7 +16473,7 @@ void FUN_CODE_bbaf(byte *param_1)
 void FUN_CODE_bbb6(void)
 
 {
-  DAT_EXTMEM_09fa = 4;
+  G_EVENT_CTRL_09FA = 4;
   return;
 }
 
@@ -15500,7 +16492,7 @@ void FUN_CODE_bbc7(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(0,0x12,0xb,1);
+  write_xdata_reg(0,0x12,0xb,1);
 }
 
 
@@ -15518,16 +16510,16 @@ void FUN_CODE_bc63(char param_1)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(param_1 + '\x01');
+  write_xdata_reg(param_1 + '\x01');
 }
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -15561,7 +16553,7 @@ void FUN_CODE_bc88(void)
 
 
 
-void FUN_CODE_bc8f(void)
+void handler_bc8f(void)
 
 {
                     // WARNING: Subroutine does not return
@@ -15579,11 +16571,11 @@ void FUN_CODE_bc98(void)
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -15615,7 +16607,7 @@ void FUN_CODE_bcaf(void)
 
 
 
-void FUN_CODE_bcb1(void)
+void handler_bcb1(void)
 
 {
                     // WARNING: Subroutine does not return
@@ -15658,7 +16650,7 @@ byte FUN_CODE_bcd7(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_09fa;
+  bVar1 = G_EVENT_CTRL_09FA;
   return bVar1 & 0x81;
 }
 
@@ -15686,7 +16678,7 @@ void FUN_CODE_bce7(undefined1 param_1,undefined1 *param_2)
 
 
 
-void FUN_CODE_bceb(byte *param_1)
+void handler_bceb(byte *param_1)
 
 {
   *param_1 = *param_1 & 0xfe | 1;
@@ -15700,8 +16692,8 @@ void FUN_CODE_bcf2(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_cc3a;
-  DAT_EXTMEM_cc3a = bVar1 & 0xfd | 2;
+  bVar1 = REG_CPU_CTRL_CC3A;
+  REG_CPU_CTRL_CC3A = bVar1 & 0xfd | 2;
   bVar1 = DAT_EXTMEM_cc38;
   DAT_EXTMEM_cc38 = bVar1 & 0xfd | 2;
   return;
@@ -15755,8 +16747,8 @@ void FUN_CODE_bd14(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_cc3a;
-  DAT_EXTMEM_cc3a = bVar1 & 0xfd;
+  bVar1 = REG_CPU_CTRL_CC3A;
+  REG_CPU_CTRL_CC3A = bVar1 & 0xfd;
   bVar1 = DAT_EXTMEM_cc38;
   DAT_EXTMEM_cc38 = bVar1 & 0xfd;
   return;
@@ -15786,7 +16778,7 @@ void FUN_CODE_bd23(byte *param_1)
 
 
 
-void FUN_CODE_bd2a(byte *param_1)
+void handler_bd2a(byte *param_1)
 
 {
   *param_1 = *param_1 & 0xdf;
@@ -15801,7 +16793,7 @@ byte FUN_CODE_bd33(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_cc3e;
+  bVar1 = REG_CPU_CTRL_CC3E;
   return bVar1 & 0xfd;
 }
 
@@ -15821,14 +16813,14 @@ void FUN_CODE_bd41(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_cc3b;
-  DAT_EXTMEM_cc3b = bVar1 & 0xfd;
+  bVar1 = REG_CPU_CTRL_CC3B;
+  REG_CPU_CTRL_CC3B = bVar1 & 0xfd;
   return;
 }
 
 
 
-byte FUN_CODE_bd49(void)
+byte handler_bd49(void)
 
 {
   byte bVar1;
@@ -15861,7 +16853,7 @@ byte FUN_CODE_bd57(void)
 
 
 
-void FUN_CODE_bd5e(byte *param_1)
+void handler_bd5e(byte *param_1)
 
 {
   *param_1 = *param_1 & 0xfb | 4;
@@ -15900,43 +16892,100 @@ void FUN_CODE_be02(byte *param_1,byte param_2,undefined1 param_3)
   
   cVar1 = BANK0_R7;
   if (BANK0_R7 == ';') {
-    FUN_CODE_b85b();
+    flash_set_mode_bit4();
     *param_1 = *param_1 & 0xdf | 0x20;
   }
   else if (BANK0_R7 == -0x45) {
-    FUN_CODE_b85b();
+    flash_set_mode_bit4();
     *param_1 = *param_1 & 0xdf | 0x20;
     *param_1 = *param_1 & 0xbf | 0x40;
     *param_1 = *param_1 & 0x7f | 0x80;
     REG_FLASH_CON = 0;
   }
   else if (BANK0_R7 == '\v') {
-    FUN_CODE_b85b();
+    flash_set_mode_bit4();
   }
-  bVar2 = REG_DMA_DST_H;
-  REG_DMA_DST_H = bVar2 & 0xfe;
-  REG_DMA_LEN_L = 0;
+  bVar2 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar2 & 0xfe;
+  REG_FLASH_BUF_OFFSET = 0;
   pbVar3 = &REG_DMA_LEN_H;
   REG_DMA_LEN_H = 0;
-  bVar2 = FUN_CODE_b845(cVar1);
+  bVar2 = flash_set_cmd(cVar1);
   *pbVar3 = bVar2 | param_2;
-  reg_modify_bits(0xaad);
-  REG_DMA_CHANNEL_SEL = param_3;
-  FUN_CODE_b865(0xaad);
-  FUN_CODE_b873(0xaad);
-  FUN_CODE_b888(0xab1);
-  REG_DMA_BURST_SIZE = 1;
+  xdata_load_dword(0xaad);
+  REG_FLASH_ADDR_LO = param_3;
+  flash_set_addr_md(0xaad);
+  flash_set_addr_hi(0xaad);
+  flash_set_data_len(0xab1);
+  REG_FLASH_CSR = 1;
   do {
-    bVar2 = REG_DMA_BURST_SIZE;
+    bVar2 = REG_FLASH_CSR;
   } while ((bVar2 & 1) == 1);
-  bVar2 = REG_DMA_DST_H;
-  REG_DMA_DST_H = bVar2 & 0xef;
-  bVar2 = REG_DMA_DST_H;
-  REG_DMA_DST_H = bVar2 & 0xdf;
-  bVar2 = REG_DMA_DST_H;
-  REG_DMA_DST_H = bVar2 & 0xbf;
-  bVar2 = REG_DMA_DST_H;
-  REG_DMA_DST_H = bVar2 & 0x7f;
+  bVar2 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar2 & 0xef;
+  bVar2 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar2 & 0xdf;
+  bVar2 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar2 & 0xbf;
+  bVar2 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar2 & 0x7f;
+  return;
+}
+
+
+
+void flash_run_transaction(undefined1 param_1,byte param_2,undefined1 param_3)
+
+{
+  byte bVar1;
+  byte *pbVar2;
+  
+  REG_FLASH_CON = 0;
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0xfe;
+  REG_FLASH_BUF_OFFSET = 0;
+  pbVar2 = &REG_DMA_LEN_H;
+  REG_DMA_LEN_H = 0;
+  bVar1 = flash_set_cmd(param_1);
+  *pbVar2 = bVar1 | param_2;
+  xdata_load_dword(0xaad);
+  REG_FLASH_ADDR_LO = param_3;
+  flash_set_addr_md(0xaad);
+  flash_set_addr_hi(0xaad);
+  flash_set_data_len(0xab1);
+  REG_FLASH_CSR = 1;
+  do {
+    bVar1 = REG_FLASH_CSR;
+  } while ((bVar1 & 1) == 1);
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0xef;
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0xdf;
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0xbf;
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0x7f;
+  return;
+}
+
+
+
+void flash_poll_busy(void)
+
+{
+  byte bVar1;
+  
+  do {
+    bVar1 = REG_FLASH_CSR;
+  } while ((bVar1 & 1) == 1);
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0xef;
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0xdf;
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0xbf;
+  bVar1 = REG_FLASH_MODE;
+  REG_FLASH_MODE = bVar1 & 0x7f;
   return;
 }
 
@@ -15980,7 +17029,7 @@ void FUN_CODE_bf0f(void)
   
   cVar2 = BANK0_R7;
   FUN_CODE_c4b3();
-  FUN_CODE_d07f(1);
+  handler_d07f(1);
   bVar1 = REG_NVME_QUEUE_CFG;
   REG_NVME_QUEUE_CFG = bVar1 & 0xfb;
   FUN_CODE_bb6e(0xc473);
@@ -15996,7 +17045,7 @@ void FUN_CODE_bf0f(void)
   *pbVar3 = *pbVar3 & 0xfd;
   *pbVar3 = *pbVar3 & 0xfb;
   *pbVar3 = *pbVar3 & 0xf7;
-  DAT_EXTMEM_c471 = 1;
+  REG_NVME_QUEUE_PTR_C471 = 1;
   bVar1 = DAT_EXTMEM_c472;
   DAT_EXTMEM_c472 = bVar1 & 0xfe;
   bVar1 = REG_NVME_DOORBELL;
@@ -16018,7 +17067,7 @@ void FUN_CODE_bf0f(void)
 
 
 
-void FUN_CODE_bf8e(void)
+void handler_bf8e(void)
 
 {
   byte bVar1;
@@ -16026,24 +17075,24 @@ void FUN_CODE_bf8e(void)
   DAT_EXTMEM_0b3d = 0;
   DAT_EXTMEM_0b3e = 0;
   DAT_EXTMEM_0af6 = 0;
-  DAT_EXTMEM_07ee = 0;
-  DAT_EXTMEM_0af2 = 0;
+  G_SYS_FLAGS_07EE = 0;
+  G_TRANSFER_FLAG_0AF2 = 0;
   DAT_EXTMEM_0acb = 0;
-  REG_SYS_FLAGS_BASE = 5;
+  G_SYS_FLAGS_BASE = 5;
   DAT_EXTMEM_0b2f = 0;
   DAT_EXTMEM_0acc = 0;
   DAT_EXTMEM_07e6 = 0;
   DAT_EXTMEM_07e9 = 0;
   DAT_EXTMEM_07ea = 0;
-  REG_SYS_FLAGS = 0;
-  DAT_EXTMEM_0b2e = 0;
-  DAT_EXTMEM_07e5 = 0;
+  G_SYS_FLAGS_07EC = 0;
+  G_USB_TRANSFER_FLAG = 0;
+  G_TRANSFER_ACTIVE = 0;
   UNK_EXTMEM_0003 = 0;
   DAT_EXTMEM_0006 = 0;
   DAT_EXTMEM_07eb = 0;
   DAT_EXTMEM_07e8 = 0;
   DAT_EXTMEM_0b3c = 0;
-  DAT_EXTMEM_07ed = 0;
+  G_SYS_FLAGS_07ED = 0;
   FUN_CODE_545c();
   FUN_CODE_cb05();
   bVar1 = REG_POWER_CTRL_92C8;
@@ -16055,26 +17104,26 @@ void FUN_CODE_bf8e(void)
   FUN_CODE_d47f();
   FUN_CODE_d559();
   FUN_CODE_e19e();
-  FUN_CODE_c00d();
+  pcie_error_handler();
   FUN_CODE_4904();
   return;
 }
 
 
 
-void FUN_CODE_c00d(void)
+void pcie_error_handler(void)
 
 {
   char cVar1;
   byte bVar2;
   byte *pbVar3;
   
-  cVar1 = DAT_EXTMEM_06e6;
+  cVar1 = G_STATE_FLAG_06E6;
   if (cVar1 != '\0') {
-    DAT_EXTMEM_06e6 = 0;
+    G_STATE_FLAG_06E6 = 0;
     DAT_EXTMEM_06e7 = 1;
     DAT_EXTMEM_06e8 = 1;
-    DAT_EXTMEM_05a7 = 0;
+    G_PCIE_TXN_COUNT_HI = 0;
     DAT_EXTMEM_06eb = 0;
     DAT_EXTMEM_05ac = 0;
     DAT_EXTMEM_05ad = 0;
@@ -16088,9 +17137,9 @@ void FUN_CODE_c00d(void)
     FUN_CODE_e8a9(1);
     FUN_CODE_d436(0xf);
     DAT_INTMEM_62 = 0;
-    DAT_EXTMEM_06e5 = 0;
+    G_MAX_LOG_ENTRIES = 0;
                     // WARNING: Subroutine does not return
-    phy_link_init(0,0xb3,5,1);
+    write_xdata_reg(0,0xb3,5,1);
   }
   return;
 }
@@ -16105,20 +17154,20 @@ char FUN_CODE_c089(undefined1 param_1)
   byte bVar3;
   byte bVar4;
   
-  DAT_EXTMEM_0aa9 = param_1;
+  G_FLASH_ERROR_1 = param_1;
   DAT_EXTMEM_0aac = 1;
   bVar1 = DAT_EXTMEM_b434;
   DAT_EXTMEM_0aab = bVar1 & 0xf;
-  DAT_EXTMEM_0aaa = 0;
+  G_FLASH_RESET_0AAA = 0;
   do {
-    bVar1 = DAT_EXTMEM_0aa9;
+    bVar1 = G_FLASH_ERROR_1;
     if (bVar1 < 0xf) {
       bVar4 = DAT_EXTMEM_0aab;
       if (bVar4 == bVar1) {
         return '\0';
       }
       bVar3 = DAT_EXTMEM_0aac;
-      bVar1 = DAT_EXTMEM_0aa9;
+      bVar1 = G_FLASH_ERROR_1;
       bVar4 = (bVar1 | bVar3 ^ 0xf) & bVar4;
     }
     else {
@@ -16134,12 +17183,12 @@ char FUN_CODE_c089(undefined1 param_1)
     bVar4 = DAT_EXTMEM_b434;
     DAT_EXTMEM_b434 = bVar1 | bVar4 & 0xf0;
     FUN_CODE_d702();
-    FUN_CODE_e80a(0,199,2);
+    delay_function(0,199,2);
     cVar2 = DAT_EXTMEM_0aac;
     DAT_EXTMEM_0aac = cVar2 * '\x02';
-    cVar2 = DAT_EXTMEM_0aaa;
-    DAT_EXTMEM_0aaa = cVar2 + '\x01';
-    bVar1 = DAT_EXTMEM_0aaa;
+    cVar2 = G_FLASH_RESET_0AAA;
+    G_FLASH_RESET_0AAA = cVar2 + '\x01';
+    bVar1 = G_FLASH_RESET_0AAA;
   } while ((bVar1 < 4) << 7 < '\0');
   return bVar1 - 4;
 }
@@ -16152,7 +17201,7 @@ void FUN_CODE_c17f(void)
   FUN_CODE_a2ff();
   FUN_CODE_a3eb();
                     // WARNING: Subroutine does not return
-  phy_link_init(4);
+  write_xdata_reg(4);
 }
 
 
@@ -16166,26 +17215,26 @@ void FUN_CODE_c1f9(void)
   
   DAT_INTMEM_51 = '\0';
   do {
-    pcie_check_link(DAT_INTMEM_51);
+    pcie_clear_reg_at_offset(DAT_INTMEM_51);
     DAT_INTMEM_51 = DAT_INTMEM_51 + '\x01';
   } while (DAT_INTMEM_51 != '\f');
-  bVar1 = DAT_EXTMEM_05ae;
+  bVar1 = G_PCIE_DIRECTION;
   if ((bVar1 & 1) == 0) {
     REG_PCIE_FMT_TYPE = 0;
   }
   else {
     REG_PCIE_FMT_TYPE = 0x40;
   }
-  DAT_EXTMEM_b213 = 1;
+  REG_PCIE_TLP_CTRL = 1;
   pcie_set_byte_enables(0xf);
-  reg_modify_bits(0x5af);
-  reg_test_bit(0xb218);
-  FUN_CODE_999d();
+  xdata_load_dword(0x5af);
+  xdata_store_dword(0xb218);
+  pcie_clear_and_trigger();
   do {
-    cVar2 = FUN_CODE_99eb();
+    cVar2 = pcie_get_completion_status();
   } while (cVar2 == '\0');
-  FUN_CODE_9a95();
-  bVar1 = DAT_EXTMEM_05ae;
+  pcie_write_status_complete();
+  bVar1 = G_PCIE_DIRECTION;
   if ((bVar1 & 1) != 0) {
     return;
   }
@@ -16196,9 +17245,76 @@ void FUN_CODE_c1f9(void)
       return;
     }
   }
-  cVar2 = FUN_CODE_9a74();
-  if (((cVar2 == '\0') && (puVar3[1] == '\0')) && (cVar2 = DAT_EXTMEM_b22b, cVar2 == '\x04')) {
-    FUN_CODE_9a60();
+  cVar2 = pcie_read_completion_data();
+  if (((cVar2 == '\0') && (puVar3[1] == '\0')) && (cVar2 = REG_PCIE_CPL_STATUS, cVar2 == '\x04')) {
+    pcie_get_link_speed();
+    return;
+  }
+  return;
+}
+
+
+
+void pcie_setup_memory_tlp(byte param_1)
+
+{
+  byte bVar1;
+  char cVar2;
+  undefined1 *puVar3;
+  
+  if ((param_1 & 1) == 0) {
+    REG_PCIE_FMT_TYPE = 0;
+  }
+  else {
+    REG_PCIE_FMT_TYPE = 0x40;
+  }
+  REG_PCIE_TLP_CTRL = 1;
+  pcie_set_byte_enables(0xf);
+  xdata_load_dword(0x5af);
+  xdata_store_dword(0xb218);
+  pcie_clear_and_trigger();
+  do {
+    cVar2 = pcie_get_completion_status();
+  } while (cVar2 == '\0');
+  pcie_write_status_complete();
+  bVar1 = G_PCIE_DIRECTION;
+  if ((bVar1 & 1) != 0) {
+    return;
+  }
+  while (puVar3 = &REG_PCIE_STATUS, bVar1 = REG_PCIE_STATUS, (bVar1 & 2) == 0) {
+    bVar1 = REG_PCIE_STATUS;
+    if ((bVar1 & 1) != 0) {
+      REG_PCIE_STATUS = 1;
+      return;
+    }
+  }
+  cVar2 = pcie_read_completion_data();
+  if (((cVar2 == '\0') && (puVar3[1] == '\0')) && (cVar2 = REG_PCIE_CPL_STATUS, cVar2 == '\x04')) {
+    pcie_get_link_speed();
+    return;
+  }
+  return;
+}
+
+
+
+void pcie_poll_and_read_completion(void)
+
+{
+  byte bVar1;
+  char cVar2;
+  undefined1 *puVar3;
+  
+  while (puVar3 = &REG_PCIE_STATUS, bVar1 = REG_PCIE_STATUS, (bVar1 & 2) == 0) {
+    bVar1 = REG_PCIE_STATUS;
+    if ((bVar1 & 1) != 0) {
+      REG_PCIE_STATUS = 1;
+      return;
+    }
+  }
+  cVar2 = pcie_read_completion_data();
+  if (((cVar2 == '\0') && (puVar3[1] == '\0')) && (cVar2 = REG_PCIE_CPL_STATUS, cVar2 == '\x04')) {
+    pcie_get_link_speed();
     return;
   }
   return;
@@ -16216,20 +17332,20 @@ void FUN_CODE_c270(void)
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -16245,17 +17361,17 @@ void FUN_CODE_c2e6(char param_1)
   char *pcVar6;
   undefined1 *puVar7;
   
-  DAT_EXTMEM_0aa1 = param_1;
+  G_LOG_PROCESSED_INDEX = param_1;
   FUN_CODE_e2a6();
   if (param_1 != '\0') {
     DAT_INTMEM_51 = 0;
     while( true ) {
-      pcVar5 = &DAT_EXTMEM_06e5;
-      bVar1 = DAT_EXTMEM_06e5;
+      pcVar5 = &G_MAX_LOG_ENTRIES;
+      bVar1 = G_MAX_LOG_ENTRIES;
       if (bVar1 <= DAT_INTMEM_51) break;
       FUN_CODE_c47f(DAT_INTMEM_51 - bVar1);
-      pcVar6 = &DAT_EXTMEM_0aa1;
-      cVar2 = DAT_EXTMEM_0aa1;
+      pcVar6 = &G_LOG_PROCESSED_INDEX;
+      cVar2 = G_LOG_PROCESSED_INDEX;
       if (cVar2 != *pcVar5) {
         FUN_CODE_c496();
         FUN_CODE_c445();
@@ -16264,18 +17380,18 @@ void FUN_CODE_c2e6(char param_1)
                *(char *)CONCAT11('\x05' - (((0x7b < DAT_INTMEM_51 * '\n') << 7) >> 7),
                                  DAT_INTMEM_51 * '\n' + 0x84);
           if (DAT_INTMEM_52 != '\0') {
-            REG_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
-            DAT_EXTMEM_0574 = 2;
+            G_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
+            G_LOG_PROCESS_STATE = 2;
             cVar3 = '\0';
             if (cVar2 != '\0') {
               cVar3 = DAT_INTMEM_52;
             }
-            DAT_EXTMEM_0575 = cVar3;
+            G_LOG_ENTRY_VALUE = cVar3;
                     // WARNING: Subroutine does not return
             FUN_CODE_23f7(9);
           }
-          puVar7 = &DAT_EXTMEM_0aa1;
-          uVar4 = DAT_EXTMEM_0aa1;
+          puVar7 = &G_LOG_PROCESSED_INDEX;
+          uVar4 = G_LOG_PROCESSED_INDEX;
           FUN_CODE_c47f();
           *puVar7 = uVar4;
         }
@@ -16301,14 +17417,14 @@ void FUN_CODE_c2f1(void)
   
   DAT_INTMEM_51 = 0;
   do {
-    pcVar5 = &DAT_EXTMEM_06e5;
-    bVar1 = DAT_EXTMEM_06e5;
+    pcVar5 = &G_MAX_LOG_ENTRIES;
+    bVar1 = G_MAX_LOG_ENTRIES;
     if (bVar1 <= DAT_INTMEM_51) {
       return;
     }
     FUN_CODE_c47f(DAT_INTMEM_51 - bVar1);
-    pcVar6 = &DAT_EXTMEM_0aa1;
-    cVar2 = DAT_EXTMEM_0aa1;
+    pcVar6 = &G_LOG_PROCESSED_INDEX;
+    cVar2 = G_LOG_PROCESSED_INDEX;
     if (cVar2 != *pcVar5) {
       FUN_CODE_c496();
       FUN_CODE_c445();
@@ -16317,18 +17433,18 @@ void FUN_CODE_c2f1(void)
              *(char *)CONCAT11('\x05' - (((0x7b < DAT_INTMEM_51 * '\n') << 7) >> 7),
                                DAT_INTMEM_51 * '\n' + 0x84);
         if (DAT_INTMEM_52 != '\0') {
-          REG_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
-          DAT_EXTMEM_0574 = 2;
+          G_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
+          G_LOG_PROCESS_STATE = 2;
           cVar3 = '\0';
           if (cVar2 != '\0') {
             cVar3 = DAT_INTMEM_52;
           }
-          DAT_EXTMEM_0575 = cVar3;
+          G_LOG_ENTRY_VALUE = cVar3;
                     // WARNING: Subroutine does not return
           FUN_CODE_23f7(9);
         }
-        puVar7 = &DAT_EXTMEM_0aa1;
-        uVar4 = DAT_EXTMEM_0aa1;
+        puVar7 = &G_LOG_PROCESSED_INDEX;
+        uVar4 = G_LOG_PROCESSED_INDEX;
         FUN_CODE_c47f();
         *puVar7 = uVar4;
       }
@@ -16353,8 +17469,8 @@ void FUN_CODE_c2f8(byte param_1,char *param_2)
       return;
     }
     FUN_CODE_c47f(DAT_INTMEM_51 - param_1);
-    pcVar4 = &DAT_EXTMEM_0aa1;
-    cVar1 = DAT_EXTMEM_0aa1;
+    pcVar4 = &G_LOG_PROCESSED_INDEX;
+    cVar1 = G_LOG_PROCESSED_INDEX;
     if (cVar1 != *param_2) {
       FUN_CODE_c496();
       FUN_CODE_c445();
@@ -16363,25 +17479,25 @@ void FUN_CODE_c2f8(byte param_1,char *param_2)
              *(char *)CONCAT11('\x05' - (((0x7b < DAT_INTMEM_51 * '\n') << 7) >> 7),
                                DAT_INTMEM_51 * '\n' + 0x84);
         if (DAT_INTMEM_52 != '\0') {
-          REG_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
-          DAT_EXTMEM_0574 = 2;
+          G_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
+          G_LOG_PROCESS_STATE = 2;
           cVar2 = '\0';
           if (cVar1 != '\0') {
             cVar2 = DAT_INTMEM_52;
           }
-          DAT_EXTMEM_0575 = cVar2;
+          G_LOG_ENTRY_VALUE = cVar2;
                     // WARNING: Subroutine does not return
           FUN_CODE_23f7(9);
         }
-        puVar5 = &DAT_EXTMEM_0aa1;
-        uVar3 = DAT_EXTMEM_0aa1;
+        puVar5 = &G_LOG_PROCESSED_INDEX;
+        uVar3 = G_LOG_PROCESSED_INDEX;
         FUN_CODE_c47f();
         *puVar5 = uVar3;
       }
     }
     DAT_INTMEM_51 = DAT_INTMEM_51 + 1;
-    param_2 = &DAT_EXTMEM_06e5;
-    param_1 = DAT_EXTMEM_06e5;
+    param_2 = &G_MAX_LOG_ENTRIES;
+    param_1 = G_MAX_LOG_ENTRIES;
   } while( true );
 }
 
@@ -16399,8 +17515,8 @@ void FUN_CODE_c2ff(char param_1,char *param_2)
   
   do {
     FUN_CODE_c47f(param_1);
-    pcVar5 = &DAT_EXTMEM_0aa1;
-    cVar2 = DAT_EXTMEM_0aa1;
+    pcVar5 = &G_LOG_PROCESSED_INDEX;
+    cVar2 = G_LOG_PROCESSED_INDEX;
     if (cVar2 != *param_2) {
       FUN_CODE_c496();
       FUN_CODE_c445();
@@ -16409,25 +17525,25 @@ void FUN_CODE_c2ff(char param_1,char *param_2)
              *(char *)CONCAT11('\x05' - (((0x7b < DAT_INTMEM_51 * '\n') << 7) >> 7),
                                DAT_INTMEM_51 * '\n' + 0x84);
         if (DAT_INTMEM_52 != '\0') {
-          REG_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
-          DAT_EXTMEM_0574 = 2;
+          G_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
+          G_LOG_PROCESS_STATE = 2;
           cVar3 = '\0';
           if (cVar2 != '\0') {
             cVar3 = DAT_INTMEM_52;
           }
-          DAT_EXTMEM_0575 = cVar3;
+          G_LOG_ENTRY_VALUE = cVar3;
                     // WARNING: Subroutine does not return
           FUN_CODE_23f7(9);
         }
-        puVar6 = &DAT_EXTMEM_0aa1;
-        uVar4 = DAT_EXTMEM_0aa1;
+        puVar6 = &G_LOG_PROCESSED_INDEX;
+        uVar4 = G_LOG_PROCESSED_INDEX;
         FUN_CODE_c47f();
         *puVar6 = uVar4;
       }
     }
     DAT_INTMEM_51 = DAT_INTMEM_51 + 1;
-    param_2 = &DAT_EXTMEM_06e5;
-    bVar1 = DAT_EXTMEM_06e5;
+    param_2 = &G_MAX_LOG_ENTRIES;
+    bVar1 = G_MAX_LOG_ENTRIES;
     param_1 = DAT_INTMEM_51 - bVar1;
   } while (DAT_INTMEM_51 < bVar1);
   return;
@@ -16452,31 +17568,31 @@ void FUN_CODE_c30e(char *param_1,char param_2)
            *(char *)CONCAT11('\x05' - (((0x7b < DAT_INTMEM_51 * '\n') << 7) >> 7),
                              DAT_INTMEM_51 * '\n' + 0x84);
       if (DAT_INTMEM_52 != '\0') {
-        REG_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
-        DAT_EXTMEM_0574 = 2;
+        G_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
+        G_LOG_PROCESS_STATE = 2;
         cVar2 = '\0';
         if (param_2 != '\0') {
           cVar2 = DAT_INTMEM_52;
         }
-        DAT_EXTMEM_0575 = cVar2;
+        G_LOG_ENTRY_VALUE = cVar2;
                     // WARNING: Subroutine does not return
         FUN_CODE_23f7(9);
       }
-      puVar5 = &DAT_EXTMEM_0aa1;
-      uVar3 = DAT_EXTMEM_0aa1;
+      puVar5 = &G_LOG_PROCESSED_INDEX;
+      uVar3 = G_LOG_PROCESSED_INDEX;
       FUN_CODE_c47f();
       *puVar5 = uVar3;
     }
     do {
       DAT_INTMEM_51 = DAT_INTMEM_51 + 1;
-      pcVar4 = &DAT_EXTMEM_06e5;
-      bVar1 = DAT_EXTMEM_06e5;
+      pcVar4 = &G_MAX_LOG_ENTRIES;
+      bVar1 = G_MAX_LOG_ENTRIES;
       if (bVar1 <= DAT_INTMEM_51) {
         return;
       }
       FUN_CODE_c47f(DAT_INTMEM_51 - bVar1);
       param_1 = (char *)0xaa1;
-      param_2 = DAT_EXTMEM_0aa1;
+      param_2 = G_LOG_PROCESSED_INDEX;
     } while (param_2 == *pcVar4);
   } while( true );
 }
@@ -16488,12 +17604,12 @@ void FUN_CODE_c335(char param_1)
 {
   undefined1 uVar1;
   
-  DAT_EXTMEM_0574 = 2;
+  G_LOG_PROCESS_STATE = 2;
   uVar1 = 0;
   if (param_1 != '\0') {
     uVar1 = DAT_INTMEM_52;
   }
-  DAT_EXTMEM_0575 = uVar1;
+  G_LOG_ENTRY_VALUE = uVar1;
                     // WARNING: Subroutine does not return
   FUN_CODE_23f7(9);
 }
@@ -16515,14 +17631,14 @@ void FUN_CODE_c351(undefined1 *param_1,undefined1 param_2)
     do {
       do {
         DAT_INTMEM_51 = DAT_INTMEM_51 + 1;
-        pcVar4 = &DAT_EXTMEM_06e5;
-        bVar1 = DAT_EXTMEM_06e5;
+        pcVar4 = &G_MAX_LOG_ENTRIES;
+        bVar1 = G_MAX_LOG_ENTRIES;
         if (bVar1 <= DAT_INTMEM_51) {
           return;
         }
         FUN_CODE_c47f(DAT_INTMEM_51 - bVar1);
-        pcVar5 = &DAT_EXTMEM_0aa1;
-        cVar2 = DAT_EXTMEM_0aa1;
+        pcVar5 = &G_LOG_PROCESSED_INDEX;
+        cVar2 = G_LOG_PROCESSED_INDEX;
       } while (cVar2 == *pcVar4);
       FUN_CODE_c496();
       FUN_CODE_c445();
@@ -16531,17 +17647,17 @@ void FUN_CODE_c351(undefined1 *param_1,undefined1 param_2)
          *(char *)CONCAT11('\x05' - (((0x7b < DAT_INTMEM_51 * '\n') << 7) >> 7),
                            DAT_INTMEM_51 * '\n' + 0x84);
     if (DAT_INTMEM_52 != '\0') break;
-    param_1 = &DAT_EXTMEM_0aa1;
-    param_2 = DAT_EXTMEM_0aa1;
+    param_1 = &G_LOG_PROCESSED_INDEX;
+    param_2 = G_LOG_PROCESSED_INDEX;
     DAT_INTMEM_52 = 0;
   }
-  REG_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
-  DAT_EXTMEM_0574 = 2;
+  G_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
+  G_LOG_PROCESS_STATE = 2;
   cVar3 = '\0';
   if (cVar2 != '\0') {
     cVar3 = DAT_INTMEM_52;
   }
-  DAT_EXTMEM_0575 = cVar3;
+  G_LOG_ENTRY_VALUE = cVar3;
                     // WARNING: Subroutine does not return
   FUN_CODE_23f7(9);
 }
@@ -16560,14 +17676,14 @@ void FUN_CODE_c358(void)
   undefined1 *puVar7;
   
   do {
-    pcVar5 = &DAT_EXTMEM_06e5;
-    bVar1 = DAT_EXTMEM_06e5;
+    pcVar5 = &G_MAX_LOG_ENTRIES;
+    bVar1 = G_MAX_LOG_ENTRIES;
     if (bVar1 <= DAT_INTMEM_51) {
       return;
     }
     FUN_CODE_c47f(DAT_INTMEM_51 - bVar1);
-    pcVar6 = &DAT_EXTMEM_0aa1;
-    cVar2 = DAT_EXTMEM_0aa1;
+    pcVar6 = &G_LOG_PROCESSED_INDEX;
+    cVar2 = G_LOG_PROCESSED_INDEX;
     if (cVar2 != *pcVar5) {
       FUN_CODE_c496();
       FUN_CODE_c445();
@@ -16576,18 +17692,18 @@ void FUN_CODE_c358(void)
              *(char *)CONCAT11('\x05' - (((0x7b < DAT_INTMEM_51 * '\n') << 7) >> 7),
                                DAT_INTMEM_51 * '\n' + 0x84);
         if (DAT_INTMEM_52 != '\0') {
-          REG_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
-          DAT_EXTMEM_0574 = 2;
+          G_SYS_STATUS_PRIMARY = DAT_INTMEM_51;
+          G_LOG_PROCESS_STATE = 2;
           cVar3 = '\0';
           if (cVar2 != '\0') {
             cVar3 = DAT_INTMEM_52;
           }
-          DAT_EXTMEM_0575 = cVar3;
+          G_LOG_ENTRY_VALUE = cVar3;
                     // WARNING: Subroutine does not return
           FUN_CODE_23f7(9);
         }
-        puVar7 = &DAT_EXTMEM_0aa1;
-        uVar4 = DAT_EXTMEM_0aa1;
+        puVar7 = &G_LOG_PROCESSED_INDEX;
+        uVar4 = G_LOG_PROCESSED_INDEX;
         FUN_CODE_c47f();
         *puVar7 = uVar4;
       }
@@ -16668,11 +17784,11 @@ void FUN_CODE_c3ce(void)
   uVar1 = DAT_EXTMEM_0b36;
   DAT_EXTMEM_0aa0 = uVar1;
   uVar1 = DAT_EXTMEM_0b37;
-  DAT_EXTMEM_0aa1 = uVar1;
+  G_LOG_PROCESSED_INDEX = uVar1;
   bVar2 = 1;
   bVar3 = FUN_CODE_a334(1);
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar3 & 0xc0 | bVar2);
+  write_xdata_reg(bVar3 & 0xc0 | bVar2);
 }
 
 
@@ -16682,8 +17798,8 @@ void FUN_CODE_c441(void)
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_05a6;
-  FUN_CODE_0dd1(uVar1,0x5b4,0x22);
+  uVar1 = G_PCIE_TXN_COUNT_LO;
+  mul_add_index(uVar1,0x5b4,0x22);
   return;
 }
 
@@ -16692,7 +17808,7 @@ void FUN_CODE_c441(void)
 void FUN_CODE_c444(undefined1 *param_1)
 
 {
-  FUN_CODE_0dd1(*param_1,0x5b4,0x22);
+  mul_add_index(*param_1,0x5b4,0x22);
   return;
 }
 
@@ -16701,7 +17817,7 @@ void FUN_CODE_c444(undefined1 *param_1)
 void FUN_CODE_c445(void)
 
 {
-  FUN_CODE_0dd1(0x5b4,0x22);
+  mul_add_index(0x5b4,0x22);
   return;
 }
 
@@ -16710,7 +17826,7 @@ void FUN_CODE_c445(void)
 void FUN_CODE_c448(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
@@ -16746,8 +17862,8 @@ void FUN_CODE_c472(void)
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_05a6;
-  FUN_CODE_0dd1(uVar1,0x5b3,0x22);
+  uVar1 = G_PCIE_TXN_COUNT_LO;
+  mul_add_index(uVar1,0x5b3,0x22);
   return;
 }
 
@@ -16756,7 +17872,7 @@ void FUN_CODE_c472(void)
 void FUN_CODE_c479(void)
 
 {
-  FUN_CODE_0dd1(0x22);
+  mul_add_index(0x22);
   return;
 }
 
@@ -16784,7 +17900,7 @@ void FUN_CODE_c496(undefined1 param_1)
 {
   char in_PSW;
   
-  DAT_EXTMEM_05a6 = *(undefined1 *)CONCAT11('\x05' - (in_PSW >> 7),param_1);
+  G_PCIE_TXN_COUNT_LO = *(undefined1 *)CONCAT11('\x05' - (in_PSW >> 7),param_1);
   return;
 }
 
@@ -16793,7 +17909,7 @@ void FUN_CODE_c496(undefined1 param_1)
 void FUN_CODE_c4a3(void)
 
 {
-  FUN_CODE_0dd1(0x5d3);
+  mul_add_index(0x5d3);
   return;
 }
 
@@ -16804,7 +17920,7 @@ char FUN_CODE_c4a9(void)
 {
   char cVar1;
   
-  cVar1 = DAT_EXTMEM_06e5;
+  cVar1 = G_MAX_LOG_ENTRIES;
   return DAT_INTMEM_21 - cVar1;
 }
 
@@ -16816,7 +17932,7 @@ void FUN_CODE_c4b3(void)
   byte bVar1;
   
   DAT_EXTMEM_000b = 0;
-  DAT_EXTMEM_000a = 0;
+  G_EP_CHECK_FLAG = 0;
   DAT_EXTMEM_0052 = 0;
   DAT_INTMEM_4d = 0;
   do {
@@ -16834,7 +17950,7 @@ void FUN_CODE_c4b3(void)
   BANK1_R5 = 0x22;
   bVar1 = REG_NVME_DOORBELL;
   REG_NVME_DOORBELL = bVar1 & 0xdf | 0x20;
-  FUN_CODE_e214();
+  handler_e214();
   bVar1 = REG_NVME_DOORBELL;
   REG_NVME_DOORBELL = bVar1 & 0xdf;
   return;
@@ -16848,14 +17964,14 @@ void FUN_CODE_c5ff(void)
   char cVar1;
   undefined1 *puVar2;
   
-  DAT_EXTMEM_05a6 = 0;
+  G_PCIE_TXN_COUNT_LO = 0;
   cVar1 = '\0';
   FUN_CODE_e77a();
   FUN_CODE_dde2();
   if (cVar1 == '\x01') {
     FUN_CODE_9ee5();
     if (cVar1 == '\0') {
-      reg_test_bit(0xa5f,0,0,0,2);
+      xdata_store_dword(0xa5f,0,0,0,2);
       cVar1 = '\0';
       FUN_CODE_d956(0,1);
       if (cVar1 != -1) {
@@ -16875,7 +17991,7 @@ void FUN_CODE_c5ff(void)
             if (cVar1 == '\0') {
               FUN_CODE_995a();
               puVar2 = &REG_TRANSFER_FLAGS;
-              FUN_CODE_0dd1();
+              mul_add_index();
               *puVar2 = 2;
             }
           }
@@ -16926,7 +18042,7 @@ void FUN_CODE_c6d3(undefined1 *param_1)
     FUN_CODE_9a20(0xc,DAT_INTMEM_27);
     flash_func_0d08(0,0,DAT_INTMEM_25 * ' ');
                     // WARNING: Subroutine does not return
-    reg_clear_bit(0x66);
+    idata_store_dword(0x66);
   }
   return;
 }
@@ -16946,7 +18062,7 @@ void FUN_CODE_c73c(void)
   FUN_CODE_b833();
   FUN_CODE_b881();
   FUN_CODE_be02();
-  FUN_CODE_b895();
+  flash_read_buffer_and_status();
   FUN_CODE_df47();
   if (cVar2 == '\0') {
     return;
@@ -16992,7 +18108,7 @@ byte FUN_CODE_c80d(undefined1 *param_1)
     DAT_INTMEM_26 = 3;
     DAT_INTMEM_25 = '\0';
     while( true ) {
-      FUN_CODE_9aa9();
+      pcie_get_txn_count_hi();
       if (-1 < (char)bVar4) break;
       pbVar5 = &DAT_EXTMEM_05c4;
       FUN_CODE_9aa3(DAT_INTMEM_25);
@@ -17003,7 +18119,7 @@ byte FUN_CODE_c80d(undefined1 *param_1)
     bVar3 = DAT_INTMEM_26;
     if (DAT_INTMEM_26 != 0) {
       DAT_INTMEM_25 = '\0';
-      FUN_CODE_9aa9();
+      pcie_get_txn_count_hi();
       if ((char)bVar4 < '\0') {
         FUN_CODE_998b(DAT_INTMEM_25);
         *param_1 = 3;
@@ -17012,7 +18128,7 @@ byte FUN_CODE_c80d(undefined1 *param_1)
         FUN_CODE_9a02(cVar2 + '\x04');
         bVar4 = DAT_EXTMEM_0aeb;
                     // WARNING: Subroutine does not return
-        reg_clear_bit(0x66,0,0,0,DAT_INTMEM_26 & (bVar4 ^ 3));
+        idata_store_dword(0x66,0,0,0,DAT_INTMEM_26 & (bVar4 ^ 3));
       }
       DAT_EXTMEM_06eb = DAT_INTMEM_26;
       bVar3 = DAT_INTMEM_26;
@@ -17036,13 +18152,13 @@ byte FUN_CODE_c874(undefined1 *param_1,byte param_2)
     return param_2;
   }
   cVar2 = '\0';
-  bVar3 = DAT_EXTMEM_06e5;
+  bVar3 = G_MAX_LOG_ENTRIES;
   if (bVar3 == 0) {
     return -bVar3;
   }
-  uVar1 = REG_TRANSFER_SIZE;
-  puVar4 = &DAT_EXTMEM_05a6;
-  DAT_EXTMEM_05a6 = uVar1;
+  uVar1 = G_EP_CONFIG_05A8;
+  puVar4 = &G_PCIE_TXN_COUNT_LO;
+  G_PCIE_TXN_COUNT_LO = uVar1;
   FUN_CODE_9977();
   FUN_CODE_998f(*puVar4);
   FUN_CODE_99f8();
@@ -17121,13 +18237,13 @@ char FUN_CODE_c942(void)
       if (cVar2 != '\0') {
         return cVar2;
       }
-      reg_modify_bits(0xb220);
+      xdata_load_dword(0xb220);
       cVar2 = (char)((ushort)DAT_INTMEM_25 * 4);
-      reg_test_bit(CONCAT11((char)((ushort)DAT_INTMEM_25 * 4 >> 8) + -0x80,cVar2));
+      xdata_store_dword(CONCAT11((char)((ushort)DAT_INTMEM_25 * 4 >> 8) + -0x80,cVar2));
     }
-    reg_modify_bits(0x5af);
+    xdata_load_dword(0x5af);
     cVar2 = cVar2 + '\x04';
-    reg_test_bit(0x5af);
+    xdata_store_dword(0x5af);
     bVar1 = DAT_INTMEM_25;
     DAT_INTMEM_25 = DAT_INTMEM_25 + 1;
   } while ((DAT_INTMEM_25 < 6) << 7 < '\0');
@@ -17143,31 +18259,31 @@ void FUN_CODE_c9a8(undefined1 param_1)
   byte bVar2;
   undefined1 uVar3;
   
-  DAT_EXTMEM_0a7d = param_1;
-  bVar2 = DAT_EXTMEM_09fa;
+  G_EP_DISPATCH_VAL3 = param_1;
+  bVar2 = G_EVENT_CTRL_09FA;
   if ((bVar2 >> 2 & 1) != 0) {
-    cVar1 = DAT_EXTMEM_0b41;
+    cVar1 = G_USB_STATE_0B41;
     if (cVar1 != '\0') {
       FUN_CODE_e3b7(3);
     }
     uVar3 = DAT_EXTMEM_0aef;
     FUN_CODE_3578(uVar3);
     thunk_FUN_CODE_de16();
-    bVar2 = DAT_EXTMEM_0af1;
+    bVar2 = G_STATE_FLAG_0AF1;
     if (((bVar2 & 1) != 0) &&
        ((cVar1 = DAT_EXTMEM_07e8, cVar1 != '\0' || (cVar1 = DAT_EXTMEM_07eb, cVar1 != '\0')))) {
       FUN_CODE_545c();
       bVar2 = DAT_EXTMEM_c6a8;
       DAT_EXTMEM_c6a8 = bVar2 & 0xfe;
-      uVar3 = DAT_EXTMEM_0a7d;
+      uVar3 = G_EP_DISPATCH_VAL3;
       FUN_CODE_8a89(uVar3);
     }
     DAT_EXTMEM_07e8 = 0;
     DAT_EXTMEM_0b2f = 1;
     return;
   }
-  bVar2 = DAT_EXTMEM_09fa;
-  if (((bVar2 >> 1 & 1) != 0) && (cVar1 = DAT_EXTMEM_0b41, cVar1 != '\0')) {
+  bVar2 = G_EVENT_CTRL_09FA;
+  if (((bVar2 >> 1 & 1) != 0) && (cVar1 = G_USB_STATE_0B41, cVar1 != '\0')) {
     FUN_CODE_e3b7(1);
   }
   return;
@@ -17181,35 +18297,35 @@ void FUN_CODE_ca0d(void)
   char cVar1;
   byte bVar2;
   
-  cVar1 = DAT_EXTMEM_09fa;
+  cVar1 = G_EVENT_CTRL_09FA;
   if (cVar1 == '\x04') {
-    FUN_CODE_dd42(4);
+    handler_dd42(4);
     FUN_CODE_e7c1(0);
   }
-  cVar1 = DAT_EXTMEM_0ae2;
+  cVar1 = G_SYSTEM_STATE_0AE2;
   if (cVar1 == '\x01') {
     FUN_CODE_057f();
     FUN_CODE_bba8(0x92e1);
-    bVar2 = REG_POWER_STATUS;
-    REG_POWER_STATUS = bVar2 & 0xbf;
+    bVar2 = REG_POWER_STATUS_92C2;
+    REG_POWER_STATUS_92C2 = bVar2 & 0xbf;
   }
   else {
-    cVar1 = DAT_EXTMEM_0ae2;
+    cVar1 = G_SYSTEM_STATE_0AE2;
     if (cVar1 == '\x02') {
-      bVar2 = DAT_EXTMEM_91c0;
-      DAT_EXTMEM_91c0 = bVar2 & 0xfd;
+      bVar2 = REG_USB_PHY_CTRL_91C0;
+      REG_USB_PHY_CTRL_91C0 = bVar2 & 0xfd;
     }
     else if (cVar1 == '\x04') {
-      bVar2 = DAT_EXTMEM_cc30;
-      DAT_EXTMEM_cc30 = bVar2 & 0xfe;
+      bVar2 = REG_CPU_CTRL_CC30;
+      REG_CPU_CTRL_CC30 = bVar2 & 0xfe;
       bVar2 = DAT_EXTMEM_e710;
       DAT_EXTMEM_e710 = bVar2 & 0xe0 | 0x1f;
-      bVar2 = DAT_EXTMEM_91c0;
-      DAT_EXTMEM_91c0 = bVar2 & 0xfd;
+      bVar2 = REG_USB_PHY_CTRL_91C0;
+      REG_USB_PHY_CTRL_91C0 = bVar2 & 0xfd;
       FUN_CODE_bbaf(0xcc3b);
     }
   }
-  DAT_EXTMEM_0ae2 = 0x10;
+  G_SYSTEM_STATE_0AE2 = 0x10;
   return;
 }
 
@@ -17221,8 +18337,8 @@ void FUN_CODE_cad5(undefined1 param_1,undefined1 *param_2)
   byte bVar1;
   
   *param_2 = param_1;
-  bVar1 = REG_POWER_STATUS;
-  REG_POWER_STATUS = bVar1 & 0xbf | 0x40;
+  bVar1 = REG_POWER_STATUS_92C2;
+  REG_POWER_STATUS_92C2 = bVar1 & 0xbf | 0x40;
   DAT_EXTMEM_92e1 = 0x10;
   return;
 }
@@ -17234,8 +18350,8 @@ void FUN_CODE_cad6(void)
 {
   byte bVar1;
   
-  bVar1 = REG_POWER_STATUS;
-  REG_POWER_STATUS = bVar1 & 0xbf | 0x40;
+  bVar1 = REG_POWER_STATUS_92C2;
+  REG_POWER_STATUS_92C2 = bVar1 & 0xbf | 0x40;
   DAT_EXTMEM_92e1 = 0x10;
   return;
 }
@@ -17301,8 +18417,8 @@ void FUN_CODE_cafb(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_91c0;
-  DAT_EXTMEM_91c0 = bVar1 & 0xfd | 2;
+  bVar1 = REG_USB_PHY_CTRL_91C0;
+  REG_USB_PHY_CTRL_91C0 = bVar1 & 0xfd | 2;
   return;
 }
 
@@ -17375,8 +18491,8 @@ void FUN_CODE_cb23(void)
 {
   byte bVar1;
   
-  bVar1 = REG_POWER_STATUS;
-  REG_POWER_STATUS = bVar1 & 0xbf | 0x40;
+  bVar1 = REG_POWER_STATUS_92C2;
+  REG_POWER_STATUS_92C2 = bVar1 & 0xbf | 0x40;
   return;
 }
 
@@ -17453,7 +18569,7 @@ void FUN_CODE_cbf8(void)
   FUN_CODE_a2ff();
   bVar1 = FUN_CODE_a344();
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0xc0 | 1);
+  write_xdata_reg(bVar1 & 0xc0 | 1);
 }
 
 
@@ -17462,7 +18578,7 @@ void FUN_CODE_cc56(char param_1,byte param_2)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(param_1 << 7 | param_2,0xaf,2);
+  write_xdata_reg(param_1 << 7 | param_2,0xaf,2);
 }
 
 
@@ -17471,16 +18587,16 @@ void FUN_CODE_cc60(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init(0xaf);
+  write_xdata_reg(0xaf);
 }
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -17557,7 +18673,7 @@ byte FUN_CODE_ccac(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_b402;
+  bVar1 = REG_PCIE_CTRL_B402;
   return bVar1 & 0xfd;
 }
 
@@ -17570,7 +18686,7 @@ void FUN_CODE_ccb3(void)
   
   bVar1 = FUN_CODE_a2ff();
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0xf0 | 0xe);
+  write_xdata_reg(bVar1 & 0xf0 | 0xe);
 }
 
 
@@ -17584,7 +18700,7 @@ void FUN_CODE_cd6c(void)
   REG_CPU_MODE_NEXT = bVar1 & 0xef;
   FUN_CODE_c8db();
                     // WARNING: Subroutine does not return
-  phy_link_init(0x22,0x84,0x40,2);
+  write_xdata_reg(0x22,0x84,0x40,2);
 }
 
 
@@ -17595,17 +18711,17 @@ void FUN_CODE_cdc6(undefined1 param_1)
   byte bVar1;
   byte *pbVar2;
   
-  DAT_EXTMEM_0aa3 = param_1;
+  G_STATE_COUNTER_HI = param_1;
   FUN_CODE_e7d4();
-  bVar1 = DAT_EXTMEM_0aa3;
+  bVar1 = G_STATE_COUNTER_HI;
   if ((bVar1 & 1) != 0) {
     bVar1 = DAT_EXTMEM_e764;
     DAT_EXTMEM_e764 = bVar1 & 0xfe;
     bVar1 = DAT_EXTMEM_e764;
     DAT_EXTMEM_e764 = bVar1 & 0xfd | 2;
   }
-  FUN_CODE_e80a(7,0xcf,1);
-  bVar1 = DAT_EXTMEM_0aa3;
+  delay_function(7,0xcf,1);
+  bVar1 = G_STATE_COUNTER_HI;
   if ((bVar1 & 1) != 0) {
     bVar1 = DAT_EXTMEM_e762;
     pbVar2 = &DAT_EXTMEM_e764;
@@ -17667,6 +18783,37 @@ void FUN_CODE_ce23(char param_1)
 
 
 
+void timer_link_handler(void)
+
+{
+  byte bVar1;
+  
+  bVar1 = REG_CPU_CTRL_CC3F;
+  if (((bVar1 >> 1 & 1) == 1) || (bVar1 = REG_CPU_CTRL_CC3F, (bVar1 >> 2 & 1) != 0)) {
+    link_status_clear_handler();
+  }
+  timer_config_handler();
+  handler_0610();
+  bVar1 = REG_PHY_CONFIG;
+  REG_PHY_CONFIG = bVar1 & 0xfc;
+  handler_bd5e();
+  delay_function(0,0x14,2);
+  bVar1 = REG_PHY_CONFIG;
+  REG_PHY_CONFIG = bVar1 & 0xfb;
+  FUN_CODE_e50d(0,10,3);
+  do {
+    bVar1 = REG_LINK_STATUS_E712;
+    if (((bVar1 & 1) == 1) || (bVar1 = REG_LINK_STATUS_E712, (bVar1 & 2) != 0)) break;
+    bVar1 = REG_TIMER0_CSR;
+  } while ((bVar1 >> 1 & 1) == 0);
+  handler_e8ef();
+  handler_dd42(0);
+  handler_d996();
+  return;
+}
+
+
+
 void FUN_CODE_ced1(void)
 
 {
@@ -17676,8 +18823,8 @@ void FUN_CODE_ced1(void)
   if ((bVar1 & 3) == 0) {
     return;
   }
-  bVar1 = REG_POWER_STATUS;
-  if (((bVar1 & 0x40) != 0) && (bVar1 = DAT_EXTMEM_91c0, (bVar1 & 2) != 0)) {
+  bVar1 = REG_POWER_STATUS_92C2;
+  if (((bVar1 & 0x40) != 0) && (bVar1 = REG_USB_PHY_CTRL_91C0, (bVar1 & 2) != 0)) {
     return;
   }
   bVar1 = DAT_EXTMEM_9100;
@@ -17697,23 +18844,23 @@ void FUN_CODE_ced1(void)
 
 
 
-void FUN_CODE_cf28(void)
+void timer_config_handler(void)
 
 {
   byte bVar1;
   byte *pbVar2;
   short sVar3;
   
-  pbVar2 = &DAT_EXTMEM_cc30;
-  FUN_CODE_bceb();
-  bVar1 = FUN_CODE_bd49();
+  pbVar2 = &REG_CPU_CTRL_CC30;
+  handler_bceb();
+  bVar1 = handler_bd49();
   *pbVar2 = bVar1 | 4;
-  FUN_CODE_bceb(0xc6a8);
-  DAT_EXTMEM_cc33 = 4;
-  bVar1 = DAT_EXTMEM_e324;
-  DAT_EXTMEM_e324 = bVar1 & 0xfb;
-  pbVar2 = &DAT_EXTMEM_cc3b;
-  bVar1 = DAT_EXTMEM_cc3b;
+  handler_bceb(0xc6a8);
+  REG_CPU_EXEC_STATUS_2 = 4;
+  bVar1 = REG_LINK_CTRL_E324;
+  REG_LINK_CTRL_E324 = bVar1 & 0xfb;
+  pbVar2 = &REG_CPU_CTRL_CC3B;
+  bVar1 = REG_CPU_CTRL_CC3B;
   FUN_CODE_bce7(bVar1 & 0xfe);
   bVar1 = FUN_CODE_bd33();
   *pbVar2 = bVar1;
@@ -17721,15 +18868,15 @@ void FUN_CODE_cf28(void)
   *pbVar2 = *pbVar2 & 0xbf;
   bVar1 = FUN_CODE_bd50();
   *pbVar2 = bVar1 | 3;
-  bVar1 = DAT_EXTMEM_cc3e;
-  DAT_EXTMEM_cc3e = bVar1 & 0xfe;
+  bVar1 = REG_CPU_CTRL_CC3E;
+  REG_CPU_CTRL_CC3E = bVar1 & 0xfe;
   sVar3 = -0x33c7;
   FUN_CODE_bcfe();
   pbVar2 = (byte *)(sVar3 + 1);
   FUN_CODE_bd17();
   bVar1 = FUN_CODE_bd57();
   *pbVar2 = bVar1 | 0x60;
-  FUN_CODE_bceb(0xca81);
+  handler_bceb(0xca81);
   return;
 }
 
@@ -17796,9 +18943,9 @@ void FUN_CODE_d02a(undefined1 param_1)
     }
     FUN_CODE_e89d(bVar1 - bVar3);
     if (bVar3 != 0) break;
-    reg_modify_bits(0xb220);
+    xdata_load_dword(0xb220);
     bVar3 = DAT_EXTMEM_0a62;
-    reg_test_bit(CONCAT11((char)((ushort)bVar3 * 4 >> 8) + -0x80,(char)((ushort)bVar3 * 4)));
+    xdata_store_dword(CONCAT11((char)((ushort)bVar3 * 4 >> 8) + -0x80,(char)((ushort)bVar3 * 4)));
     DAT_INTMEM_64 = DAT_INTMEM_64 + '\x01';
     if (DAT_INTMEM_64 == '\0') {
       DAT_INTMEM_63 = DAT_INTMEM_63 + '\x01';
@@ -17811,7 +18958,7 @@ void FUN_CODE_d02a(undefined1 param_1)
 
 
 
-void FUN_CODE_d07f(char param_1)
+void handler_d07f(char param_1)
 
 {
   undefined1 uVar1;
@@ -17849,26 +18996,26 @@ void FUN_CODE_d07f(char param_1)
 
 
 
-void FUN_CODE_d0d3(void)
+void link_status_clear_handler(void)
 
 {
   byte bVar1;
   byte *pbVar2;
   
-  FUN_CODE_bd2a(0xcc3f);
-  FUN_CODE_e80a(0,9,0);
-  pbVar2 = &DAT_EXTMEM_cc3f;
-  bVar1 = DAT_EXTMEM_cc3f;
+  handler_bd2a(0xcc3f);
+  delay_function(0,9,0);
+  pbVar2 = &REG_CPU_CTRL_CC3F;
+  bVar1 = REG_CPU_CTRL_CC3F;
   bVar1 = FUN_CODE_d118(bVar1 & 0xfd);
   *pbVar2 = bVar1 & 0xdf | 0x20;
-  FUN_CODE_e80a(1,0x67,1);
-  pbVar2 = &DAT_EXTMEM_cc3f;
-  bVar1 = DAT_EXTMEM_cc3f;
+  delay_function(1,0x67,1);
+  pbVar2 = &REG_CPU_CTRL_CC3F;
+  bVar1 = REG_CPU_CTRL_CC3F;
   bVar1 = FUN_CODE_d118(bVar1 & 0xfb);
   *pbVar2 = bVar1 & 0xbf | 0x40;
-  FUN_CODE_e80a(0,0xf9,0);
-  bVar1 = DAT_EXTMEM_cc3d;
-  DAT_EXTMEM_cc3d = bVar1 & 0x7f;
+  delay_function(0,0xf9,0);
+  bVar1 = REG_CPU_CTRL_CC3D;
+  REG_CPU_CTRL_CC3D = bVar1 & 0x7f;
   return;
 }
 
@@ -17880,8 +19027,8 @@ undefined1 FUN_CODE_d118(undefined1 param_1,undefined1 *param_2)
   undefined1 uVar1;
   
   *param_2 = param_1;
-  FUN_CODE_e80a(0,0xf9,0);
-  uVar1 = DAT_EXTMEM_cc3f;
+  delay_function(0,0xf9,0);
+  uVar1 = REG_CPU_CTRL_CC3F;
   return uVar1;
 }
 
@@ -17900,7 +19047,7 @@ void FUN_CODE_d17a(void)
   FUN_CODE_b833();
   FUN_CODE_b881();
   FUN_CODE_be02();
-  FUN_CODE_b895();
+  flash_read_buffer_and_status();
   FUN_CODE_df47();
   if (cVar1 == '\0') {
     return;
@@ -17910,7 +19057,7 @@ void FUN_CODE_d17a(void)
   do {
     uVar3 = FUN_CODE_b820(cVar1);
     FUN_CODE_be02(uVar3,6);
-    reg_modify_bits(0xb1d);
+    xdata_load_dword(0xb1d);
     FUN_CODE_b825();
     uVar3 = DAT_EXTMEM_0b25;
     FUN_CODE_be02(3,uVar3);
@@ -17959,11 +19106,11 @@ void FUN_CODE_d1fe(char param_1)
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -17977,11 +19124,11 @@ void FUN_CODE_d211(void)
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -18005,7 +19152,7 @@ void FUN_CODE_d21e(char *param_1,char param_2,char param_3)
   char *pcVar6;
   undefined1 *puVar7;
   
-  cVar5 = REG_SYS_FLAGS_BASE;
+  cVar5 = G_SYS_FLAGS_BASE;
   if (cVar5 == '\x05') {
     FUN_CODE_a714();
     return;
@@ -18030,7 +19177,7 @@ void FUN_CODE_d21e(char *param_1,char param_2,char param_3)
     else {
       FUN_CODE_a714(param_1 + '\x01',bVar4 & bVar1 | param_2 + 1U);
     }
-    FUN_CODE_d810();
+    usb_buffer_handler();
     return;
   }
   while( true ) {
@@ -18174,7 +19321,7 @@ void FUN_CODE_d3ed(void)
       }
     }
   }
-  uVar1 = DAT_EXTMEM_05a6;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
   puVar8 = &DAT_EXTMEM_05d4;
   FUN_CODE_992a(uVar1);
   *puVar8 = uVar5;
@@ -18192,18 +19339,18 @@ void FUN_CODE_d436(undefined1 param_1)
   byte bVar4;
   byte *pbVar5;
   
-  DAT_EXTMEM_0aa8 = param_1;
+  G_FLASH_ERROR_0 = param_1;
   FUN_CODE_e84d();
-  uVar1 = DAT_EXTMEM_0aa8;
+  uVar1 = G_FLASH_ERROR_0;
   FUN_CODE_c089(uVar1);
-  cVar2 = DAT_EXTMEM_0aa8;
+  cVar2 = G_FLASH_ERROR_0;
   if (cVar2 != '\x0f') {
     pbVar5 = &DAT_EXTMEM_b401;
     FUN_CODE_cc8b();
     *pbVar5 = *pbVar5 & 0xfe;
   }
   FUN_CODE_e85c();
-  bVar3 = DAT_EXTMEM_0aa8;
+  bVar3 = G_FLASH_ERROR_0;
   bVar4 = DAT_EXTMEM_b436;
   DAT_EXTMEM_b436 = bVar4 & 0xf0 | bVar3 & 0xe;
   bVar3 = DAT_EXTMEM_b404;
@@ -18222,7 +19369,7 @@ void FUN_CODE_d47f(void)
   char cVar3;
   byte *pbVar4;
   
-  DAT_EXTMEM_0b41 = 0;
+  G_USB_STATE_0B41 = 0;
   cVar2 = DAT_EXTMEM_0ae5;
   cVar3 = cVar2;
   if ((cVar2 == '\0') || (bVar1 = DAT_EXTMEM_0aeb, cVar3 = bVar1 - 3, bVar1 < 3)) {
@@ -18231,13 +19378,13 @@ void FUN_CODE_d47f(void)
     REG_TIMER1_DIV = bVar1 & 0xf8 | 4;
     REG_TIMER1_THRESHOLD = 1;
     DAT_EXTMEM_cc19 = 0x90;
-    DAT_EXTMEM_0b41 = 1;
+    G_USB_STATE_0B41 = 1;
   }
   if (cVar2 == '\0') {
-    bVar1 = REG_POWER_CTRL;
-    REG_POWER_CTRL = bVar1 & 0xfe;
+    bVar1 = REG_POWER_CTRL_92C4;
+    REG_POWER_CTRL_92C4 = bVar1 & 0xfe;
     pbVar4 = &DAT_EXTMEM_9201;
-    FUN_CODE_bceb();
+    handler_bceb();
     *pbVar4 = *pbVar4 & 0xfe;
   }
   return;
@@ -18252,7 +19399,7 @@ void FUN_CODE_d4c8(void)
   
   bVar1 = FUN_CODE_a2ff();
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0xf0 | 2);
+  write_xdata_reg(bVar1 & 0xf0 | 2);
 }
 
 
@@ -18347,7 +19494,7 @@ void FUN_CODE_d630(byte param_1)
 
 
 
-void FUN_CODE_d676(void)
+void handler_d676(void)
 
 {
                     // WARNING: Subroutine does not return
@@ -18380,7 +19527,7 @@ void FUN_CODE_d702(undefined1 param_1,byte param_2)
   bVar1 = FUN_CODE_cc60(0x7a);
   FUN_CODE_cca2((param_2 >> 3 & 1) != 0,bVar1 & 0x7f);
                     // WARNING: Subroutine does not return
-  phy_link_init(0xaf,0x7b);
+  write_xdata_reg(0xaf,0x7b);
 }
 
 
@@ -18390,7 +19537,7 @@ void FUN_CODE_d78a(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_09f9;
+  bVar1 = G_EVENT_FLAGS;
   if ((bVar1 >> 6 & 1) != 0) {
     DAT_EXTMEM_0acd = 3;
     DAT_EXTMEM_0ace = 1;
@@ -18419,7 +19566,7 @@ void FUN_CODE_d7cd(void)
   char cVar2;
   char *pcVar3;
   
-  bVar1 = DAT_EXTMEM_ca81;
+  bVar1 = REG_CA81;
   if ((bVar1 & 1) != 1) {
     bVar1 = DAT_EXTMEM_b481;
     DAT_EXTMEM_b481 = 0xff;
@@ -18448,18 +19595,18 @@ void FUN_CODE_d7cd(void)
 
 
 
-void FUN_CODE_d810(void)
+void usb_buffer_handler(void)
 
 {
   char cVar1;
   byte bVar2;
   
-  cVar1 = DAT_EXTMEM_0b41;
+  cVar1 = G_USB_STATE_0B41;
   if (((cVar1 != '\0') && (bVar2 = REG_INT_FLAGS_EX0, (bVar2 & 1) != 1)) &&
-     (cVar1 = REG_SYS_FLAGS_BASE, cVar1 == '\x01')) {
+     (cVar1 = G_SYS_FLAGS_BASE, cVar1 == '\x01')) {
     bVar2 = REG_USB_STATUS;
     if ((bVar2 & 1) == 0) {
-      bVar2 = DAT_EXTMEM_9101;
+      bVar2 = REG_USB_PERIPH_STATUS;
       if ((bVar2 >> 6 & 1) == 1) {
         return;
       }
@@ -18468,11 +19615,11 @@ void FUN_CODE_d810(void)
       }
     }
     else {
-      bVar2 = DAT_EXTMEM_c471;
+      bVar2 = REG_NVME_QUEUE_PTR_C471;
       if ((bVar2 & 1) == 1) {
         return;
       }
-      cVar1 = DAT_EXTMEM_000a;
+      cVar1 = G_EP_CHECK_FLAG;
       if (cVar1 != '\0') {
         return;
       }
@@ -18486,6 +19633,18 @@ void FUN_CODE_d810(void)
 
 
 
+void phy_register_config(void)
+
+{
+  byte bVar1;
+  
+  bVar1 = handler_bc8f();
+                    // WARNING: Subroutine does not return
+  write_xdata_reg(bVar1 & 0xfd);
+}
+
+
+
 void FUN_CODE_d8d5(void)
 
 {
@@ -18493,7 +19652,7 @@ void FUN_CODE_d8d5(void)
   
   bVar1 = FUN_CODE_bc98(0x67);
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0xfd | 2);
+  write_xdata_reg(bVar1 & 0xfd | 2);
 }
 
 
@@ -18509,15 +19668,15 @@ void FUN_CODE_d916(char param_1)
   bVar1 = DAT_EXTMEM_9090;
   DAT_EXTMEM_9090 = bVar1 & 0x7f;
   if (param_1 != '\0') {
-    FUN_CODE_e80a(2,0x57,5);
+    delay_function(2,0x57,5);
   }
-  DAT_EXTMEM_9300 = 4;
-  DAT_EXTMEM_91d1 = 2;
-  DAT_EXTMEM_9301 = 0x40;
-  DAT_EXTMEM_9301 = 0x80;
-  DAT_EXTMEM_91d1 = 8;
-  DAT_EXTMEM_91d1 = 1;
-  DAT_EXTMEM_0ae2 = 0;
+  REG_BUF_CFG_9300 = 4;
+  REG_USB_PHY_CTRL_91D1 = 2;
+  REG_BUF_CFG_9301 = 0x40;
+  REG_BUF_CFG_9301 = 0x80;
+  REG_USB_PHY_CTRL_91D1 = 8;
+  REG_USB_PHY_CTRL_91D1 = 1;
+  G_SYSTEM_STATE_0AE2 = 0;
   return;
 }
 
@@ -18538,7 +19697,7 @@ void FUN_CODE_d956(undefined1 param_1)
   DAT_INTMEM_65 = 7;
   DAT_INTMEM_63 = 0;
   DAT_INTMEM_64 = 6;
-  reg_modify_bits(0xa5f,0,0,param_1);
+  xdata_load_dword(0xa5f,0,0,param_1);
   reg_read_dword(0x10);
   BANK0_R3 = uVar4;
   BANK0_R2 = uVar3;
@@ -18552,7 +19711,7 @@ void FUN_CODE_d956(undefined1 param_1)
 
 
 
-void FUN_CODE_d996(undefined1 *param_1)
+void handler_d996(undefined1 *param_1)
 
 {
   undefined1 uVar1;
@@ -18582,8 +19741,8 @@ void FUN_CODE_da13(undefined1 param_1)
   
   DAT_EXTMEM_0a5b = param_1;
   FUN_CODE_e762(0x14);
-  uVar5 = DAT_EXTMEM_05a6;
-  puVar6 = &DAT_EXTMEM_05d3;
+  uVar5 = G_PCIE_TXN_COUNT_LO;
+  puVar6 = &G_EP_CONFIG_MULT_BASE;
   FUN_CODE_c448(uVar5);
   uVar5 = *puVar6;
   uVar2 = 0;
@@ -18592,7 +19751,7 @@ void FUN_CODE_da13(undefined1 param_1)
   reg_read_dword(7,0,0,0,uVar5);
   uVar1 = DAT_EXTMEM_0a5b;
   flash_func_0d08(uVar2,bVar3 | 0x46,uVar4,uVar5,0,0,0,uVar1);
-  reg_test_bit(0xb220);
+  xdata_store_dword(0xb220);
   FUN_CODE_e902();
   return;
 }
@@ -18748,7 +19907,7 @@ void FUN_CODE_db45(undefined1 param_1,undefined1 param_2,undefined1 param_3,unde
     uVar2 = DAT_EXTMEM_0a5d;
     uVar3 = DAT_EXTMEM_0a5e;
     uVar4 = DAT_EXTMEM_0a5f;
-    FUN_CODE_e80a(uVar3,uVar4,uVar2);
+    delay_function(uVar3,uVar4,uVar2);
     DAT_INTMEM_28 = DAT_INTMEM_28 + 1;
   }
   return;
@@ -18761,7 +19920,7 @@ void FUN_CODE_dbbb(void)
 {
   byte bVar1;
   
-  FUN_CODE_bceb(0xc20d);
+  handler_bceb(0xc20d);
   DAT_EXTMEM_ca69 = 0;
   DAT_EXTMEM_ca6a = 0x3f;
   DAT_EXTMEM_ca6b = 0;
@@ -18786,17 +19945,17 @@ void FUN_CODE_dbf5(void)
   undefined1 uVar2;
   undefined1 uVar3;
   
-  reg_test_bit(0xa9d);
+  xdata_store_dword(0xa9d);
   cVar1 = DAT_EXTMEM_0004;
   if (cVar1 == '\0') {
-    reg_modify_bits(0xa9d);
+    xdata_load_dword(0xa9d);
   }
   else {
-    reg_modify_bits(0xa9d);
+    xdata_load_dword(0xa9d);
   }
-  uVar2 = DAT_EXTMEM_0aa1;
+  uVar2 = G_LOG_PROCESSED_INDEX;
   uVar3 = DAT_EXTMEM_0aa2;
-  DAT_EXTMEM_0aa8 = uVar2;
+  G_FLASH_ERROR_0 = uVar2;
   FUN_CODE_b850(uVar3);
   FUN_CODE_b104();
   return;
@@ -18821,11 +19980,11 @@ void FUN_CODE_dc9d(void)
   cVar1 = DAT_EXTMEM_0acf;
   if ((((cVar1 == '!') && (cVar1 = DAT_EXTMEM_0ad3, cVar1 == '\0')) &&
       (cVar1 = DAT_EXTMEM_0ad5, cVar1 == '\0')) && (cVar1 = DAT_EXTMEM_0ad1, cVar1 == '\0')) {
-    cVar1 = DAT_EXTMEM_0af2;
+    cVar1 = G_TRANSFER_FLAG_0AF2;
     if (cVar1 != '\0') {
       DAT_EXTMEM_0acb = 1;
     }
-    FUN_CODE_c00d();
+    pcie_error_handler();
     FUN_CODE_4904();
     FUN_CODE_a739();
     return;
@@ -18912,26 +20071,26 @@ void FUN_CODE_dd12(void)
 
 
 
-void FUN_CODE_dd42(char param_1)
+void handler_dd42(char param_1)
 
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_0af1;
+  bVar1 = G_STATE_FLAG_0AF1;
   if ((((bVar1 >> 5 & 1) == 0) || (param_1 == '\0')) || (param_1 == '\x02')) {
-    DAT_EXTMEM_e7e3 = 0;
+    REG_PHY_LINK_CTRL = 0;
   }
   else {
     if (param_1 == '\x04') {
-      DAT_EXTMEM_e7e3 = 0x30;
+      REG_PHY_LINK_CTRL = 0x30;
       return;
     }
     if (param_1 == '\x01') {
-      DAT_EXTMEM_e7e3 = 0xcc;
+      REG_PHY_LINK_CTRL = 0xcc;
       return;
     }
     if (param_1 == -1) {
-      DAT_EXTMEM_e7e3 = 0xfc;
+      REG_PHY_LINK_CTRL = 0xfc;
       return;
     }
   }
@@ -18946,7 +20105,7 @@ void FUN_CODE_dde2(void)
   byte bVar1;
   char cVar2;
   
-  FUN_CODE_9a9c();
+  pcie_clear_address_regs();
   cVar2 = '\x04';
   FUN_CODE_d02a();
   if (cVar2 != '\0') {
@@ -19048,17 +20207,17 @@ void FUN_CODE_deb1(char param_1)
   BANK0_R2 = 0x20;
   BANK0_R3 = 0x9c;
   BANK0_R4 = 0xde;
-  uVar1 = reg_modify_bits();
+  uVar1 = xdata_load_dword();
   BANK0_R3 = 0xa1;
   BANK0_R4 = 0xde;
-  reg_set_bit(uVar1,0x66);
+  idata_load_dword_alt(uVar1,0x66);
   BANK0_R3 = 0xa4;
   BANK0_R4 = 0xde;
   flash_func_0d08();
   uVar2 = CONCAT11(BANK0_R1,BANK0_R2);
   BANK0_R1 = 0xab;
   BANK0_R2 = 0xde;
-  reg_test_bit(uVar2);
+  xdata_store_dword(uVar2);
   FUN_CODE_e91d();
   return;
 }
@@ -19072,7 +20231,7 @@ void FUN_CODE_defe(char param_1)
   
   if (param_1 == '\v') {
     FUN_CODE_cb23();
-    DAT_EXTMEM_0ae2 = 0;
+    G_SYSTEM_STATE_0AE2 = 0;
     FUN_CODE_cadf();
     do {
       cVar1 = FUN_CODE_cb0f();
@@ -19098,7 +20257,7 @@ void FUN_CODE_df47(byte param_1)
     FUN_CODE_be02();
     bVar1 = FLASH_BUFFER_BASE;
     if ((bVar1 & 1) != 1) {
-      FUN_CODE_e8ef();
+      handler_e8ef();
       return;
     }
     bVar1 = REG_TIMER0_CSR;
@@ -19147,23 +20306,23 @@ void FUN_CODE_dfab(void)
   char cVar1;
   byte bVar2;
   
-  cVar1 = DAT_EXTMEM_07bc;
+  cVar1 = G_FLASH_CMD_TYPE;
   if (cVar1 != '\0') {
     FUN_CODE_95bf();
     bVar2 = DAT_EXTMEM_9100;
     if ((bVar2 & 3) != 2) {
-      cVar1 = DAT_EXTMEM_07bc;
+      cVar1 = G_FLASH_CMD_TYPE;
       if (cVar1 == '\x02') {
-        pcie_config_read(0x3c);
+        handler_e529(0x3c);
         FUN_CODE_be8b();
         return;
       }
-      cVar1 = DAT_EXTMEM_07bc;
+      cVar1 = G_FLASH_CMD_TYPE;
       if (cVar1 != '\x03') {
         return;
       }
     }
-    pcie_config_read(0xff);
+    handler_e529(0xff);
   }
   return;
 }
@@ -19193,7 +20352,7 @@ void FUN_CODE_e00c(void)
   }
   bVar3 = FUN_CODE_a2ff(bVar2);
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar3 & 0xf0 | bVar2);
+  write_xdata_reg(bVar3 & 0xf0 | bVar2);
 }
 
 
@@ -19252,7 +20411,7 @@ void FUN_CODE_e120(byte param_1)
 {
   char cVar1;
   
-  REG_CMD_OPCODE = BANK0_R5 << 6 | param_1 & 0xcf;
+  REG_CMD_PARAM = BANK0_R5 << 6 | param_1 & 0xcf;
   cVar1 = DAT_EXTMEM_07ca;
   if (cVar1 == '\x01') {
     REG_CMD_STATUS = 0x80;
@@ -19335,7 +20494,7 @@ void FUN_CODE_e1ee(char *param_1)
 
 
 
-void FUN_CODE_e214(void)
+void handler_e214(void)
 
 {
   byte bVar1;
@@ -19362,7 +20521,7 @@ void FUN_CODE_e25e(void)
   FUN_CODE_d702(0xf);
   bVar1 = FUN_CODE_cc92();
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0xbf | 0x40);
+  write_xdata_reg(bVar1 & 0xbf | 0x40);
 }
 
 
@@ -19373,7 +20532,7 @@ void FUN_CODE_e2a6(void)
   char cVar1;
   byte bVar2;
   
-  cVar1 = DAT_EXTMEM_07ef;
+  cVar1 = G_SYS_FLAGS_07EF;
   if (cVar1 != '\0') {
     return;
   }
@@ -19409,14 +20568,14 @@ void FUN_CODE_e352(void)
   byte bVar1;
   byte *pbVar2;
   
-  FUN_CODE_95c2(0xcc91);
+  timer0_csr_ack(0xcc91);
   FUN_CODE_9617();
   pbVar2 = &DAT_EXTMEM_cc90;
   bVar1 = FUN_CODE_9647();
   *pbVar2 = bVar1 | 5;
   DAT_EXTMEM_cc92 = 0;
   DAT_EXTMEM_cc93 = 200;
-  DAT_EXTMEM_cc91 = 1;
+  REG_CPU_STATUS_CC91 = 1;
   return;
 }
 
@@ -19430,7 +20589,7 @@ void FUN_CODE_e374(void)
   FUN_CODE_d30b(2);
   bVar1 = FUN_CODE_bcd0(0x34);
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0xf0 | 8);
+  write_xdata_reg(bVar1 & 0xf0 | 8);
 }
 
 
@@ -19457,11 +20616,11 @@ void FUN_CODE_e3b7(byte param_1)
   
   FUN_CODE_bd0d(0xcc17);
   if ((param_1 & 1) != 0) {
-    bVar1 = REG_POWER_CTRL;
-    REG_POWER_CTRL = bVar1 & 0xfe;
+    bVar1 = REG_POWER_CTRL_92C4;
+    REG_POWER_CTRL_92C4 = bVar1 & 0xfe;
   }
   if ((param_1 >> 1 & 1) != 0) {
-    FUN_CODE_bceb(0xb480);
+    handler_bceb(0xb480);
     FUN_CODE_c2e6(0);
   }
   return;
@@ -19469,19 +20628,19 @@ void FUN_CODE_e3b7(byte param_1)
 
 
 
-void FUN_CODE_e3d8(void)
+void handler_e3d8(void)
 
 {
   undefined1 uVar1;
   char cVar2;
   
-  cVar2 = DAT_EXTMEM_0b41;
+  cVar2 = G_USB_STATE_0B41;
   if (cVar2 != '\0') {
     FUN_CODE_e3b7(3);
   }
-  uVar1 = DAT_EXTMEM_0aee;
+  uVar1 = G_STATE_CHECK_0AEE;
   FUN_CODE_3578(uVar1);
-  FUN_CODE_d810();
+  usb_buffer_handler();
   DAT_EXTMEM_07e8 = 0;
   DAT_EXTMEM_0b2f = 1;
   return;
@@ -19489,23 +20648,23 @@ void FUN_CODE_e3d8(void)
 
 
 
-void FUN_CODE_e3f9(undefined1 *param_1)
+void flash_read_status(undefined1 *param_1)
 
 {
   byte bVar1;
   undefined1 uVar2;
   
-  FUN_CODE_b8ae();
+  flash_set_mode_enable();
   *param_1 = 0;
   param_1 = param_1 + 1;
   *param_1 = 0;
-  uVar2 = FUN_CODE_b845(1);
+  uVar2 = flash_set_cmd(1);
   *param_1 = uVar2;
-  REG_DMA_CHANNEL_STATUS = 0;
-  REG_DMA_LENGTH_LOW = 1;
-  REG_DMA_BURST_SIZE = 1;
+  REG_FLASH_DATA_LEN = 0;
+  REG_FLASH_DATA_LEN_HI = 1;
+  REG_FLASH_CSR = 1;
   do {
-    bVar1 = REG_DMA_BURST_SIZE;
+    bVar1 = REG_FLASH_CSR;
   } while ((bVar1 & 1) == 1);
   return;
 }
@@ -19517,8 +20676,8 @@ void FUN_CODE_e478(void)
 {
   DAT_EXTMEM_0b22 = 0;
   DAT_EXTMEM_0b23 = 4;
-  reg_modify_bits(0xb1d);
-  DAT_EXTMEM_0aa8 = 0;
+  xdata_load_dword(0xb1d);
+  G_FLASH_ERROR_0 = 0;
   FUN_CODE_b851(4,0xaa9);
   FUN_CODE_b104();
   return;
@@ -19531,7 +20690,7 @@ void FUN_CODE_e496(undefined1 param_1,char param_2,char param_3)
 {
   byte bVar1;
   
-  REG_CMD_OPCODE = param_1;
+  REG_CMD_PARAM = param_1;
   bVar1 = REG_CMD_STATUS;
   REG_CMD_STATUS = bVar1 | param_3 << 3 | param_2 * '\x04';
   bVar1 = REG_CMD_STATUS;
@@ -19541,7 +20700,7 @@ void FUN_CODE_e496(undefined1 param_1,char param_2,char param_3)
 
 
 
-void FUN_CODE_e4b4(void)
+void handler_e4b4(void)
 
 {
   char cVar1;
@@ -19549,7 +20708,7 @@ void FUN_CODE_e4b4(void)
   FUN_CODE_e73a();
   cVar1 = '\x0e';
   FUN_CODE_95e1(0);
-  DAT_EXTMEM_07bd = 0xe;
+  G_FLASH_OP_COUNTER = 0xe;
   FUN_CODE_e1c6();
   if (cVar1 != '\0') {
     FUN_CODE_e81b(0x27,0x10);
@@ -19566,7 +20725,7 @@ void FUN_CODE_e4d2(void)
   
   bVar1 = FUN_CODE_a2ff();
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0xf0 | 4);
+  write_xdata_reg(bVar1 & 0xf0 | 4);
 }
 
 
@@ -19576,7 +20735,7 @@ void FUN_CODE_e50d(undefined1 param_1,byte param_2)
 {
   byte bVar1;
   
-  FUN_CODE_e8ef();
+  handler_e8ef();
   bVar1 = REG_TIMER0_DIV;
   REG_TIMER0_DIV = bVar1 & 0xf8 | param_2;
   REG_TIMER0_THRESHOLD = param_1;
@@ -19587,18 +20746,18 @@ void FUN_CODE_e50d(undefined1 param_1,byte param_2)
 
 
 
-void pcie_config_read(undefined1 param_1)
+void handler_e529(undefined1 param_1)
 
 {
   undefined1 uVar1;
   char cVar2;
   
-  DAT_EXTMEM_0aa3 = param_1;
+  G_STATE_COUNTER_HI = param_1;
   cVar2 = '\0';
-  FUN_CODE_dd42();
+  handler_dd42();
   FUN_CODE_e6d2();
   if (cVar2 != '\0') {
-    uVar1 = DAT_EXTMEM_0aa3;
+    uVar1 = G_STATE_COUNTER_HI;
     FLASH_BUFFER_BASE = uVar1;
     FUN_CODE_e478();
   }
@@ -19612,6 +20771,15 @@ void pcie_config_write(void)
 {
                     // WARNING: Subroutine does not return
   flash_func_0bc8(0xf1,0x52,0xff);
+}
+
+
+
+void event_state_handler(void)
+
+{
+                    // WARNING: Subroutine does not return
+  flash_func_0bc8();
 }
 
 
@@ -19641,7 +20809,7 @@ void pcie_memory_write(void)
 {
   undefined1 uVar1;
   
-  uVar1 = DAT_EXTMEM_9101;
+  uVar1 = REG_USB_PERIPH_STATUS;
   uVar1 = REG_INT_FLAGS_EX0;
   return;
 }
@@ -19653,9 +20821,9 @@ void FUN_CODE_e5cb(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_c656;
+  bVar1 = REG_PHY_EXT_56;
   if ((bVar1 >> 5 & 1) != 1) {
-    DAT_EXTMEM_06e6 = 1;
+    G_STATE_FLAG_06E6 = 1;
     FUN_CODE_bd23(0xc656);
     FUN_CODE_bd23(0xc65b);
   }
@@ -19672,7 +20840,7 @@ void FUN_CODE_e5fe(void)
   bVar1 = DAT_EXTMEM_c6bd;
   DAT_EXTMEM_c6bd = bVar1 & 0xfe;
   FUN_CODE_bd23(0xc801);
-  DAT_EXTMEM_cc33 = 4;
+  REG_CPU_EXEC_STATUS_2 = 4;
   bVar1 = DAT_EXTMEM_cc34;
   DAT_EXTMEM_cc34 = bVar1 & 0xfb;
   return;
@@ -19734,14 +20902,14 @@ void FUN_CODE_e6d2(void)
 
 {
   FUN_CODE_e396();
-  reg_test_bit(0xb1d,0,1,0x80,0);
+  xdata_store_dword(0xb1d,0,1,0x80,0);
   FUN_CODE_d17a();
   return;
 }
 
 
 
-void FUN_CODE_e6e7(undefined1 *param_1)
+void handler_e6e7(undefined1 *param_1)
 
 {
   FUN_CODE_b838(0,1,0x80,0);
@@ -19757,11 +20925,11 @@ void FUN_CODE_e6fc(void)
 {
   byte bVar1;
   
-  bVar1 = DAT_EXTMEM_c656;
-  DAT_EXTMEM_c656 = bVar1 & 0xdf;
+  bVar1 = REG_PHY_EXT_56;
+  REG_PHY_EXT_56 = bVar1 & 0xdf;
   pcie_memory_read(0xf);
-  DAT_EXTMEM_06e6 = 1;
-  FUN_CODE_c00d();
+  G_STATE_FLAG_06E6 = 1;
+  pcie_error_handler();
   return;
 }
 
@@ -19774,7 +20942,7 @@ void FUN_CODE_e711(void)
   
   bVar1 = FUN_CODE_a301(0x35);
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0xc0);
+  write_xdata_reg(bVar1 & 0xc0);
 }
 
 
@@ -19831,7 +20999,7 @@ void FUN_CODE_e74e(void)
 void FUN_CODE_e762(undefined1 param_1)
 
 {
-  reg_test_bit(0x5af,0,0xd0,0,param_1);
+  xdata_store_dword(0x5af,0,0xd0,0,param_1);
   return;
 }
 
@@ -19844,8 +21012,8 @@ void FUN_CODE_e775(void)
   char cVar2;
   undefined1 *puVar3;
   
-  puVar3 = &DAT_EXTMEM_05a6;
-  uVar1 = DAT_EXTMEM_05a6;
+  puVar3 = &G_PCIE_TXN_COUNT_LO;
+  uVar1 = G_PCIE_TXN_COUNT_LO;
   FUN_CODE_99bc(uVar1);
   DAT_INTMEM_61 = *puVar3;
   cVar2 = 'a';
@@ -19878,7 +21046,7 @@ void FUN_CODE_e788(void)
   byte bVar2;
   
   cVar1 = DAT_EXTMEM_06e9;
-  if ((cVar1 != '\0') && (bVar2 = DAT_EXTMEM_0af1, (bVar2 >> 3 & 1) != 0)) {
+  if ((cVar1 != '\0') && (bVar2 = G_STATE_FLAG_0AF1, (bVar2 >> 3 & 1) != 0)) {
     FUN_CODE_9741();
   }
   FUN_CODE_c80d();
@@ -19912,7 +21080,7 @@ void FUN_CODE_e7c1(char param_1)
     FUN_CODE_bd14();
     return;
   }
-  bVar1 = DAT_EXTMEM_0af1;
+  bVar1 = G_STATE_FLAG_0AF1;
   if ((bVar1 >> 4 & 1) != 0) {
     FUN_CODE_bcf2();
   }
@@ -19952,11 +21120,11 @@ void FUN_CODE_e7e6(void)
 
 
 
-void phy_link_init(void)
+void write_xdata_reg(void)
 
 {
                     // WARNING: Subroutine does not return
-  phy_link_init();
+  write_xdata_reg();
 }
 
 
@@ -19968,12 +21136,12 @@ void FUN_CODE_e7fb(void)
   
   bVar1 = FUN_CODE_a33d(0x37);
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0x7f | 0x80);
+  write_xdata_reg(bVar1 & 0x7f | 0x80);
 }
 
 
 
-void FUN_CODE_e80a(void)
+void delay_function(void)
 
 {
   byte bVar1;
@@ -19996,8 +21164,8 @@ void FUN_CODE_e81b(undefined1 param_1,undefined1 param_2)
   
   DAT_EXTMEM_cc82 = param_1;
   DAT_EXTMEM_cc83 = param_2;
-  pcVar2 = &DAT_EXTMEM_cc81;
-  cVar1 = FUN_CODE_95c2();
+  pcVar2 = &REG_CPU_STATUS_CC81;
+  cVar1 = timer0_csr_ack();
   *pcVar2 = cVar1 + -1;
   return;
 }
@@ -20011,7 +21179,7 @@ void FUN_CODE_e84d(void)
   undefined1 uVar2;
   undefined1 *puVar3;
   
-  bVar1 = DAT_EXTMEM_b402;
+  bVar1 = REG_PCIE_CTRL_B402;
   puVar3 = &DAT_EXTMEM_0b44;
   DAT_EXTMEM_0b44 = bVar1 & 2;
   uVar2 = FUN_CODE_ccac();
@@ -20074,7 +21242,7 @@ void FUN_CODE_e890(void)
   
   bVar1 = FUN_CODE_a351(0x37);
                     // WARNING: Subroutine does not return
-  phy_link_init(bVar1 & 0x7f);
+  write_xdata_reg(bVar1 & 0x7f);
 }
 
 
@@ -20132,13 +21300,13 @@ void FUN_CODE_e8e4(void)
 {
   DAT_EXTMEM_0b2f = 0;
   FUN_CODE_e5cb();
-  FUN_CODE_c00d();
+  pcie_error_handler();
   return;
 }
 
 
 
-void FUN_CODE_e8ef(void)
+void handler_e8ef(void)
 
 {
   REG_TIMER0_CSR = 4;
@@ -20151,7 +21319,7 @@ void FUN_CODE_e8ef(void)
 void FUN_CODE_e8f9(void)
 
 {
-  DAT_EXTMEM_05ae = 0;
+  G_PCIE_DIRECTION = 0;
   FUN_CODE_c1f9();
   return;
 }
@@ -20161,17 +21329,26 @@ void FUN_CODE_e8f9(void)
 void FUN_CODE_e902(void)
 
 {
-  DAT_EXTMEM_05ae = 1;
+  G_PCIE_DIRECTION = 1;
   FUN_CODE_c1f9();
   return;
 }
 
 
 
-void FUN_CODE_e90b(void)
+void handler_e90b(void)
 
 {
-  DAT_EXTMEM_cc81 = 4;
+  REG_CPU_STATUS_CC81 = 4;
+  FUN_CODE_be8b();
+  return;
+}
+
+
+
+void error_handler_e911(void)
+
+{
   FUN_CODE_be8b();
   return;
 }
@@ -20209,7 +21386,7 @@ void FUN_CODE_e91d(void)
 void FUN_CODE_e933(void)
 
 {
-  FUN_CODE_95c2(0xcc81);
+  timer0_csr_ack(0xcc81);
   return;
 }
 
@@ -25657,7 +26834,7 @@ void FUN_CODE_ea7c(char param_1,char param_2,undefined1 param_3,byte param_4,byt
       bVar2 = bVar2 >> 1;
     } while (cVar1 != '\0');
     DAT_EXTMEM_b242 = bVar3;
-    FUN_CODE_9a18(0xb244);
+    pcie_setup_buffer_params(0xb244);
     bVar3 = DAT_INTMEM_25;
     bVar2 = DAT_INTMEM_26;
     flash_func_0bfd(0,3);
@@ -25687,16 +26864,16 @@ void FUN_CODE_ea7c(char param_1,char param_2,undefined1 param_3,byte param_4,byt
         uVar4 = 2;
       }
                     // WARNING: Subroutine does not return
-      phy_link_init(uVar4,0x40);
+      write_xdata_reg(uVar4,0x40);
     }
     *pcVar6 = cVar1;
-    reg_write_byte(0x6b);
+    idata_load_dword(0x6b);
     bVar2 = param_4 | param_5 | param_6;
   }
   bVar2 = bVar2 | bVar3;
   do {
     if (bVar2 == 0) {
-      reg_write_byte(9);
+      idata_load_dword(9);
       if (((param_4 != 0 || param_5 != 0) || param_6 != 0) || bVar3 != 0) {
         UNK_EXTMEM_0001 = 1;
       }
@@ -30494,7 +31671,7 @@ void FUN_CODE_ed23(char param_1,char param_2,undefined1 param_3,byte param_4,byt
       bVar2 = bVar2 >> 1;
     } while (cVar1 != '\0');
     DAT_EXTMEM_b242 = bVar3;
-    FUN_CODE_9a18(0xb244);
+    pcie_setup_buffer_params(0xb244);
     bVar3 = DAT_INTMEM_25;
     bVar2 = DAT_INTMEM_26;
     flash_func_0bfd(0,3);
@@ -30524,16 +31701,16 @@ void FUN_CODE_ed23(char param_1,char param_2,undefined1 param_3,byte param_4,byt
         uVar4 = 2;
       }
                     // WARNING: Subroutine does not return
-      phy_link_init(uVar4,0x40);
+      write_xdata_reg(uVar4,0x40);
     }
     *pcVar6 = cVar1;
-    reg_write_byte(0x6b);
+    idata_load_dword(0x6b);
     bVar2 = param_4 | param_5 | param_6;
   }
   bVar2 = bVar2 | bVar3;
   do {
     if (bVar2 == 0) {
-      reg_write_byte(9);
+      idata_load_dword(9);
       if (((param_4 != 0 || param_5 != 0) || param_6 != 0) || bVar3 != 0) {
         UNK_EXTMEM_0001 = 1;
       }
@@ -30618,390 +31795,366 @@ LAB_CODE_0104:
 
 
 
-void FUN_CODE_BANK1__051b
-               (byte param_1,undefined1 *param_2,char *param_3,undefined1 param_4,char param_5)
+void FUN_CODE_BANK1__851b(char param_1,undefined1 *param_2,undefined1 param_3)
 
 {
-  char cVar1;
-  char in_PSW;
+  byte bVar1;
+  byte bVar2;
+  byte bVar3;
+  byte *pbVar4;
   
-  param_1 = param_1 ^ 2;
-  if (param_1 == 0) {
-    FUN_CODE_d1f2();
-    param_1 = 0x20;
+  if (param_1 == '\x02') {
+    func_0xd1f2();
     *param_2 = 0x20;
   }
-  BANK2_R2 = param_4;
-  if ((param_1 - (*param_3 - (in_PSW >> 7))) + param_5 != '\0') {
-    FUN_CODE_dc2d();
-    return;
-  }
-  func_0xe459();
-  FUN_CODE_96bf();
-  cVar1 = DAT_EXTMEM_07b7;
-  if (cVar1 == '\0') {
-    return;
-  }
-  FUN_CODE_e1c6();
-  return;
+  pbVar4 = &DAT_EXTMEM_21ae;
+  bVar3 = bCODE21ae;
+  bVar1 = DAT_INTMEM_21;
+  DAT_INTMEM_70 = param_3;
+  bVar2 = func_0xd26c(bCODE21ae,CARRY1(bCODE21ae,DAT_INTMEM_21),bCODE21ae + DAT_INTMEM_21);
+  *pbVar4 = bVar2 & 0xef;
+  bVar2 = func_0xd26c();
+  *pbVar4 = bVar2 & 0x7f;
+  bVar3 = func_0xd24b(bVar3 + bVar1);
+  *pbVar4 = bVar3 & 0xdf;
+  func_0xd229();
+  *pbVar4 = 0;
+  func_0xd1e6();
+  *pbVar4 = 0x20;
+  *pbVar4 = bVar1;
+                    // WARNING: Subroutine does not return
+  FUN_CODE_23f7(6);
 }
 
 
 
-void FUN_CODE_BANK1__0bc8(undefined1 param_1,undefined1 param_2,undefined1 param_3)
+void FUN_CODE_BANK1__8bc8(char param_1,undefined1 param_2,byte param_3)
 
 {
   bool bVar1;
-  undefined1 uVar2;
+  char cVar2;
   char cVar3;
-  char cVar4;
+  undefined1 uVar4;
   byte bVar5;
-  undefined1 uVar6;
-  char cVar7;
-  byte bVar8;
+  byte bVar6;
+  undefined1 uVar7;
+  char cVar8;
   byte bVar9;
-  undefined1 *puVar10;
-  byte *pbVar11;
+  byte *pbVar10;
+  undefined1 *puVar11;
   char *pcVar12;
   byte *pbVar13;
   undefined2 uVar14;
   
-  DAT_EXTMEM_0aff = param_1;
-  uVar6 = REG_SYS_STATUS_PRIMARY;
-  puVar10 = &DAT_EXTMEM_053c;
-  func_0xab03(uVar6,param_1);
-  *puVar10 = param_3;
-  cVar7 = DAT_INTMEM_27 + 0xc;
-  cVar3 = DAT_EXTMEM_0547;
-  bVar8 = cVar7 - cVar3;
-  bVar5 = 0;
-  cVar3 = BANK0_R7 + '\x01';
-  bVar9 = 1;
-  while (cVar3 = cVar3 + -1, cVar3 != '\0') {
-    bVar5 = bVar5 << 1 | bVar9 >> 7;
-    bVar9 = bVar9 << 1;
-  }
-  pbVar11 = &DAT_EXTMEM_054c;
-  func_0xab03();
-  *pbVar11 = bVar5;
-  pbVar11[1] = bVar8;
-  DAT_EXTMEM_0a5c = 0xe;
-  puVar10 = &REG_EP_CONFIG_ARRAY;
-  FUN_CODE_BANK1__0dd1(param_2,0x14);
-  *puVar10 = 1;
-  cVar3 = DAT_EXTMEM_0a5c;
-  cVar4 = -0x80;
-  bVar1 = (0xf3 < DAT_INTMEM_27 ^ 0x80U) < 0x80U - (((DAT_INTMEM_27 + 0xc < cVar3 + 1U) << 7) >> 7);
-  if (!bVar1) {
-    cVar3 = func_0xab33(cVar7 - (cVar3 - ((bVar1 << 7) >> 7)));
-    while (cVar4 = cVar4 + -1, cVar4 != '\0') {
-      cVar3 = cVar3 << 1;
+  while( true ) {
+    DAT_EXTMEM_0aff = param_1;
+    uVar7 = G_SYS_STATUS_PRIMARY;
+    pbVar10 = &DAT_EXTMEM_053c;
+    func_0xab03(uVar7);
+    *pbVar10 = param_3;
+    cVar8 = DAT_INTMEM_27 + 0xc;
+    cVar2 = DAT_EXTMEM_0547;
+    bVar9 = cVar8 - cVar2;
+    bVar5 = 0;
+    cVar2 = BANK0_R7 + '\x01';
+    bVar6 = 1;
+    while (cVar2 = cVar2 + -1, cVar2 != '\0') {
+      bVar5 = bVar5 << 1 | bVar6 >> 7;
+      bVar6 = bVar6 << 1;
     }
-    uVar6 = REG_SYS_STATUS_SECONDARY;
-    pcVar12 = &REG_EP_CONFIG_ARRAY;
-    FUN_CODE_aa63(uVar6);
-    *pcVar12 = cVar3;
-  }
-  pbVar11 = &DAT_EXTMEM_0ae7;
-  bVar9 = DAT_EXTMEM_0ae7;
-  if (bVar9 == 0) {
-    pbVar11 = &REG_SYS_STATUS_SECONDARY;
-    uVar6 = REG_SYS_STATUS_SECONDARY;
-    func_0xaa42(uVar6);
-    bVar9 = *pbVar11 - 0xc;
-    if ((*pbVar11 < 0xc) << 7 < '\0') {
-      FUN_CODE_aa56();
-      cVar3 = FUN_CODE_aafb();
-      if (cVar3 != '\0') {
-        uVar6 = REG_SYS_STATUS_SECONDARY;
-        puVar10 = &DAT_EXTMEM_054f;
-        func_0xaa6a(uVar6);
-        *puVar10 = 1;
-        puVar10 = &DAT_EXTMEM_0549;
-        FUN_CODE_BANK1__0dd1(uVar6,0x14);
-        *puVar10 = 0x10;
-        pbVar11 = puVar10 + 1;
-        *pbVar11 = 0;
-        func_0xaa87(uVar6);
-        bVar9 = *pbVar11;
-        pcVar12 = &REG_SYS_STATUS_SECONDARY;
-        uVar6 = REG_SYS_STATUS_SECONDARY;
-        func_0xaa42(uVar6);
-        cVar3 = *pcVar12;
-        cVar7 = BANK0_R5 + '\x01';
-        while (cVar7 = cVar7 + -1, cVar7 != '\0') {
-          bVar9 = bVar9 >> 1;
-        }
-        *pbVar11 = bVar9;
-        FUN_CODE_aa2a('\f' - cVar3);
-        FUN_CODE_BANK1__0d84();
-        FUN_CODE_BANK1__0d33(3);
-        FUN_CODE_BANK1__0dc5(pbVar11);
-        pbVar13 = &REG_SYS_STATUS_SECONDARY;
-        uVar6 = REG_SYS_STATUS_SECONDARY;
-        func_0xaa2b(uVar6);
-        bVar9 = *pbVar13;
-        pbVar11 = pbVar13;
-        FUN_CODE_aa60(uVar6);
-        *pbVar13 = bVar9 | *pbVar11 << 5;
-        uVar14 = 0x465;
-        uVar6 = REG_SYS_STATUS_SECONDARY;
-        func_0xaa57(uVar6);
-        FUN_CODE_BANK1__0d84();
-        FUN_CODE_BANK1__0d33(3);
-        FUN_CODE_BANK1__0dc5(uVar14);
-        uVar6 = REG_SYS_STATUS_PRIMARY;
-        bVar9 = REG_SYS_STATUS_SECONDARY;
-        *(undefined1 *)CONCAT11('\x05' - (((0x85 < bVar9) << 7) >> 7),bVar9 + 0x7a) = uVar6;
-        puVar10 = &DAT_EXTMEM_053e;
-        func_0xaa69(bVar9);
-        cVar7 = DAT_INTMEM_26;
-        *puVar10 = 1;
-        cVar3 = DAT_EXTMEM_0579;
-        DAT_EXTMEM_0579 = cVar3 + '\x01';
-        DAT_INTMEM_26 = DAT_INTMEM_26 + '\x01';
-        if (DAT_INTMEM_26 != '\0') {
-          func_0x8e27(7);
-          pcVar12 = (char *)0x574;
-          DAT_EXTMEM_0574 = 8;
-          FUN_CODE_BANK1__23f7(9);
-          func_0x8e27(1);
-          func_0xaae9();
-          if (*pcVar12 != '\0') {
-            FUN_CODE_ab7a();
-            FUN_CODE_BANK1__23f7();
-          }
-          cVar3 = '\x05';
-          FUN_CODE_BANK1__23f7();
-          if (cVar3 == '\0') {
-            cVar3 = '\x01';
-            FUN_CODE_BANK1__23f7();
-            if (cVar3 == '\0') {
-              uVar6 = DAT_EXTMEM_0549;
-              uVar2 = DAT_EXTMEM_054a;
-              REG_NVME_LBA_0 = uVar6;
-              REG_NVME_LBA_1 = uVar2;
-              uVar6 = DAT_EXTMEM_055d;
-              uVar2 = DAT_EXTMEM_055e;
-              REG_NVME_LBA_2 = uVar6;
-              REG_NVME_COUNT_LOW = uVar2;
-              DAT_EXTMEM_c404 = 2;
-              DAT_EXTMEM_c405 = 0;
-              return;
-            }
-            return;
-          }
-          return;
-        }
-        FUN_CODE_8d6e(cVar7);
-        FUN_CODE_BANK1__0be6(1,0x1f,1,2);
-        return;
+    pbVar10 = &DAT_EXTMEM_054c;
+    func_0xab03();
+    *pbVar10 = bVar5;
+    pbVar10[1] = bVar9;
+    DAT_EXTMEM_0a5c = 0xe;
+    puVar11 = &G_EP_CONFIG_ARRAY;
+    mul_add_index(param_2,0x14);
+    *puVar11 = 1;
+    cVar2 = DAT_EXTMEM_0a5c;
+    cVar3 = -0x80;
+    bVar1 = (0xf3 < DAT_INTMEM_27 ^ 0x80U) <
+            0x80U - (((DAT_INTMEM_27 + 0xc < cVar2 + 1U) << 7) >> 7);
+    if (!bVar1) {
+      cVar2 = func_0xab33(cVar8 - (cVar2 - ((bVar1 << 7) >> 7)));
+      while (cVar3 = cVar3 + -1, cVar3 != '\0') {
+        cVar2 = cVar2 << 1;
       }
-      bVar9 = 0;
+      uVar7 = G_SYS_STATUS_SECONDARY;
+      pcVar12 = &G_EP_CONFIG_ARRAY;
+      func_0xaa63(uVar7);
+      *pcVar12 = cVar2;
+    }
+    cVar2 = DAT_EXTMEM_0ae7;
+    if (cVar2 != '\0') break;
+    pbVar10 = &G_SYS_STATUS_SECONDARY;
+    uVar7 = G_SYS_STATUS_SECONDARY;
+    func_0xaa42(uVar7);
+    if (0xb < *pbVar10) break;
+    func_0xaa56(*pbVar10 - 0xc);
+    cVar2 = func_0xaafb();
+    if (cVar2 == '\0') break;
+    uVar7 = G_SYS_STATUS_SECONDARY;
+    puVar11 = &DAT_EXTMEM_054f;
+    func_0xaa6a(uVar7);
+    *puVar11 = 1;
+    cVar3 = '\x14';
+    puVar11 = &DAT_EXTMEM_0549;
+    mul_add_index(uVar7);
+    *puVar11 = 0x10;
+    pbVar10 = puVar11 + 1;
+    *pbVar10 = 0;
+    func_0xaa87(uVar7);
+    bVar6 = *pbVar10;
+    pcVar12 = &G_SYS_STATUS_SECONDARY;
+    uVar7 = G_SYS_STATUS_SECONDARY;
+    func_0xaa42(uVar7);
+    cVar2 = *pcVar12;
+    cVar8 = BANK0_R5 + '\x01';
+    while (cVar8 = cVar8 + -1, cVar8 != '\0') {
+      bVar6 = bVar6 >> 1;
+    }
+    *pbVar10 = bVar6;
+    func_0xaa2a('\f' - cVar2);
+    xdata_load_dword();
+    reg_read_word(3);
+    xdata_store_dword(pbVar10);
+    pbVar13 = &G_SYS_STATUS_SECONDARY;
+    uVar7 = G_SYS_STATUS_SECONDARY;
+    func_0xaa2b(uVar7);
+    bVar6 = *pbVar13;
+    pbVar10 = pbVar13;
+    func_0xaa60(uVar7);
+    *pbVar13 = bVar6 | *pbVar10 << 5;
+    uVar14 = 0x465;
+    uVar7 = G_SYS_STATUS_SECONDARY;
+    func_0xaa57(uVar7);
+    xdata_load_dword();
+    reg_read_word(3);
+    xdata_store_dword(uVar14);
+    uVar7 = G_SYS_STATUS_PRIMARY;
+    bVar6 = G_SYS_STATUS_SECONDARY;
+    *(undefined1 *)CONCAT11('\x05' - (((0x85 < bVar6) << 7) >> 7),bVar6 + 0x7a) = uVar7;
+    puVar11 = &DAT_EXTMEM_053e;
+    func_0xaa69(bVar6);
+    cVar8 = DAT_INTMEM_26;
+    *puVar11 = 1;
+    cVar2 = DAT_EXTMEM_0579;
+    DAT_EXTMEM_0579 = cVar2 + '\x01';
+    DAT_INTMEM_26 = DAT_INTMEM_26 + '\x01';
+    if (DAT_INTMEM_26 != '\0') {
+      func_0x8e27(7);
+      G_LOG_PROCESS_STATE = 8;
+                    // WARNING: Subroutine does not return
+      FUN_CODE_23f7(9);
+    }
+    uVar7 = *(undefined1 *)CONCAT11((cVar3 - (((DAT_INTMEM_26 == '\0') << 7) >> 7)) + -0x10,cVar8);
+    puVar11 = &G_SYS_STATUS_SECONDARY;
+    uVar4 = G_SYS_STATUS_SECONDARY;
+    func_0xaa42(uVar4);
+    *puVar11 = uVar7;
+    func_0xaa42(uVar4);
+    bVar5 = 0;
+    cVar2 = BANK0_R7 + '\x01';
+    bVar6 = 1;
+    while (cVar2 = cVar2 + -1, cVar2 != '\0') {
+      bVar5 = bVar5 << 1 | bVar6 >> 7;
+      bVar6 = bVar6 << 1;
+    }
+    param_2 = G_SYS_STATUS_SECONDARY;
+    pbVar10 = &DAT_EXTMEM_0549;
+    func_0xaa5a(bVar6);
+    *pbVar10 = bVar5;
+    pbVar10 = pbVar10 + 1;
+    func_0xaa3f();
+    cVar8 = func_0xab33('\x0e' - *pbVar10);
+    while (cVar2 = cVar2 + -1, cVar2 != '\0') {
+      cVar8 = cVar8 << 1;
+    }
+    func_0xaa87(param_2,cVar8);
+    func_0xaa3f();
+    param_3 = *pbVar10 - 9;
+    func_0xaaa2(param_2);
+    *pbVar10 = param_3;
+    param_1 = func_0xab2e();
+    while (cVar2 = cVar2 + -1, cVar2 != '\0') {
+      param_1 = param_1 << 1;
     }
   }
-  *pbVar11 = bVar9;
-  pbVar11[1] = bVar9;
-  FUN_CODE_8a3d();
-  return;
+                    // WARNING: Subroutine does not return
+  FUN_CODE_23f7(9);
 }
 
 
 
-void FUN_CODE_BANK1__0be6(byte param_1,char param_2,undefined1 param_3)
+void FUN_CODE_BANK1__8be6(byte param_1,char param_2,undefined1 param_3)
 
 {
   bool bVar1;
-  undefined1 uVar2;
+  char cVar2;
   char cVar3;
-  char cVar4;
+  undefined1 uVar4;
   byte bVar5;
   undefined1 uVar6;
-  byte bVar7;
-  byte *pbVar8;
-  undefined1 *puVar9;
-  char *pcVar10;
-  byte *pbVar11;
-  undefined2 uVar12;
+  char cVar7;
+  byte bVar8;
+  byte *pbVar9;
+  undefined1 *puVar10;
+  char *pcVar11;
+  byte *pbVar12;
+  undefined2 uVar13;
   
-  bVar5 = 0;
-  cVar3 = BANK0_R7 + '\x01';
-  bVar7 = 1;
-  while (cVar3 = cVar3 + -1, cVar3 != '\0') {
-    bVar5 = bVar5 << 1 | bVar7 >> 7;
-    bVar7 = bVar7 << 1;
-  }
-  pbVar8 = &DAT_EXTMEM_054c;
-  func_0xab03();
-  *pbVar8 = bVar5;
-  pbVar8[1] = param_1;
-  DAT_EXTMEM_0a5c = 0xe;
-  puVar9 = &REG_EP_CONFIG_ARRAY;
-  FUN_CODE_BANK1__0dd1(param_3,0x14);
-  *puVar9 = 1;
-  cVar3 = DAT_EXTMEM_0a5c;
-  cVar4 = -0x80;
-  bVar1 = (0xf3 < DAT_INTMEM_27 ^ 0x80U) < 0x80U - (((DAT_INTMEM_27 + 0xc < cVar3 + 1U) << 7) >> 7);
-  if (!bVar1) {
-    cVar3 = func_0xab33(param_2 - (cVar3 - ((bVar1 << 7) >> 7)));
-    while (cVar4 = cVar4 + -1, cVar4 != '\0') {
+  while( true ) {
+    bVar5 = 0;
+    cVar2 = BANK0_R7 + '\x01';
+    bVar8 = 1;
+    while (cVar2 = cVar2 + -1, cVar2 != '\0') {
+      bVar5 = bVar5 << 1 | bVar8 >> 7;
+      bVar8 = bVar8 << 1;
+    }
+    pbVar9 = &DAT_EXTMEM_054c;
+    func_0xab03();
+    *pbVar9 = bVar5;
+    pbVar9[1] = param_1;
+    DAT_EXTMEM_0a5c = 0xe;
+    puVar10 = &G_EP_CONFIG_ARRAY;
+    mul_add_index(param_3,0x14);
+    *puVar10 = 1;
+    cVar2 = DAT_EXTMEM_0a5c;
+    cVar3 = -0x80;
+    bVar1 = (0xf3 < DAT_INTMEM_27 ^ 0x80U) <
+            0x80U - (((DAT_INTMEM_27 + 0xc < cVar2 + 1U) << 7) >> 7);
+    if (!bVar1) {
+      cVar2 = func_0xab33(param_2 - (cVar2 - ((bVar1 << 7) >> 7)));
+      while (cVar3 = cVar3 + -1, cVar3 != '\0') {
+        cVar2 = cVar2 << 1;
+      }
+      uVar6 = G_SYS_STATUS_SECONDARY;
+      pcVar11 = &G_EP_CONFIG_ARRAY;
+      func_0xaa63(uVar6);
+      *pcVar11 = cVar2;
+    }
+    cVar2 = DAT_EXTMEM_0ae7;
+    if (cVar2 != '\0') break;
+    pbVar9 = &G_SYS_STATUS_SECONDARY;
+    uVar6 = G_SYS_STATUS_SECONDARY;
+    func_0xaa42(uVar6);
+    if (0xb < *pbVar9) break;
+    func_0xaa56(*pbVar9 - 0xc);
+    cVar2 = func_0xaafb();
+    if (cVar2 == '\0') break;
+    uVar6 = G_SYS_STATUS_SECONDARY;
+    puVar10 = &DAT_EXTMEM_054f;
+    func_0xaa6a(uVar6);
+    *puVar10 = 1;
+    cVar7 = '\x14';
+    puVar10 = &DAT_EXTMEM_0549;
+    mul_add_index(uVar6);
+    *puVar10 = 0x10;
+    pbVar9 = puVar10 + 1;
+    *pbVar9 = 0;
+    func_0xaa87(uVar6);
+    bVar8 = *pbVar9;
+    pcVar11 = &G_SYS_STATUS_SECONDARY;
+    uVar6 = G_SYS_STATUS_SECONDARY;
+    func_0xaa42(uVar6);
+    cVar2 = *pcVar11;
+    cVar3 = BANK0_R5 + '\x01';
+    while (cVar3 = cVar3 + -1, cVar3 != '\0') {
+      bVar8 = bVar8 >> 1;
+    }
+    *pbVar9 = bVar8;
+    func_0xaa2a('\f' - cVar2);
+    xdata_load_dword();
+    reg_read_word(3);
+    xdata_store_dword(pbVar9);
+    pbVar12 = &G_SYS_STATUS_SECONDARY;
+    uVar6 = G_SYS_STATUS_SECONDARY;
+    func_0xaa2b(uVar6);
+    bVar8 = *pbVar12;
+    pbVar9 = pbVar12;
+    func_0xaa60(uVar6);
+    *pbVar12 = bVar8 | *pbVar9 << 5;
+    uVar13 = 0x465;
+    uVar6 = G_SYS_STATUS_SECONDARY;
+    func_0xaa57(uVar6);
+    xdata_load_dword();
+    reg_read_word(3);
+    xdata_store_dword(uVar13);
+    uVar6 = G_SYS_STATUS_PRIMARY;
+    bVar8 = G_SYS_STATUS_SECONDARY;
+    *(undefined1 *)CONCAT11('\x05' - (((0x85 < bVar8) << 7) >> 7),bVar8 + 0x7a) = uVar6;
+    puVar10 = &DAT_EXTMEM_053e;
+    func_0xaa69(bVar8);
+    cVar3 = DAT_INTMEM_26;
+    *puVar10 = 1;
+    cVar2 = DAT_EXTMEM_0579;
+    DAT_EXTMEM_0579 = cVar2 + '\x01';
+    DAT_INTMEM_26 = DAT_INTMEM_26 + '\x01';
+    if (DAT_INTMEM_26 != '\0') {
+      func_0x8e27(7);
+      G_LOG_PROCESS_STATE = 8;
+                    // WARNING: Subroutine does not return
+      FUN_CODE_23f7(9);
+    }
+    uVar6 = *(undefined1 *)CONCAT11((cVar7 - (((DAT_INTMEM_26 == '\0') << 7) >> 7)) + -0x10,cVar3);
+    puVar10 = &G_SYS_STATUS_SECONDARY;
+    uVar4 = G_SYS_STATUS_SECONDARY;
+    func_0xaa42(uVar4);
+    *puVar10 = uVar6;
+    func_0xaa42(uVar4);
+    bVar5 = 0;
+    cVar2 = BANK0_R7 + '\x01';
+    bVar8 = 1;
+    while (cVar2 = cVar2 + -1, cVar2 != '\0') {
+      bVar5 = bVar5 << 1 | bVar8 >> 7;
+      bVar8 = bVar8 << 1;
+    }
+    param_3 = G_SYS_STATUS_SECONDARY;
+    pbVar9 = &DAT_EXTMEM_0549;
+    func_0xaa5a(bVar8);
+    *pbVar9 = bVar5;
+    pbVar9 = pbVar9 + 1;
+    func_0xaa3f();
+    cVar3 = func_0xab33('\x0e' - *pbVar9);
+    while (cVar2 = cVar2 + -1, cVar2 != '\0') {
       cVar3 = cVar3 << 1;
     }
-    uVar6 = REG_SYS_STATUS_SECONDARY;
-    pcVar10 = &REG_EP_CONFIG_ARRAY;
-    FUN_CODE_aa63(uVar6);
-    *pcVar10 = cVar3;
-  }
-  pbVar8 = &DAT_EXTMEM_0ae7;
-  bVar7 = DAT_EXTMEM_0ae7;
-  if (bVar7 == 0) {
-    pbVar8 = &REG_SYS_STATUS_SECONDARY;
-    uVar6 = REG_SYS_STATUS_SECONDARY;
-    func_0xaa42(uVar6);
-    bVar7 = *pbVar8 - 0xc;
-    if ((*pbVar8 < 0xc) << 7 < '\0') {
-      FUN_CODE_aa56();
-      cVar3 = FUN_CODE_aafb();
-      if (cVar3 != '\0') {
-        uVar6 = REG_SYS_STATUS_SECONDARY;
-        puVar9 = &DAT_EXTMEM_054f;
-        func_0xaa6a(uVar6);
-        *puVar9 = 1;
-        puVar9 = &DAT_EXTMEM_0549;
-        FUN_CODE_BANK1__0dd1(uVar6,0x14);
-        *puVar9 = 0x10;
-        pbVar8 = puVar9 + 1;
-        *pbVar8 = 0;
-        func_0xaa87(uVar6);
-        bVar7 = *pbVar8;
-        pcVar10 = &REG_SYS_STATUS_SECONDARY;
-        uVar6 = REG_SYS_STATUS_SECONDARY;
-        func_0xaa42(uVar6);
-        cVar3 = *pcVar10;
-        cVar4 = BANK0_R5 + '\x01';
-        while (cVar4 = cVar4 + -1, cVar4 != '\0') {
-          bVar7 = bVar7 >> 1;
-        }
-        *pbVar8 = bVar7;
-        FUN_CODE_aa2a('\f' - cVar3);
-        FUN_CODE_BANK1__0d84();
-        FUN_CODE_BANK1__0d33(3);
-        FUN_CODE_BANK1__0dc5(pbVar8);
-        pbVar11 = &REG_SYS_STATUS_SECONDARY;
-        uVar6 = REG_SYS_STATUS_SECONDARY;
-        func_0xaa2b(uVar6);
-        bVar7 = *pbVar11;
-        pbVar8 = pbVar11;
-        FUN_CODE_aa60(uVar6);
-        *pbVar11 = bVar7 | *pbVar8 << 5;
-        uVar12 = 0x465;
-        uVar6 = REG_SYS_STATUS_SECONDARY;
-        func_0xaa57(uVar6);
-        FUN_CODE_BANK1__0d84();
-        FUN_CODE_BANK1__0d33(3);
-        FUN_CODE_BANK1__0dc5(uVar12);
-        uVar6 = REG_SYS_STATUS_PRIMARY;
-        bVar7 = REG_SYS_STATUS_SECONDARY;
-        *(undefined1 *)CONCAT11('\x05' - (((0x85 < bVar7) << 7) >> 7),bVar7 + 0x7a) = uVar6;
-        puVar9 = &DAT_EXTMEM_053e;
-        func_0xaa69(bVar7);
-        cVar4 = DAT_INTMEM_26;
-        *puVar9 = 1;
-        cVar3 = DAT_EXTMEM_0579;
-        DAT_EXTMEM_0579 = cVar3 + '\x01';
-        DAT_INTMEM_26 = DAT_INTMEM_26 + '\x01';
-        if (DAT_INTMEM_26 != '\0') {
-          func_0x8e27(7);
-          pcVar10 = (char *)0x574;
-          DAT_EXTMEM_0574 = 8;
-          FUN_CODE_BANK1__23f7(9);
-          func_0x8e27(1);
-          func_0xaae9();
-          if (*pcVar10 != '\0') {
-            FUN_CODE_ab7a();
-            FUN_CODE_BANK1__23f7();
-          }
-          cVar3 = '\x05';
-          FUN_CODE_BANK1__23f7();
-          if (cVar3 == '\0') {
-            cVar3 = '\x01';
-            FUN_CODE_BANK1__23f7();
-            if (cVar3 == '\0') {
-              uVar6 = DAT_EXTMEM_0549;
-              uVar2 = DAT_EXTMEM_054a;
-              REG_NVME_LBA_0 = uVar6;
-              REG_NVME_LBA_1 = uVar2;
-              uVar6 = DAT_EXTMEM_055d;
-              uVar2 = DAT_EXTMEM_055e;
-              REG_NVME_LBA_2 = uVar6;
-              REG_NVME_COUNT_LOW = uVar2;
-              DAT_EXTMEM_c404 = 2;
-              DAT_EXTMEM_c405 = 0;
-              return;
-            }
-            return;
-          }
-          return;
-        }
-        FUN_CODE_8d6e(cVar4);
-        FUN_CODE_BANK1__0be6(1,0x1f,1,2);
-        return;
-      }
-      bVar7 = 0;
+    func_0xaa87(param_3,cVar3);
+    func_0xaa3f();
+    bVar8 = *pbVar9 - 9;
+    func_0xaaa2(param_3);
+    *pbVar9 = bVar8;
+    cVar3 = func_0xab2e();
+    while (cVar2 = cVar2 + -1, cVar2 != '\0') {
+      cVar3 = cVar3 << 1;
     }
+    DAT_EXTMEM_0aff = cVar3;
+    uVar6 = G_SYS_STATUS_PRIMARY;
+    pbVar9 = &DAT_EXTMEM_053c;
+    func_0xab03(uVar6);
+    *pbVar9 = bVar8;
+    param_2 = DAT_INTMEM_27 + 0xc;
+    cVar2 = DAT_EXTMEM_0547;
+    param_1 = param_2 - cVar2;
   }
-  *pbVar8 = bVar7;
-  pbVar8[1] = bVar7;
-  FUN_CODE_8a3d();
-  return;
+                    // WARNING: Subroutine does not return
+  FUN_CODE_23f7(9);
 }
 
 
 
-void FUN_CODE_BANK1__0d33(void)
+void FUN_CODE_BANK1__8d33(void)
 
 {
-  undefined1 uVar1;
-  undefined1 uVar2;
-  char cVar3;
-  char *pcVar4;
-  
   func_0x8e27();
-  pcVar4 = (char *)0x574;
-  DAT_EXTMEM_0574 = 8;
-  FUN_CODE_BANK1__23f7(9);
-  func_0x8e27(1);
-  func_0xaae9();
-  if (*pcVar4 != '\0') {
-    FUN_CODE_ab7a();
-    FUN_CODE_BANK1__23f7();
-  }
-  cVar3 = '\x05';
-  FUN_CODE_BANK1__23f7();
-  if (cVar3 != '\0') {
-    return;
-  }
-  cVar3 = '\x01';
-  FUN_CODE_BANK1__23f7();
-  if (cVar3 != '\0') {
-    return;
-  }
-  uVar1 = DAT_EXTMEM_0549;
-  uVar2 = DAT_EXTMEM_054a;
-  REG_NVME_LBA_0 = uVar1;
-  REG_NVME_LBA_1 = uVar2;
-  uVar1 = DAT_EXTMEM_055d;
-  uVar2 = DAT_EXTMEM_055e;
-  REG_NVME_LBA_2 = uVar1;
-  REG_NVME_COUNT_LOW = uVar2;
-  DAT_EXTMEM_c404 = 2;
-  DAT_EXTMEM_c405 = 0;
-  return;
+  G_LOG_PROCESS_STATE = 8;
+                    // WARNING: Subroutine does not return
+  FUN_CODE_23f7(9);
 }
 
 
 
-void FUN_CODE_BANK1__0d84(undefined1 *param_1,undefined1 param_2)
+void FUN_CODE_BANK1__8d84(undefined1 *param_1,undefined1 param_2)
 
 {
   *param_1 = param_2;
@@ -31012,107 +32165,93 @@ void FUN_CODE_BANK1__0d84(undefined1 *param_1,undefined1 param_2)
 
 
 
-void FUN_CODE_BANK1__0dc5(byte param_1,byte *param_2,char param_3)
+void FUN_CODE_BANK1__8dc5(byte param_1,byte *param_2,char param_3)
 
 {
-  byte bVar1;
-  byte *pbVar2;
-  
   *param_2 = param_1 | 0x80;
-  pbVar2 = (byte *)0xc21f;
-  func_0xc390(param_3 + -1);
-  FUN_CODE_BANK1__0be6(0xa0,0x49,0x28,2);
-  bVar1 = func_0xc343();
-  *pbVar2 = bVar1 | 0x40;
-  func_0xc34a(0xc2c5);
-  bVar1 = DAT_EXTMEM_c2a1;
-  DAT_EXTMEM_c2a1 = bVar1 & 0x9f | 0x60;
-  FUN_CODE_c2f8(0xc28c);
-  FUN_CODE_c2f8(0xc29c);
-  FUN_CODE_c2f8(0xc2ac);
-  bVar1 = DAT_EXTMEM_c2bc;
-  DAT_EXTMEM_c2bc = bVar1 & 0xfe;
-  bVar1 = DAT_EXTMEM_c28c;
-  DAT_EXTMEM_c28c = bVar1 & 0xfd;
-  FUN_CODE_c351(0xc29c);
-  FUN_CODE_c351(0xc2ac);
-  bVar1 = DAT_EXTMEM_c2bc;
-  DAT_EXTMEM_c2bc = bVar1 & 0xfd;
-  bVar1 = DAT_EXTMEM_c2c3;
-  DAT_EXTMEM_c2c3 = bVar1 & 0xc3 | 0x1c;
-  bVar1 = DAT_EXTMEM_c2c9;
-  DAT_EXTMEM_c2c9 = bVar1 & 0x80 | 0x41;
-  FUN_CODE_c335(0xc2a5);
-  FUN_CODE_c30e(0xc2ca);
-  FUN_CODE_c358(0xc287);
-  func_0xc34a(0xc294);
-  FUN_CODE_c358(0xc2a2);
-  FUN_CODE_c2f1(0xc2c5);
-  FUN_CODE_c2ff(0xc293);
+  func_0xc390(0xc21f,param_3 + -1);
                     // WARNING: Subroutine does not return
-  phy_link_init(0xc2ce);
+  write_xdata_reg(0xa0,0x49,0x28,2);
 }
 
 
 
-void FUN_CODE_BANK1__0dd1(byte *param_1)
+void FUN_CODE_BANK1__8dd1(void)
 
 {
-  byte bVar1;
-  
-  FUN_CODE_BANK1__0be6(0xa0,0x49,0x28);
-  bVar1 = func_0xc343();
-  *param_1 = bVar1 | 0x40;
-  func_0xc34a(0xc2c5);
-  bVar1 = DAT_EXTMEM_c2a1;
-  DAT_EXTMEM_c2a1 = bVar1 & 0x9f | 0x60;
-  FUN_CODE_c2f8(0xc28c);
-  FUN_CODE_c2f8(0xc29c);
-  FUN_CODE_c2f8(0xc2ac);
-  bVar1 = DAT_EXTMEM_c2bc;
-  DAT_EXTMEM_c2bc = bVar1 & 0xfe;
-  bVar1 = DAT_EXTMEM_c28c;
-  DAT_EXTMEM_c28c = bVar1 & 0xfd;
-  FUN_CODE_c351(0xc29c);
-  FUN_CODE_c351(0xc2ac);
-  bVar1 = DAT_EXTMEM_c2bc;
-  DAT_EXTMEM_c2bc = bVar1 & 0xfd;
-  bVar1 = DAT_EXTMEM_c2c3;
-  DAT_EXTMEM_c2c3 = bVar1 & 0xc3 | 0x1c;
-  bVar1 = DAT_EXTMEM_c2c9;
-  DAT_EXTMEM_c2c9 = bVar1 & 0x80 | 0x41;
-  FUN_CODE_c335(0xc2a5);
-  FUN_CODE_c30e(0xc2ca);
-  FUN_CODE_c358(0xc287);
-  func_0xc34a(0xc294);
-  FUN_CODE_c358(0xc2a2);
-  FUN_CODE_c2f1(0xc2c5);
-  FUN_CODE_c2ff(0xc293);
                     // WARNING: Subroutine does not return
-  phy_link_init(0xc2ce);
+  write_xdata_reg(0xa0,0x49,0x28);
 }
 
 
 
-void FUN_CODE_BANK1__23f7(short param_1)
+void FUN_CODE_BANK1__a3f7(short param_1,undefined1 *param_2,undefined1 param_3,byte param_4)
 
 {
-  undefined1 uVar1;
-  byte in_PSW;
+  char cVar1;
+  byte bVar2;
+  char cVar3;
+  byte bVar4;
+  undefined1 uVar5;
+  undefined1 *puVar6;
   
   *(undefined1 *)(param_1 + 1) = 0;
   *(undefined1 *)(param_1 + 2) = 0;
   *(undefined1 *)(param_1 + 3) = 0;
   DAT_EXTMEM_801b = 1;
-  DAT_EXTMEM_801b = in_PSW >> 7;
-  uVar1 = UNK_EXTMEM_801c;
-  FUN_CODE_BANK1__0be6(uVar1,4,0,0,0,0x40);
+  bVar2 = 0x40;
+  cVar3 = UNK_EXTMEM_071b;
+  if ((cVar3 == '\0') || (cVar1 = G_STATE_COUNTER_HI, cVar3 = cVar1 + -1, cVar1 != '\0')) {
+                    // WARNING: Subroutine does not return
+    flash_func_0bc8(cVar3,0x40,0x20,0xff,0,0);
+  }
+  G_LOG_PROCESSED_INDEX = 0;
+  while( true ) {
+    puVar6 = &G_LOG_PROCESSED_INDEX;
+    bVar4 = func_0x9974();
+    if (bVar2 <= bVar4) break;
+    func_0x98a4(bVar4 - bVar2);
+    uVar5 = *puVar6;
+    puVar6 = &DAT_EXTMEM_0aa6;
+    func_0x98fe();
+    *puVar6 = uVar5;
+    cVar3 = G_LOG_PROCESSED_INDEX;
+    G_LOG_PROCESSED_INDEX = cVar3 + '\x01';
+  }
+  cVar3 = DAT_EXTMEM_0aa2;
+  uVar5 = func_0x976c();
+  DAT_EXTMEM_0a9e = uVar5;
+  if (cVar3 == '\b') {
+    func_0xd283();
+  }
+  bVar2 = DAT_EXTMEM_0aa0;
+  DAT_EXTMEM_0aa0 = bVar2 & 0x7f;
+  uVar5 = DAT_EXTMEM_0a9d;
+  UNK_EXTMEM_0998 = uVar5;
+  uVar5 = DAT_EXTMEM_0a9e;
+  UNK_EXTMEM_0999 = uVar5;
+  uVar5 = func_0x9934(0xa9f,bVar2 & 0x7f);
+  if (param_4 == 1) {
+    *(undefined1 *)CONCAT11(param_3,param_2) = uVar5;
+    return;
+  }
+  if (param_4 == 0) {
+    *param_2 = uVar5;
+    return;
+  }
+  if (param_4 == 0xfe) {
+    *(undefined1 *)ZEXT12(param_2) = uVar5;
+  }
+  else if (param_4 < 0xfe) {
+    flash_func_0adc();
+    return;
+  }
   return;
 }
 
 
 
-void FUN_CODE_BANK1__425f(byte param_1,byte *param_2)
+void FUN_CODE_BANK1__c25f(byte param_1,byte *param_2)
 
 {
   *param_2 = param_1 | 0xb;
@@ -31121,72 +32260,116 @@ void FUN_CODE_BANK1__425f(byte param_1,byte *param_2)
 
 
 
-void FUN_CODE_BANK1__5052(char param_1,char *param_2,byte *param_3)
+void FUN_CODE_BANK1__d052(char param_1,char *param_2,byte *param_3)
 
 {
   byte bVar1;
   char in_PSW;
   
   func_0x9388(param_1 - (*param_2 - (in_PSW >> 7)) & *param_3,0x12);
-  FUN_CODE_9677();
-  FUN_CODE_95a5(0x68);
+  func_0x9677();
+  func_0x95a5(0x68);
   func_0x9403();
   func_0x9630();
   func_0x9403();
-  FUN_CODE_9580();
-  FUN_CODE_9657(0x7b);
+  func_0x9580();
+  func_0x9657(0x7b);
   func_0x9388();
-  FUN_CODE_9677();
-  FUN_CODE_95a5(0x6c);
+  func_0x9677();
+  func_0x95a5(0x6c);
   func_0x9403();
   func_0x9630();
   func_0x9403();
-  FUN_CODE_9580();
-  FUN_CODE_95d7(0x78);
+  func_0x9580();
+  func_0x95d7(0x78);
   func_0x9388();
-  FUN_CODE_95c5();
+  func_0x95c5();
   func_0x9388();
-  FUN_CODE_95c5();
+  func_0x95c5();
   func_0x9388();
-  FUN_CODE_95c5();
+  func_0x95c5();
   bVar1 = func_0x9388();
-  FUN_CODE_BANK1__0be6(bVar1 & 0x7f);
-  bVar1 = FUN_CODE_BANK1__0bc8(0x67);
-  FUN_CODE_BANK1__0be6(bVar1 & 0x3f | 0xc0);
+                    // WARNING: Subroutine does not return
+  write_xdata_reg(bVar1 & 0x7f);
+}
+
+
+
+void FUN_CODE_BANK1__d23c
+               (byte param_1,byte param_2,byte *param_3,byte param_4,char param_5,byte param_6)
+
+{
+  char cVar1;
+  byte bVar2;
+  char *pcVar3;
+  byte *pbVar4;
+  byte *pbVar5;
+  
+  DAT_INTMEM_48 = DAT_INTMEM_48 & param_1;
+  pcVar3 = (char *)FUN_CODE_BANK1__d052(param_1 | param_4 | *param_3,param_5 + '\x01');
+  DAT_INTMEM_58 = DAT_INTMEM_58 & (byte)pcVar3;
+  DAT_INTMEM_4d = DAT_INTMEM_4d & 0x47 | 0xd2;
+  DAT_INTMEM_42 = DAT_INTMEM_42 & 0x45;
+  bVar2 = SOFL;
+  SOFL = bVar2 & (byte)pcVar3;
+  *(char **)ZEXT12(pcVar3) = pcVar3;
+  nop();
+  *pcVar3 = *pcVar3 + -1;
+  func_0xb75b(param_2 | 0x40);
+  bVar2 = bINTMEM5e;
+  bINTMEM57 = param_6;
+  reg_read_word(0,0x12,uINTMEM5b,DAT_INTMEM_5c,uINTMEM5d);
+  if ((bVar2 & 1) == 0) {
+    pbVar4 = &UNK_EXTMEM_073e;
+  }
+  else {
+    pbVar4 = (byte *)CONCAT11('\a' - (((0xc1 < bINTMEM57) << 7) >> 7),bINTMEM57 + 0x3e);
+  }
+  DAT_INTMEM_59 = (undefined1)((ushort)*pbVar4 * 0x20 >> 8);
+  if ((bVar2 >> 1 & 1) == 0) {
+    pbVar5 = &UNK_EXTMEM_072e;
+  }
+  else {
+    pbVar5 = (byte *)CONCAT11('\a' - (((0xd1 < bINTMEM57) << 7) >> 7),bINTMEM57 + 0x2e);
+  }
+  bINTMEM5a = (byte)((ushort)*pbVar4 * 0x20) | *pbVar5;
+  DAT_INTMEM_58 = bVar2;
+  if ((DAT_INTMEM_55 & 1) != 0) {
+    bVar2 = func_0xb720(0x6a);
+    cVar1 = (bVar2 & 1) == 1;
+    func_0xea7c(bINTMEM57);
+    func_0xb6b5();
+    func_0xb683(0xc2c3);
+    func_0xb79d();
+    if (cVar1 != '\0') {
+      UNK_EXTMEM_0ab4 = DAT_INTMEM_58;
+    }
+  }
+  if ((DAT_INTMEM_55 >> 1 & 1) != 0) {
+    bVar2 = func_0xb720(0x6c);
+    bVar2 = (bVar2 & 1) != 1;
+    func_0xea7c(bINTMEM57);
+    func_0xb6b5();
+    func_0xb683(&SUB_CODE_BANK1__c343);
+    if ((bVar2 & 1) != 0) {
+      UNK_EXTMEM_0ab5 = DAT_INTMEM_58;
+    }
+  }
+  func_0xb775();
+  func_0xb6fa();
   return;
 }
 
 
 
-byte FUN_CODE_BANK1__523c(byte param_1,byte *param_2,byte param_3,char param_4)
-
-{
-  byte bVar1;
-  char *pcVar2;
-  
-  DAT_INTMEM_48 = DAT_INTMEM_48 & param_1;
-  pcVar2 = (char *)FUN_CODE_BANK1__5052(param_1 | param_3 | *param_2,param_4 + '\x01');
-  DAT_INTMEM_58 = DAT_INTMEM_58 & (byte)pcVar2;
-  DAT_INTMEM_4d = DAT_INTMEM_4d & 0x47 | 0xd2;
-  DAT_INTMEM_42 = DAT_INTMEM_42 & 0x45;
-  bVar1 = SOFL;
-  SOFL = bVar1 & (byte)pcVar2;
-  *(char **)ZEXT12(pcVar2) = pcVar2;
-  nop();
-  *pcVar2 = *pcVar2 + -1;
-  return (byte)pcVar2 & 0x58;
-}
-
-
-
-void FUN_CODE_BANK1__538d(byte param_1)
+void FUN_CODE_BANK1__d38d(byte param_1)
 
 {
   if ((param_1 >> 1 & 1) != 0) {
-    FUN_CODE_968c();
+    func_0x968c();
     func_0x986d();
   }
-  FUN_CODE_BANK1__051b(0,200,2);
+  interface_ready_check(0,200,2);
   return;
 }
 

@@ -68,6 +68,12 @@
 #include "../registers.h"
 #include "../globals.h"
 
+/* External functions from usb.c */
+extern uint16_t usb_read_transfer_params(void);
+
+/* IDATA command buffer at 0x09 (4 bytes) */
+static __idata uint8_t * const scsi_cmd_buffer = (__idata uint8_t *)0x09;
+
 /* USB Mass Storage signatures */
 #define USB_CBW_SIGNATURE_0     0x55    /* 'U' */
 #define USB_CBW_SIGNATURE_1     0x53    /* 'S' */
@@ -157,23 +163,34 @@ uint8_t scsi_validate_cbw_signature(void)
  */
 void scsi_setup_status_regs(void)
 {
+    uint16_t transfer_params;
     uint8_t r6_val, r7_val;
-    uint8_t error = 0;
+    uint32_t cmd_buffer_val;
+    uint8_t error;
 
-    /* Call helpers at 0x31a5 and 0x322e */
-    /* Helper 0x322e returns carry set on error */
+    /* Call helper at 0x31a5 - read transfer params */
+    transfer_params = usb_read_transfer_params();
+    r6_val = (uint8_t)(transfer_params >> 8);  /* High byte */
+    r7_val = (uint8_t)(transfer_params & 0xFF); /* Low byte */
 
-    /* TODO: Implement actual helper calls */
-    /* For now, simulate no error path */
+    /* Call helper at 0x322e - compare IDATA[0x09..0x0C] with (0, 0, R6, R7) */
+    /* Load 32-bit value from command buffer */
+    cmd_buffer_val = scsi_cmd_buffer[0];
+    cmd_buffer_val |= ((uint32_t)scsi_cmd_buffer[1]) << 8;
+    cmd_buffer_val |= ((uint32_t)scsi_cmd_buffer[2]) << 16;
+    cmd_buffer_val |= ((uint32_t)scsi_cmd_buffer[3]) << 24;
+
+    /* Compare with transfer params (zero-extended to 32-bit) */
+    error = (cmd_buffer_val != transfer_params) ? 1 : 0;
 
     if (error) {
-        /* Load from IDATA[0x09] */
-        r6_val = ((__idata uint8_t *)0x09)[2];  /* R6 = byte 2 */
-        r7_val = ((__idata uint8_t *)0x09)[3];  /* R7 = byte 3 */
+        /* Load R6/R7 from IDATA[0x09] bytes 2-3 */
+        r6_val = scsi_cmd_buffer[2];
+        r7_val = scsi_cmd_buffer[3];
     } else {
-        /* Get result from helper */
-        r6_val = 0;
-        r7_val = 0;
+        /* Call helper at 0x31a5 again and use A (low byte) as R7 */
+        transfer_params = usb_read_transfer_params();
+        r7_val = (uint8_t)(transfer_params & 0xFF);
     }
 
     /* Write to SCSI buffer length registers */

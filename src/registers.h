@@ -111,6 +111,8 @@
 #define REG_CPU_DMA_CCD8        XDATA_REG8(0xCCD8)  // CPU DMA control D8 (RW)
 #define REG_CPU_DMA_CCDA        XDATA_REG8(0xCCDA)  // CPU DMA control DA (RW)
 #define REG_CPU_DMA_CCDB        XDATA_REG8(0xCCDB)  // CPU DMA control DB (RW)
+#define REG_CPU_LINK_CEF2       XDATA_REG8(0xCEF2)  // CPU link control F2 (RW)
+#define REG_CPU_LINK_CEF3       XDATA_REG8(0xCEF3)  // CPU link control F3 (RW)
 
 //=============================================================================
 // CPU Control Registers
@@ -188,10 +190,13 @@
 #define REG_USB_EP_CTRL_905E    XDATA_REG8(0x905E)  // EP control (RW)
 #define REG_USB_MODE_90E2       XDATA_REG8(0x90E2)  // USB mode (RW)
 #define REG_USB_PERIPH_STATUS   XDATA_REG8(0x9101)  // Peripheral status (RW)
-#define REG_USB_PHY_CTRL_91C0   XDATA_REG8(0x91C0)  // USB PHY control 0 (RW)
+#define REG_USB_PHY_CTRL_91C0   XDATA_REG8(0x91C0)  // USB PHY control 0 (RW) - bit 1: PHY state
 #define REG_USB_PHY_CTRL_91C1   XDATA_REG8(0x91C1)  // USB PHY control 1 (RW)
 #define REG_USB_PHY_CTRL_91C3   XDATA_REG8(0x91C3)  // USB PHY control 3 (RW)
 #define REG_USB_PHY_CTRL_91D1   XDATA_REG8(0x91D1)  // USB PHY control D1 (RW)
+#define REG_USB_CTRL_9201       XDATA_REG8(0x9201)  // USB control (RW) - bits 0,1: USB enables
+#define REG_USB_CTRL_920C       XDATA_REG8(0x920C)  // USB control 0C (RW) - bits 0,1: PHY config
+#define REG_USB_PHY_CONFIG_9241 XDATA_REG8(0x9241)  // USB PHY config (RW) - bit 4,6,7: PHY state
 #define REG_USB_EP0_CONFIG      XDATA_REG8(0x9006)  // EP0 config (RW)
 #define REG_USB_SCSI_BUF_LEN    XDATA_REG16(0x9007) // SCSI buffer length (RW, 2 bytes)
 #define REG_USB_SCSI_BUF_LEN_L  XDATA_REG8(0x9007)  // SCSI buffer length low byte (RW)
@@ -203,6 +208,7 @@
 #define REG_INT_FLAGS_EX0       XDATA_REG8(0x9091)  // Interrupt flags external (RW)
 #define REG_USB_EP_CFG1         XDATA_REG8(0x9093)  // Endpoint config 1 (RW)
 #define REG_USB_EP_CFG2         XDATA_REG8(0x9094)  // Endpoint config 2 (RW)
+#define REG_USB_EP_READY        XDATA_REG8(0x9096)  // Endpoint ready status (RW)
 
 //=============================================================================
 // Buffer/DMA Configuration Registers (0x9300-0x93FF)
@@ -264,6 +270,8 @@
 #define REG_LINK_CONFIG         XDATA_REG8(0xC203)  // Link configuration (RW)
 #define REG_LINK_STATUS         XDATA_REG8(0xC204)  // Link status (RO)
 #define REG_PHY_CTRL            XDATA_REG8(0xC205)  // PHY control (RW)
+#define REG_PHY_LINK_CTRL_C208  XDATA_REG8(0xC208)  // PHY link control (RW) - bit 4 clear for link down
+#define REG_PHY_LINK_CONFIG_C20C XDATA_REG8(0xC20C) // PHY link config (RW) - bit 6 set for enable
 #define REG_PHY_CONFIG          XDATA_REG8(0xC233)  // PHY configuration (RW)
 #define REG_PHY_STATUS          XDATA_REG8(0xC284)  // PHY status (RW)
 #define REG_LINK_CTRL_E324      XDATA_REG8(0xE324)  // Link control (RW)
@@ -354,6 +362,10 @@
 #define REG_NVME_CQ_STATUS      XDATA_REG8(0xC445)  // Completion status (RO)
 #define REG_DMA_ENTRY           XDATA_REG16(0xC462) // DMA entry point (RW, 2 bytes)
 #define REG_CMDQ_DIR_END        XDATA_REG16(0xC470) // Command queue dir end (RW, 2 bytes)
+#define REG_NVME_LINK_STATUS    XDATA_REG8(0xC520)  // NVMe link status (RW)
+
+// Power domain registers (0x92E0)
+#define REG_POWER_DOMAIN_92E0   XDATA_REG8(0x92E0)  // Power domain control (RW)
 
 // NVMe control/status bits
 #define NVME_ENABLE             0x80
@@ -553,10 +565,17 @@
 
 //=============================================================================
 // Command Engine Registers (0xE400-0xE4FF)
+// The Command Engine is a hardware block that handles NVMe command
+// submission and completion. It provides a hardware abstraction for
+// building NVMe commands and tracking their execution.
 //=============================================================================
+#define REG_CMD_STATUS_E402     XDATA_REG8(0xE402)  // Status flags (RO) - bit 1: busy, bit 2: error
+#define REG_CMD_CTRL_E403       XDATA_REG8(0xE403)  // Control (WO) - command state
 #define REG_CMD_CONFIG          XDATA_REG8(0xE40B)  // Config (RW)
 #define REG_CMD_CTRL_E40F       XDATA_REG8(0xE40F)  // Command control F (RW)
 #define REG_CMD_CTRL_E410       XDATA_REG8(0xE410)  // Command control 10 (RW)
+#define REG_CMD_BUSY_STATUS     XDATA_REG8(0xE41C)  // Busy status (RO) - bit 0: cmd busy
+#define REG_CMD_TRIGGER         XDATA_REG8(0xE420)  // Command trigger (WO) - 0x80/0x40 to start
 #define REG_CMD_PARAM           XDATA_REG8(0xE422)  // Parameter (RW)
 #define REG_CMD_OPCODE          XDATA_REG8(0xE422)  // Alias
 #define REG_CMD_STATUS          XDATA_REG8(0xE423)  // Status (RW)

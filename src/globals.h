@@ -141,4 +141,19 @@
 //=============================================================================
 #define G_BUF_XFER_START        XDATA_VAR8(0xD80C)  /* Buffer transfer start */
 
+//=============================================================================
+// Command Engine Work Area (0x07B0-0x07FF)
+//=============================================================================
+#define G_CMD_SLOT_INDEX        XDATA_VAR8(0x07B7)  /* Command slot index (3-bit) */
+#define G_CMD_OP_COUNTER        XDATA_VAR8(0x07BD)  /* Command operation counter */
+#define G_CMD_STATE             XDATA_VAR8(0x07C3)  /* Command state (3-bit) */
+#define G_CMD_STATUS            XDATA_VAR8(0x07C4)  /* Command status byte */
+#define G_CMD_MODE              XDATA_VAR8(0x07CA)  /* Command mode (1=mode1, 2=mode2, 3=mode3) */
+#define G_CMD_PARAM_0           XDATA_VAR8(0x07D3)  /* Command parameter 0 */
+#define G_CMD_PARAM_1           XDATA_VAR8(0x07D4)  /* Command parameter 1 */
+#define G_CMD_LBA_0             XDATA_VAR8(0x07DA)  /* Command LBA byte 0 (low) */
+#define G_CMD_LBA_1             XDATA_VAR8(0x07DB)  /* Command LBA byte 1 */
+#define G_CMD_LBA_2             XDATA_VAR8(0x07DC)  /* Command LBA byte 2 */
+#define G_CMD_LBA_3             XDATA_VAR8(0x07DD)  /* Command LBA byte 3 (high) */
+
 #endif /* __GLOBALS_H__ */

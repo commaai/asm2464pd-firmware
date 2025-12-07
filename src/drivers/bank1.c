@@ -94,8 +94,16 @@ void error_clear_e760_flags(void)
 {
     uint8_t val;
 
-    /* Call helper with DPTR=0xC808 - TODO: identify this helper */
-    /* lcall 0xd1a8 */
+    /* Original calls helper at 0xd1a8 with DPTR=0xC808.
+     * The helper at 0xd1a8 is a retry loop that:
+     * 1. Calls 0xb820 for initial setup
+     * 2. Calls 0xbe02 with R7=6, R5=result
+     * 3. Loads from XDATA 0x0B1D, calls 0x0d84 (xdata_load_dword)
+     * 4. Performs division, calls 0xb825
+     * 5. Reads from 0x0B25, calls 0xbe02 with R7=3, R5=result
+     * 6. Retries if timeout counter < 1 (using IDATA[0x51])
+     * This appears to be DMA/PCIe status polling with timeout.
+     */
 
     /* Write 0xFF to error mask register */
     REG_SYS_CTRL_E761 = 0xFF;

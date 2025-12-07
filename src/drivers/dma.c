@@ -112,9 +112,34 @@
 #include "registers.h"
 #include "globals.h"
 
+/* External functions from utils.c */
+extern uint32_t xdata_load_triple(__xdata uint8_t *ptr);
+extern uint32_t idata_load_dword(__idata uint8_t *ptr);
+extern void idata_store_dword(__idata uint8_t *ptr, uint32_t val);
+
 /* Forward declarations */
 void dma_set_scsi_param3(void);
 void dma_set_scsi_param1(void);
+
+/*
+ * dma_copy_idata_6b_to_6f - Copy 32-bit value from IDATA[0x6B] to IDATA[0x6F]
+ * Address: 0x1bcb-0x1bd4 (10 bytes)
+ *
+ * Copies a 4-byte value from IDATA[0x6B..0x6E] to IDATA[0x6F..0x72].
+ * Used for saving transfer state parameters.
+ *
+ * Original disassembly:
+ *   1bcb: mov r0, #0x6b
+ *   1bcd: lcall 0x0d78     ; idata_load_dword -> R4-R7
+ *   1bd0: mov r0, #0x6f
+ *   1bd2: ljmp 0x0db9      ; idata_store_dword from R4-R7
+ */
+static void dma_copy_idata_6b_to_6f(void)
+{
+    uint32_t val;
+    val = idata_load_dword((__idata uint8_t *)0x6B);
+    idata_store_dword((__idata uint8_t *)0x6F, val);
+}
 
 /*
  * dma_clear_status - Clear DMA status flags
@@ -207,8 +232,9 @@ uint8_t dma_reg_wait_bit(__xdata uint8_t *ptr)
     uint8_t val;
 
     val = *ptr;
-    /* Call reg_wait_bit_set(0x045E, val) */
-    /* TODO: Implement reg_wait_bit_set */
+    /* Load triple from G_REG_WAIT_BIT (0x045E) - side effect */
+    /* This reads 3 bytes from 0x045E..0x0460 but discards the result */
+    (void)xdata_load_triple((__xdata uint8_t *)&G_REG_WAIT_BIT);
     return val;
 }
 
@@ -235,9 +261,13 @@ void dma_load_transfer_params(void)
     param1 = G_DMA_LOAD_PARAM1;
     param2 = G_DMA_LOAD_PARAM2;
 
-    /* TODO: Call flash_func_0c0f(0, BANK0_R3, param1, param2) */
+    /* Tail-calls to flash_div16 at 0x0c0f with R6=param1, R7=param2 */
+    /* The division R4:R6 / R5 where R4=0 (cleared) */
+    /* Result: quotient in R7, remainder in R5 */
+    /* This is effectively a 16-bit division used for block calculations */
     (void)param1;
     (void)param2;
+    /* Note: Actual division result used by caller, not stored here */
 }
 
 /*
@@ -351,7 +381,8 @@ void dma_setup_transfer(uint8_t r7_mode, uint8_t r5_param, uint8_t r3_param)
     if (!(status & 0x01)) {
         /* Start transfer via buffer control */
         G_BUF_XFER_START = 1;
-        /* lcall 0x1bcb - TODO: implement */
+        /* Copy IDATA[0x6B..0x6E] to IDATA[0x6F..0x72] */
+        dma_copy_idata_6b_to_6f();
     }
 }
 

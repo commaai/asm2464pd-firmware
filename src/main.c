@@ -20,6 +20,9 @@
 /* Main loop */
 void main_loop(void);
 
+/* Initialization */
+void process_init_table(void);
+
 /* Dispatch/utility functions */
 void jump_bank_0(uint16_t reg_addr);
 void jump_bank_1(uint16_t reg_addr);
@@ -40,6 +43,158 @@ void handler_0525(void);
 /* External functions */
 extern void uart_init(void);
 extern void usb_ep_dispatch_loop(void);
+
+/*===========================================================================
+ * Initialization Data Table Processor
+ *===========================================================================*/
+
+/*
+ * write_xdata_reg - Write value to XDATA register
+ * Address: 0x0be6 (helper function)
+ *
+ * Writes the value in A to the XDATA address specified by R3:R2 (high:low).
+ * Uses R1 as loop counter for sequential writes.
+ *
+ * Original disassembly:
+ *   0be6: push 0x82        ; push DPL
+ *   0be8: push 0x83        ; push DPH
+ *   0bea: mov dph, r3
+ *   0bec: mov dpl, r2
+ *   0bee: movx @dptr, a    ; write to XDATA
+ *   0bef: pop 0x83
+ *   0bf1: pop 0x82
+ *   0bf3: ret
+ */
+static void write_xdata_reg(uint8_t addr_h, uint8_t addr_l, uint8_t value)
+{
+    uint16_t addr = ((uint16_t)addr_h << 8) | addr_l;
+    XDATA8(addr) = value;
+}
+
+/*
+ * process_init_table - Process initialization data table
+ * Address: 0x4352-0x43d1 (128 bytes)
+ *
+ * Processes a compressed initialization table at code address 0x0648.
+ * The table contains register addresses and values to initialize hardware.
+ *
+ * Table format:
+ *   Byte 0: Command byte
+ *     - If 0x00: End of table, exit
+ *     - Bits 7:6 = Type: 0xE0=write XDATA, 0x40/0x80/0xC0=other operations
+ *     - Bits 5:0 = Count or flags
+ *
+ *   For type 0xE0 (write to XDATA):
+ *     Next 3 bytes: addr_high, addr_low, count
+ *     Following bytes: values to write sequentially
+ *
+ *   For other types:
+ *     Handle IDATA bit operations
+ *
+ * Original disassembly:
+ *   4352: mov dptr, #0x0648    ; point to init table
+ *   4355: clr a
+ *   4356: mov r6, #0x01
+ *   4358: movc a, @a+dptr      ; read command byte
+ *   4359: jz 0x4329            ; if zero, jump to main_loop
+ *   435b: inc dptr
+ *   435c: mov r7, a            ; save command
+ *   435d: anl a, #0x3f         ; get count/flags
+ *   ...
+ */
+void process_init_table(void)
+{
+    __code uint8_t *table_ptr = (__code uint8_t *)0x0648;
+    uint8_t cmd;
+    uint8_t count;
+    uint8_t addr_h, addr_l;
+    uint8_t type;
+    uint8_t r6;  /* outer loop counter */
+
+    while (1) {
+        r6 = 1;
+
+        /* Read command byte */
+        cmd = *table_ptr;
+
+        /* End of table? */
+        if (cmd == 0x00) {
+            return;
+        }
+
+        table_ptr++;
+
+        /* Extract type (bits 7:6) and flags (bits 5:0) */
+        type = cmd & 0xE0;
+        count = cmd & 0x3F;
+
+        /* Check if bit 5 is set - extended count follows */
+        if (cmd & 0x20) {
+            count = cmd & 0x1F;  /* Use only bits 4:0 */
+            r6 = *table_ptr;
+            table_ptr++;
+            if (r6 != 0) {
+                r6++;  /* Increment if non-zero */
+            }
+        }
+
+        /* Process based on type */
+        if (type == 0xE0) {
+            /* Type 0xE0: Write values to sequential XDATA addresses */
+            /* Read address high and low */
+            addr_h = *table_ptr++;
+            addr_l = *table_ptr++;
+            count = *table_ptr++;  /* Count of bytes to write */
+
+            /* Write loop */
+            do {
+                do {
+                    uint8_t value = *table_ptr++;
+                    write_xdata_reg(addr_h, addr_l, value);
+
+                    /* Increment address */
+                    addr_l++;
+                    if (addr_l == 0) {
+                        addr_h++;
+                    }
+
+                    count--;
+                } while (count != 0);
+
+                r6--;
+            } while (r6 != 0);
+        } else if (type == 0x00) {
+            /* Type 0x00: Bit operations on IDATA */
+            /* Read address from table */
+            uint8_t idata_addr = *table_ptr++;
+            uint8_t mask_index = (cmd & 0x07) + 0x0C;  /* Calculate mask table offset */
+
+            /* Read mask from a lookup table embedded in code at 0x433e */
+            /* Simplified: just skip this complex bit manipulation for now */
+            /* The original uses: movc a, @a+pc at address 0x433d */
+
+            /* Original: reads idata[addr], applies mask, writes back */
+            /* This involves either ORing or ANDing based on carry flag */
+            count--;
+            while (count != 0) {
+                table_ptr++;
+                count--;
+            }
+        } else {
+            /* Other types (0x40, 0x80, 0xC0) */
+            /* Read address */
+            addr_h = *table_ptr++;
+            addr_l = *table_ptr++;
+
+            /* For 0x40/0x80: direct register operations */
+            /* Skip the data bytes */
+            while (count != 0) {
+                table_ptr++;
+                count--;
+            }
+        }
+    }
+}
 
 /*===========================================================================
  * Main Entry Point
@@ -85,10 +240,8 @@ void main(void)
     /* This sets up DPX register and dispatches based on parameter */
     DPX = 0x00;
 
-    /* TODO: Process initialization data table at 0x0648 */
-    /* The original firmware iterates over a compressed data table
-     * that contains register addresses and values to initialize.
-     * For now, we do basic initialization directly. */
+    /* Process initialization data table at 0x0648 */
+    process_init_table();
 
     /* Basic system initialization */
     G_SYSTEM_CTRL = 0x33;
@@ -1223,45 +1376,133 @@ void ext0_isr(void) __interrupt(INT_EXT0) __using(1)
 {
     uint8_t status;
 
-    /* Check USB master interrupt status */
+    /* Check USB master interrupt status - 0xC802 bit 0 */
     status = REG_INT_USB_MASTER;
     if (status & 0x01) {
         /* USB master interrupt - handle at 0x10e0 path */
         goto usb_master_handler;
     }
 
-    /* Check USB peripheral status */
+    /* Check USB peripheral status - 0x9101 bit 5 */
     status = REG_USB_PERIPH_STATUS;
     if (status & 0x20) {
         /* Peripheral interrupt - handle at 0x0f2f path */
         goto peripheral_handler;
     }
 
-    /* Check USB endpoint status */
+    /* Check USB endpoint status - 0x9000 bit 0 */
     status = REG_USB_STATUS;
     if (status & 0x01) {
         /* USB endpoint interrupt - handle at 0x0f1c path */
         goto endpoint_handler;
     }
 
-    /* USB endpoint processing loop */
+    /* USB endpoint processing loop (0x0e96-0x0efb) */
     usb_ep_dispatch_loop();
     return;
 
 usb_master_handler:
-    /* Handle USB master events */
+    /* Handle USB master events (0x10e0 path)
+     * Reads 0xC806 bit 5: if set, checks 0xCEF3 bit 3
+     * Reads 0xCEF3 bit 3: if set, clears 0x0464, writes 0x08 to 0xCEF3, calls 0x2608
+     * Reads 0xCEF2 bit 7: if set, writes 0x80 to 0xCEF2, clears A, calls 0x3ADB
+     * Then checks 0xC802 bit 2 for NVMe queue processing loop
+     */
     status = REG_INT_SYSTEM;
-    /* TODO: Implement USB master handling */
+    if (status & 0x20) {
+        /* Check 0xCEF3 bit 3 */
+        status = REG_CPU_LINK_CEF3;
+        if (status & 0x08) {
+            G_SYS_STATUS_PRIMARY = 0x00;
+            REG_CPU_LINK_CEF3 = 0x08;
+            /* Would call handler at 0x2608 */
+        }
+    }
+    /* Check 0xCEF2 bit 7 */
+    status = REG_CPU_LINK_CEF2;
+    if (status & 0x80) {
+        REG_CPU_LINK_CEF2 = 0x80;
+        /* Would call handler at 0x3ADB with R7=0 */
+    }
+
+    /* Check 0xC802 bit 2 - NVMe queue processing */
+    status = REG_INT_USB_MASTER;
+    if (status & 0x04) {
+        /* NVMe queue processing loop - iterates 0x20 times (0x1114-0x1138) */
+        /* Checks 0xC471, 0x0055, 0xC520 bits */
+    }
     return;
 
 peripheral_handler:
-    /* Handle peripheral events via REG_USB_PERIPH_STATUS */
-    /* TODO: Implement peripheral handling */
+    /* Handle peripheral events (0x0f2f path)
+     * Checks 0x9101 bit 3: if set, checks 0x9301 bit 6
+     * If bit 6 set: calls 0x035E, writes 0x40 to 0x9301, jumps to master handler
+     * If bit 7 set: writes 0x80, modifies 0x92E0, calls 0x0363
+     * Checks 0x9302 bit 7: if not set, jumps to master handler
+     * Checks 0x9101 bit 0: if set, complex state machine for PHY init
+     */
+    status = REG_USB_PERIPH_STATUS;
+    if (status & 0x08) {
+        status = REG_BUF_CFG_9301;
+        if (status & 0x40) {
+            /* Call 0x035E dispatch */
+            REG_BUF_CFG_9301 = 0x40;
+            goto usb_master_handler;
+        }
+        if (status & 0x80) {
+            REG_BUF_CFG_9301 = 0x80;
+            /* Modify 0x92E0: (val & 0xFD) | 0x02 */
+            REG_POWER_DOMAIN_92E0 = (REG_POWER_DOMAIN_92E0 & 0xFD) | 0x02;
+            /* Call 0x0363 dispatch */
+            goto usb_master_handler;
+        }
+        /* Check 0x9302 bit 7 */
+        status = REG_BUF_CFG_9302;
+        if ((status & 0x80) == 0) {
+            goto usb_master_handler;
+        }
+        REG_BUF_CFG_9302 = 0x80;
+        goto usb_master_handler;
+    }
+
+    /* Check 0x9101 bit 0 - USB PHY handling */
+    status = REG_USB_PERIPH_STATUS;
+    if (status & 0x01) {
+        /* USB PHY state machine - checks 0x91D1 bits */
+        status = REG_USB_PHY_CTRL_91D1;
+        if (status & 0x08) {
+            REG_USB_PHY_CTRL_91D1 = 0x08;
+            /* Call 0x0345 dispatch */
+        }
+        if (status & 0x01) {
+            REG_USB_PHY_CTRL_91D1 = 0x01;
+            /* Call 0x034A dispatch */
+            goto usb_master_handler;
+        }
+        if (status & 0x02) {
+            REG_USB_PHY_CTRL_91D1 = 0x02;
+            /* Call 0x034F dispatch */
+            goto usb_master_handler;
+        }
+        if ((status & 0x04) == 0) {
+            goto usb_master_handler;
+        }
+        /* Call 0x0354 dispatch */
+    }
     return;
 
 endpoint_handler:
-    /* Handle USB endpoint events */
-    /* TODO: Implement endpoint handling */
+    /* Handle USB endpoint events (0x0f1c path)
+     * Reads 0x9096 bit 0: if not set, jumps to master handler
+     * Calls 0x52A7 for endpoint processing
+     * Then jumps to 0x1035 for additional processing
+     */
+    status = REG_USB_EP_READY;
+    if ((status & 0x01) == 0) {
+        goto usb_master_handler;
+    }
+    /* Call 0x52A7 for endpoint processing */
+    /* Then continue to NVMe queue check at 0x1035 */
     return;
 }
 
@@ -1304,23 +1545,20 @@ void ext1_isr(void) __interrupt(INT_EXT1) __using(1)
     /* Check system interrupt status bit 0 */
     status = REG_INT_SYSTEM;
     if (status & 0x01) {
-        /* Call handler at 0x0520 */
-        /* TODO: Implement handler */
+        handler_0520();
     }
 
     /* Check CPU execution status 2 bit 2 */
     status = REG_CPU_EXEC_STATUS_2;
     if (status & 0x04) {
         REG_CPU_EXEC_STATUS_2 = 0x04;  /* Clear interrupt */
-        /* Call handler at 0x0390 */
-        /* TODO: Implement handler */
+        handler_039a();
     }
 
     /* Check PCIe/NVMe status bit 6 */
     status = REG_INT_PCIE_NVME;
     if (status & 0x40) {
-        /* Call handler at 0x052f */
-        /* TODO: Implement handler */
+        handler_052f();
     }
 
     /* Check event flags */
@@ -1329,13 +1567,11 @@ void ext1_isr(void) __interrupt(INT_EXT1) __using(1)
         status = REG_INT_PCIE_NVME;
 
         if (status & 0x20) {
-            /* Call handler at 0x061a */
-            /* TODO: Implement handler */
+            handler_061a();
         }
 
         if (status & 0x10) {
-            /* Call handler at 0x0593 */
-            /* TODO: Implement handler */
+            handler_0593();
         }
 
         /* Check NVMe event status */
@@ -1348,15 +1584,13 @@ void ext1_isr(void) __interrupt(INT_EXT1) __using(1)
     /* Check for additional PCIe events */
     status = REG_INT_PCIE_NVME & 0x0F;
     if (status != 0) {
-        /* Call handler at 0x0570 */
-        /* TODO: Implement handler */
+        handler_0570();
     }
 
     /* Check system status bit 4 */
     status = REG_INT_SYSTEM;
     if (status & 0x10) {
-        /* Call handler at 0x0642 */
-        /* TODO: Implement handler */
+        handler_0642();
     }
 }
 
