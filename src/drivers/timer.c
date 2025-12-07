@@ -60,15 +60,15 @@
  * │                    Timer0 ISR (0x4486)                              │
  * ├─────────────────────────────────────────────────────────────────────┤
  * │ 1. Save context (ACC, B, DPTR, PSW, R0-R7)                          │
- * │ 2. Check 0xC806 bit 0 → dispatch to 0xB4BA (timer tick)             │
+ * │ 2. Check 0xC806 bit 0 → timer_idle_timeout_handler (0xB4BA)         │
  * │ 3. Check 0xCC33 bit 2 → clear flag, dispatch to 0xCD10              │
- * │ 4. Check 0xC80A bit 6 → dispatch to 0xAF5E (debug output)           │
+ * │ 4. Check 0xC80A bit 6 → timer_uart_debug_output (0xAF5E)            │
  * │ 5. If 0x09F9 & 0x83:                                                │
- * │    - Check 0xC80A bit 5 → dispatch event handler                   │
- * │    - Check 0xC80A bit 4 → dispatch event handler                   │
- * │    - Check 0xEC06 bit 0 → handle NVMe event, check PHY status       │
- * │ 6. Check 0xC80A & 0x0F → dispatch to 0xE911                        │
- * │ 7. Check 0xC806 bit 4 → dispatch event handler                     │
+ * │    - Check 0xC80A bit 5 → timer_pcie_async_event (0xA066)           │
+ * │    - Check 0xC80A bit 4 → timer_pcie_link_event (0xC105)            │
+ * │    - Check 0xEC06 bit 0 → timer_nvme_completion (0xC0A5)            │
+ * │ 6. Check 0xC80A & 0x0F → timer_pcie_error_handler (0xE911)          │
+ * │ 7. Check 0xC806 bit 4 → timer_system_event_stub (0xEF4E)            │
  * │ 8. Restore context and RETI                                         │
  * └─────────────────────────────────────────────────────────────────────┘
  *
@@ -81,18 +81,18 @@
  * IMPLEMENTATION STATUS
  *===========================================================================
  * timer0_isr                [DONE] 0x4486-0x4531 - Main timer ISR
- * timer0_poll_handler_0520  [STUB] 0x0520-0x0523 - Timer tick dispatch
- * timer0_poll_handler_052f  [STUB] 0x052f-0x0532 - Debug output dispatch
- * timer0_poll_handler_0593  [STUB] 0x0593-0x0596 - Event dispatch
- * timer0_poll_handler_061a  [STUB] 0x061a-0x061d - Event dispatch
- * timer0_poll_handler_0642  [STUB] 0x0642-0x0645 - Event dispatch
- * timer0_poll_handler_0570  [STUB] 0x0570-0x0573 - Low nibble dispatch
- * timer0_poll_handler_0499  [STUB] 0x0499-0x049c - NVMe event dispatch
- * timer0_csr_ack            [DONE] 0x95c2-0x95c8 - Write 0x04, 0x02 to CSR
- * timer0_wait_done          [DONE] 0xad95-0xada1 - Wait for CSR bit 1
- * timer1_check_and_ack      [DONE] 0x3094-0x30a0 - Check/ack Timer1
+ * timer_idle_timeout_handler [DONE] 0x0520-0x0523 - Idle timeout (Bank 0 -> 0xB4BA)
+ * timer_uart_debug_output    [DONE] 0x052f-0x0532 - UART debug output (Bank 0 -> 0xAF5E)
+ * timer_pcie_link_event      [DONE] 0x0593-0x0596 - PCIe link event (Bank 0 -> 0xC105)
+ * timer_pcie_async_event     [DONE] 0x061a-0x061d - PCIe async event (Bank 1 -> 0xA066)
+ * timer_system_event_stub    [DONE] 0x0642-0x0645 - System event stub (Bank 1 -> 0xEF4E)
+ * timer_pcie_error_handler   [DONE] 0x0570-0x0573 - PCIe error handler (Bank 1 -> 0xE911)
+ * timer_nvme_completion      [DONE] 0x0499-0x049c - NVMe completion (Bank 1 -> 0xC0A5)
+ * timer0_csr_ack             [DONE] 0x95c2-0x95c8 - Write 0x04, 0x02 to CSR
+ * timer0_wait_done           [DONE] 0xad95-0xada1 - Wait for CSR bit 1
+ * timer1_check_and_ack       [DONE] 0x3094-0x30a0 - Check/ack Timer1
  *
- * Total: 11 functions (3 implemented, 8 dispatch stubs)
+ * Total: 11 functions (all implemented)
  *===========================================================================
  */
 
@@ -112,114 +112,133 @@
  * 0xE7E3 = REG_PHY_LINK_CTRL   - PHY link control
  */
 
+/* External dispatch functions from main.c */
+extern void jump_bank_0(uint16_t addr);
+extern void jump_bank_1(uint16_t addr);
+
 /*
- * timer0_poll_handler_0520 - Dispatch stub for timer handler
+ * timer_idle_timeout_handler - Handle idle timeout events
  * Address: 0x0520-0x0523 (4 bytes)
  *
- * Sets DPTR to 0xB4BA and jumps to cmd_dispatch at 0x0300.
- * Called when bit 0 of 0xC806 is set.
+ * Dispatches to 0xB4BA which processes Timer3 idle timeout.
+ * Reads 0xCC23 (Timer3 CSR), acks with 0x02, checks 0xCC81 for
+ * idle state and processes timeout conditions.
+ * Called when bit 0 of 0xC806 (system interrupt status) is set.
  *
  * Original disassembly:
  *   0520: mov dptr, #0xb4ba
  *   0523: ajmp 0x0300
  */
-void timer0_poll_handler_0520(void)
+void timer_idle_timeout_handler(void)
 {
-    /* Dispatch stub - sets DPTR and jumps to dispatch */
-    /* Target function at 0xB4BA handles timer tick */
+    jump_bank_0(0xB4BA);
 }
 
 /*
- * timer0_poll_handler_052f - Dispatch stub for timer event
+ * timer_uart_debug_output - Output debug information via UART
  * Address: 0x052f-0x0532 (4 bytes)
  *
- * Sets DPTR to 0xAF5E and jumps to cmd_dispatch at 0x0300.
- * Called when bit 6 of 0xC80A is set.
+ * Dispatches to 0xAF5E which outputs debug characters to UART.
+ * Writes newline (0x0A, 0x0D) to 0xC001, outputs register values
+ * from 0xE40F/0xE410, formats with separators (':', ']').
+ * Called when bit 6 of 0xC80A (PCIe/NVMe interrupt status) is set.
  *
  * Original disassembly:
  *   052f: mov dptr, #0xaf5e
  *   0532: ajmp 0x0300
  */
-void timer0_poll_handler_052f(void)
+void timer_uart_debug_output(void)
 {
-    /* Dispatch stub - target at 0xAF5E */
+    jump_bank_0(0xAF5E);
 }
 
 /*
- * timer0_poll_handler_0593 - Dispatch stub for timer event
+ * timer_pcie_link_event - Handle PCIe link state events
  * Address: 0x0593-0x0596 (4 bytes)
  *
- * Sets DPTR to target and jumps to cmd_dispatch.
- * Called when bit 4 of 0xC80A is set (when 0x09F9 & 0x83 != 0).
+ * Dispatches to 0xC105 which handles PCIe link state changes.
+ * Calls 0xBCDE/0xBCAF for PCIe status checks, reads 0x09FA for
+ * link state, handles PHY and error recovery via 0xCA0D/0xE74E.
+ * Called when bit 4 of 0xC80A is set (when event flags & 0x83).
  *
  * Original disassembly:
- *   0593: mov dptr, #0x????
+ *   0593: mov dptr, #0xc105
  *   0596: ajmp 0x0300
  */
-void timer0_poll_handler_0593(void)
+void timer_pcie_link_event(void)
 {
-    /* Dispatch stub */
+    jump_bank_0(0xC105);
 }
 
 /*
- * timer0_poll_handler_061a - Dispatch stub for timer event
+ * timer_pcie_async_event - Handle asynchronous PCIe events
  * Address: 0x061a-0x061d (4 bytes)
  *
- * Called when bit 5 of 0xC80A is set (when 0x09F9 & 0x83 != 0).
+ * Dispatches to Bank 1 at 0xA066 (file 0x12066) for async PCIe
+ * event processing. Handles link training, reset recovery, and
+ * asynchronous notifications from the PCIe controller.
+ * Called when bit 5 of 0xC80A is set (when event flags & 0x83).
  *
  * Original disassembly:
- *   061a: mov dptr, #0x????
- *   061d: ajmp 0x0300
+ *   061a: mov dptr, #0xa066
+ *   061d: ajmp 0x0311
  */
-void timer0_poll_handler_061a(void)
+void timer_pcie_async_event(void)
 {
-    /* Dispatch stub */
+    jump_bank_1(0xA066);
 }
 
 /*
- * timer0_poll_handler_0642 - Dispatch stub for timer event
+ * timer_system_event_stub - Placeholder for system event handling
  * Address: 0x0642-0x0645 (4 bytes)
  *
- * Called when bit 4 of 0xC806 is set.
+ * Dispatches to Bank 1 at 0xEF4E (file 0x16F4E) which is currently
+ * all NOPs (empty handler stub). Reserved for future system events.
+ * Called when bit 4 of 0xC806 (system interrupt status) is set.
  *
  * Original disassembly:
- *   0642: mov dptr, #0x????
- *   0645: ajmp 0x0300
+ *   0642: mov dptr, #0xef4e
+ *   0645: ajmp 0x0311
  */
-void timer0_poll_handler_0642(void)
+void timer_system_event_stub(void)
 {
-    /* Dispatch stub */
+    jump_bank_1(0xEF4E);
 }
 
 /*
- * timer0_poll_handler_0570 - Dispatch stub for timer event
+ * timer_pcie_error_handler - Handle PCIe/NVMe error conditions
  * Address: 0x0570-0x0573 (4 bytes)
  *
- * Sets DPTR to 0xE911 and jumps to cmd_dispatch at 0x0311.
- * Called when 0xC80A & 0x0F is non-zero.
+ * Dispatches to Bank 1 at 0xE911 (file 0x16911) near error_clear_e760_flags.
+ * Handles PCIe and NVMe error conditions by clearing/setting error flags
+ * in the 0xE760-0xE763 register region.
+ * Called when 0xC80A low nibble is non-zero (PCIe/NVMe error flags).
  *
  * Original disassembly:
  *   0570: mov dptr, #0xe911
  *   0573: ajmp 0x0311
  */
-void timer0_poll_handler_0570(void)
+void timer_pcie_error_handler(void)
 {
-    /* Dispatch stub - target at 0xE911 */
+    jump_bank_1(0xE911);
 }
 
 /*
- * timer0_poll_handler_0499 - Dispatch stub for NVMe event
+ * timer_nvme_completion - Handle NVMe command completion
  * Address: 0x0499-0x049c (4 bytes)
  *
- * Called after clearing PHY bits when NVMe event is detected.
+ * Dispatches to Bank 1 at 0xC0A5 (file 0x140A5) for NVMe completion
+ * processing. Checks command status at 0x0B02, calls DMA helpers,
+ * and processes completion queue entries.
+ * Called after PHY bits are cleared when NVMe event (0xEC06) is detected.
  *
  * Original disassembly:
- *   0499: mov dptr, #0x????
- *   049c: ajmp 0x0300
+ *   0499: mov dptr, #0xc0a5
+ *   049c: ajmp 0x0311
  */
-void timer0_poll_handler_0499(void)
+void timer_nvme_completion(void)
 {
-    /* Dispatch stub for NVMe event handling */
+    jump_bank_1(0xC0A5);
 }
 
 /*
@@ -261,10 +280,10 @@ void timer0_isr(void) __interrupt(1) __using(0)
 {
     uint8_t status;
 
-    /* Check timer status register 0xC806 bit 0 */
+    /* Check timer status register 0xC806 bit 0 - idle timeout */
     status = REG_INT_SYSTEM;
     if (status & 0x01) {
-        timer0_poll_handler_0520();
+        timer_idle_timeout_handler();
     }
 
     /* Check status register 0xCC33 bit 2 */
@@ -274,23 +293,23 @@ void timer0_isr(void) __interrupt(1) __using(0)
         /* lcall 0x0390 - dispatch stub */
     }
 
-    /* Check status register 0xC80A bit 6 */
+    /* Check status register 0xC80A bit 6 - UART debug output request */
     status = REG_INT_PCIE_NVME;
     if (status & 0x40) {
-        timer0_poll_handler_052f();
+        timer_uart_debug_output();
     }
 
     /* Check system state flags at 0x09F9 (global variable) */
     status = G_EVENT_FLAGS;
     if (status & 0x83) {
-        /* Check 0xC80A bit 5 */
+        /* Check 0xC80A bit 5 - async PCIe event */
         if (REG_INT_PCIE_NVME & 0x20) {
-            timer0_poll_handler_061a();
+            timer_pcie_async_event();
         }
 
-        /* Check 0xC80A bit 4 */
+        /* Check 0xC80A bit 4 - PCIe link event */
         if (REG_INT_PCIE_NVME & 0x10) {
-            timer0_poll_handler_0593();
+            timer_pcie_link_event();
         }
 
         /* Check NVMe event at 0xEC06 bit 0 */
@@ -309,20 +328,20 @@ void timer0_isr(void) __interrupt(1) __using(0)
                 REG_PHY_LINK_CTRL = status;
             }
 
-            timer0_poll_handler_0499();
+            timer_nvme_completion();
+        }
+
+        /* Check 0xC80A low nibble for PCIe/NVMe errors */
+        status = REG_INT_PCIE_NVME;
+        if (status & 0x0F) {
+            timer_pcie_error_handler();
         }
     }
 
-    /* Check 0xC80A low nibble for additional events */
-    status = REG_INT_PCIE_NVME;
-    if (status & 0x0F) {
-        timer0_poll_handler_0570();
-    }
-
-    /* Check 0xC806 bit 4 */
+    /* Check 0xC806 bit 4 - system event */
     status = REG_INT_SYSTEM;
     if (status & 0x10) {
-        timer0_poll_handler_0642();
+        timer_system_event_stub();
     }
 }
 

@@ -595,48 +595,7 @@ void handler_04d0(void)
     /* These handle completion of the timer/link setup */
 }
 
-/*
- * phy_config_link_params - Configure PHY/link control registers
- * Address: 0x5284-0x52a6 (35 bytes)
- *
- * Configures PHY link parameters by manipulating registers in 0xC6xx region.
- * Sets specific bit patterns for link training/configuration.
- *
- * From ghidra.c FUN_CODE_5284:
- *   DAT_EXTMEM_c65b = DAT_EXTMEM_c65b & 0xf7 | 8;   // set bit 3
- *   DAT_EXTMEM_c656 = DAT_EXTMEM_c656 & 0xdf;       // clear bit 5
- *   DAT_EXTMEM_c65b = DAT_EXTMEM_c65b & 0xdf | 0x20; // set bit 5
- *   DAT_EXTMEM_c62d = DAT_EXTMEM_c62d & 0xe0 | 7;   // set low 3 bits to 7
- *
- * Original disassembly:
- *   5284: mov dptr, #0xc65b
- *   5287: movx a, @dptr
- *   5288: anl a, #0xf7
- *   528a: orl a, #0x08
- *   528c: movx @dptr, a
- *   528d: mov dptr, #0xc656
- *   5290: movx a, @dptr
- *   5291: anl a, #0xdf
- *   5293: movx @dptr, a
- *   5294: mov dptr, #0xc65b
- *   5297: movx a, @dptr
- *   5298: anl a, #0xdf
- *   529a: orl a, #0x20
- *   529c: movx @dptr, a
- *   529d: mov dptr, #0xc62d
- *   52a0: movx a, @dptr
- *   52a1: anl a, #0xe0
- *   52a3: orl a, #0x07
- *   52a5: movx @dptr, a
- *   52a6: ret
- */
-void phy_config_link_params(void)
-{
-    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & 0xF7) | 0x08;
-    REG_PHY_EXT_56 = REG_PHY_EXT_56 & 0xDF;
-    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & 0xDF) | 0x20;
-    REG_PHY_EXT_2D = (REG_PHY_EXT_2D & 0xE0) | 0x07;
-}
+/* phy_config_link_params() moved to drivers/phy.c */
 
 /*
  * Handler at 0x04b2 - Placeholder/Reserved handler
@@ -1579,12 +1538,12 @@ void ext1_isr(void) __interrupt(INT_EXT1) __using(1)
             REG_NVME_EVENT_ACK = 0x01;  /* Acknowledge */
             /* Additional NVMe processing */
         }
-    }
 
-    /* Check for additional PCIe events */
-    status = REG_INT_PCIE_NVME & 0x0F;
-    if (status != 0) {
-        handler_0570();
+        /* Check for additional PCIe events (inside event flags block) */
+        status = REG_INT_PCIE_NVME & 0x0F;
+        if (status != 0) {
+            handler_0570();
+        }
     }
 
     /* Check system status bit 4 */

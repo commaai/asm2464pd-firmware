@@ -224,3 +224,147 @@ void power_set_clock_bit1(void)
     val = (val & 0xFD) | 0x02;  /* Set bit 1 */
     REG_POWER_CTRL_92C1 = val;
 }
+
+/*
+ * power_check_status - Check and update power status
+ * Address: 0xe647-0xe65e (24 bytes) - Bank 0 function called via dispatch
+ *
+ * This function checks device power status and waits for ready.
+ * Called via jump_bank_0 from dispatch stub.
+ *
+ * Algorithm:
+ * 1. Call 0xC45F to check status
+ * 2. If non-zero, write 0x04 to @dptr; if zero, write 0x03
+ * 3. Poll 0xB296 bit 2 until set (wait for ready)
+ * 4. Call 0xC48F for final processing
+ *
+ * Original disassembly:
+ *   e647: lcall 0xc45f          ; Check status
+ *   e64a: jz 0xe651             ; Jump if zero
+ *   e64c: mov a, #0x04          ; Non-zero result
+ *   e64e: movx @dptr, a
+ *   e64f: sjmp 0xe654
+ *   e651: mov a, #0x03          ; Zero result
+ *   e653: movx @dptr, a
+ *   e654: mov dptr, #0xb296     ; Poll status
+ *   e657: movx a, @dptr
+ *   e658: jnb e0.2, 0xe654      ; Loop until bit 2 set
+ *   e65b: lcall 0xc48f          ; Final processing
+ *   e65e: ret
+ */
+void power_check_status_e647(void)
+{
+    uint8_t status;
+
+    /* Check initial status - would call 0xC45F */
+    /* The result determines which value to write */
+
+    /* Poll 0xB296 bit 2 until set */
+    do {
+        status = XDATA_REG8(0xB296);
+    } while (!(status & 0x04));
+
+    /* Final processing - would call 0xC48F */
+}
+
+/*
+ * power_set_state - Set power state and config
+ * Address: Called at entry, calls FUN_CODE_53c0
+ *
+ * Sets power state by calling 0x53C0 helper and setting 0x90A1 to 1.
+ *
+ * From ghidra.c:
+ *   FUN_CODE_53c0();
+ *   DAT_EXTMEM_90a1 = 1;
+ */
+void power_set_state(void)
+{
+    /* FUN_CODE_53c0 copies 4 bytes from IDATA[0x72-0x6F] to XDATA[0xD808-0xD80B] */
+    /* This appears to be CSW residue setup */
+    XDATA_REG8(0xD808) = *(__idata uint8_t *)0x72;
+    XDATA_REG8(0xD809) = *(__idata uint8_t *)0x71;
+    XDATA_REG8(0xD80A) = *(__idata uint8_t *)0x70;
+    XDATA_REG8(0xD80B) = *(__idata uint8_t *)0x6F;
+
+    /* Set power state active */
+    XDATA_REG8(0x90A1) = 1;
+}
+
+/*
+ * power_clear_suspended - Clear suspended bit (bit 6)
+ * Address: 0xcb2d-0xcb36 (10 bytes)
+ *
+ * Clears bit 6 of power status register to indicate device is no longer suspended.
+ *
+ * Original disassembly:
+ *   cb2d: mov dptr, #0x92c2   ; Power status
+ *   cb30: movx a, @dptr       ; read current
+ *   cb31: anl a, #0xbf        ; clear bit 6
+ *   cb33: movx @dptr, a       ; write back
+ *   cb34: ret
+ */
+void power_clear_suspended(void)
+{
+    uint8_t val = REG_POWER_STATUS_92C2;
+    val &= 0xBF;  /* Clear bit 6 */
+    REG_POWER_STATUS_92C2 = val;
+}
+
+/*
+ * power_disable_clocks - Disable clocks for power save
+ * Address: 0xcb88-0xcb9a (19 bytes)
+ *
+ * Disables power and clocks for power saving.
+ *
+ * Original disassembly:
+ *   cb88: mov dptr, #0x92c0   ; Power control 0
+ *   cb8b: movx a, @dptr
+ *   cb8c: anl a, #0xfe        ; clear bit 0
+ *   cb8e: movx @dptr, a
+ *   cb8f: inc dptr            ; 0x92C1
+ *   cb90: movx a, @dptr
+ *   cb91: anl a, #0xfe        ; clear bit 0
+ *   cb93: movx @dptr, a
+ *   cb94: mov dptr, #0x92c5   ; Power control 5
+ *   cb97: movx a, @dptr
+ *   cb98: anl a, #0xfb        ; clear bit 2
+ *   cb9a: movx @dptr, a
+ */
+void power_disable_clocks(void)
+{
+    uint8_t val;
+
+    /* Disable main power (0x92C0 bit 0) */
+    val = REG_POWER_CTRL_92C0;
+    val &= 0xFE;
+    REG_POWER_CTRL_92C0 = val;
+
+    /* Disable clock config (0x92C1 bit 0) */
+    val = REG_POWER_CTRL_92C1;
+    val &= 0xFE;
+    REG_POWER_CTRL_92C1 = val;
+
+    /* Disable PHY power (0x92C5 bit 2) */
+    val = REG_POWER_CTRL_92C5;
+    val &= 0xFB;
+    REG_POWER_CTRL_92C5 = val;
+}
+
+/*
+ * usb_power_init - Initialize USB power settings
+ * Address: Dispatched via handler_0327 to bank 0
+ *
+ * Initializes USB power configuration for operation.
+ * Called during system initialization.
+ */
+void usb_power_init(void)
+{
+    /* USB power initialization sequence */
+    /* Sets up USB PHY and power domains */
+
+    /* Enable main power controls */
+    power_enable_clocks();
+
+    /* Configure clock gating */
+    power_config_init();
+}

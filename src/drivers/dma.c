@@ -892,5 +892,324 @@ void dma_store_to_0a7d(uint8_t val)
     G_EP_DISPATCH_VAL3 = val;
 }
 
-/* Additional DMA functions will be added as they are reversed */
+/*
+ * dma_calc_scsi_index - Calculate SCSI DMA register index
+ * Address: 0x1602-0x1619 (24 bytes)
+ *
+ * Calculates (3 - IDATA[0x40]) and uses it to index into SCSI DMA
+ * registers at 0xCE40+offset, then writes 0xFF.
+ *
+ * Original disassembly:
+ *   1602: clr c
+ *   1603: mov a, #0x03
+ *   1605: subb a, 0x40         ; A = 3 - IDATA[0x40]
+ *   1607: mov r7, a
+ *   1608: clr a
+ *   1609: subb a, #0x00        ; R6 = -carry
+ *   160b: mov r6, a
+ *   160c: mov a, #0x40
+ *   160e: add a, r7            ; A = 0x40 + R7
+ *   160f: mov 0x82, a          ; DPL
+ *   1611: mov a, #0xce
+ *   1613: addc a, r6           ; DPH = 0xCE + carry
+ *   1614: mov 0x83, a
+ *   1616: mov a, #0xff
+ *   1618: movx @dptr, a        ; Write 0xFF to 0xCE40+index
+ *   1619: ret
+ */
+void dma_calc_scsi_index(void)
+{
+    uint8_t idx = *(__idata uint8_t *)0x40;
+    uint8_t offset = 3 - idx;
+    __xdata uint8_t *reg = (__xdata uint8_t *)(0xCE40 + offset);
+    *reg = 0xFF;
+}
+
+/*
+ * dma_init_channel_with_config - Initialize DMA channel and write config
+ * Address: 0x161a-0x1639 (32 bytes)
+ *
+ * Saves A to R4, initializes DMA channel 0 with config, then
+ * writes to 0x045E and sets bit 0 in 0xC8D8.
+ *
+ * Original disassembly:
+ *   161a: mov r4, a
+ *   161b: mov r3, #0x40
+ *   161d: mov r2, #0x00
+ *   161f: clr a
+ *   1620: mov r7, a            ; R7 = 0
+ *   1621: lcall 0x4a57         ; dma_config_channel(0)
+ *   1624: mov r3, #0x01
+ *   1626: mov r2, #0xa0
+ *   1628: mov r1, #0x00
+ *   162a: mov dptr, #0x045e
+ *   162d: lcall 0x0de6         ; xdata_store_triple
+ *   1630: mov dptr, #0xc8d8
+ *   1633: movx a, @dptr
+ *   1634: anl a, #0xfe         ; clear bit 0
+ *   1636: orl a, #0x01         ; set bit 0
+ *   1638: movx @dptr, a
+ *   1639: ret
+ */
+void dma_init_channel_with_config(uint8_t config)
+{
+    (void)config;  /* Used by caller context */
+
+    /* Configure DMA channel 0 */
+    dma_config_channel(0, 0x40);
+
+    /* Write to config area at 0x045E (3 bytes: 0x01, 0xA0, 0x00) */
+    G_REG_WAIT_BIT = 0x00;
+    *(__xdata uint8_t *)(0x045F) = 0xA0;
+    *(__xdata uint8_t *)(0x0460) = 0x01;
+
+    /* Set bit 0 in DMA status 2 */
+    REG_DMA_STATUS2 = (REG_DMA_STATUS2 & 0xFE) | 0x01;
+}
+
+/*
+ * dma_write_to_scsi_ce96 - Write to SCSI register 0xCE96
+ * Address: 0x163a-0x1645 (12 bytes)
+ *
+ * Writes IDATA[0x41] to 0xCE96, reads 0xCE97, compares with IDATA[0x47].
+ *
+ * Original disassembly:
+ *   163a: mov dptr, #0xce96
+ *   163d: mov a, 0x41          ; IDATA[0x41]
+ *   163f: movx @dptr, a        ; Write to 0xCE96
+ *   1640: inc dptr             ; 0xCE97
+ *   1641: movx a, @dptr
+ *   1642: clr c
+ *   1643: subb a, 0x47         ; Compare with IDATA[0x47]
+ *   1645: ret
+ */
+uint8_t dma_write_to_scsi_ce96(void)
+{
+    uint8_t val41 = *(__idata uint8_t *)0x41;
+    uint8_t val47 = *(__idata uint8_t *)0x47;
+    uint8_t reg_val;
+
+    XDATA_REG8(0xCE96) = val41;
+    reg_val = XDATA_REG8(0xCE97);
+
+    /* Return comparison result (carry if reg_val < val47) */
+    return (reg_val >= val47) ? 1 : 0;
+}
+
+/*
+ * dma_calc_ep_config_ptr - Calculate endpoint config pointer
+ * Address: 0x1646-0x1657 (18 bytes)
+ *
+ * Reads 0x0465, multiplies by 0x14, adds 0x4E, gives pointer in 0x05XX.
+ *
+ * Original disassembly:
+ *   1646: mov dptr, #0x0465
+ *   1649: movx a, @dptr        ; A = [0x0465]
+ *   164a: mov 0xf0, #0x14      ; B = 0x14
+ *   164d: mul ab               ; A*B
+ *   164e: add a, #0x4e         ; A = result + 0x4E
+ *   1650: mov 0x82, a          ; DPL
+ *   1652: clr a
+ *   1653: addc a, #0x05        ; DPH = 0x05 + carry
+ *   1655: mov 0x83, a
+ */
+__xdata uint8_t *dma_calc_ep_config_ptr(void)
+{
+    uint8_t val = G_SYS_STATUS_SECONDARY;
+    uint16_t addr = 0x0500 + (val * 0x14) + 0x4E;
+    return (__xdata uint8_t *)addr;
+}
+
+/*
+ * dma_write_to_scsi_ce6e - Write to SCSI register 0xCE6E twice
+ * Address: 0x16ae-0x16b6 (9 bytes)
+ *
+ * Writes IDATA[0x41] to 0xCE6E, then writes IDATA[0x41]+1 to same register.
+ *
+ * Original disassembly:
+ *   16ae: mov a, 0x41          ; A = IDATA[0x41]
+ *   16b0: mov dptr, #0xce6e
+ *   16b3: movx @dptr, a        ; Write IDATA[0x41]
+ *   16b4: inc a
+ *   16b5: movx @dptr, a        ; Write IDATA[0x41]+1
+ *   16b6: ret
+ */
+void dma_write_to_scsi_ce6e(void)
+{
+    uint8_t val = *(__idata uint8_t *)0x41;
+    XDATA_REG8(0xCE6E) = val;
+    XDATA_REG8(0xCE6E) = val + 1;
+}
+
+/*
+ * dma_calc_addr_046x - Calculate address 0x046X + R7
+ * Address: 0x16b7-0x16c2 (12 bytes)
+ *
+ * Returns pointer to 0x046A + R7.
+ *
+ * Original disassembly:
+ *   16b7: movx @dptr, a        ; Write A to caller's DPTR
+ *   16b8: mov a, #0x6a         ; 0x6A
+ *   16ba: add a, r7            ; A = 0x6A + R7
+ *   16bb: mov 0x82, a          ; DPL
+ *   16bd: clr a
+ *   16be: addc a, #0x04        ; DPH = 0x04 + carry
+ *   16c0: mov 0x83, a
+ *   16c2: ret
+ */
+__xdata uint8_t *dma_calc_addr_046x(uint8_t offset)
+{
+    return (__xdata uint8_t *)(0x046A + offset);
+}
+
+/*
+ * dma_calc_addr_0466 - Calculate address 0x0466 + R7
+ * Address: 0x16de-0x16e8 (11 bytes)
+ *
+ * Returns pointer to 0x0466 + R7.
+ *
+ * Original disassembly:
+ *   16de: mov a, #0x66
+ *   16e0: add a, r7            ; A = 0x66 + R7
+ *   16e1: mov 0x82, a          ; DPL
+ *   16e3: clr a
+ *   16e4: addc a, #0x04        ; DPH = 0x04 + carry
+ *   16e6: mov 0x83, a
+ *   16e8: ret
+ */
+__xdata uint8_t *dma_calc_addr_0466(uint8_t offset)
+{
+    return (__xdata uint8_t *)(0x0466 + offset);
+}
+
+/*
+ * dma_calc_addr_0456 - Calculate address 0x0456 + A
+ * Address: 0x16e9-0x16f2 (10 bytes)
+ *
+ * Returns pointer to 0x0456 + A.
+ *
+ * Original disassembly:
+ *   16e9: add a, #0x56         ; A = A + 0x56
+ *   16eb: mov 0x82, a          ; DPL
+ *   16ed: clr a
+ *   16ee: addc a, #0x04        ; DPH = 0x04 + carry
+ *   16f0: mov 0x83, a
+ *   16f2: ret
+ */
+__xdata uint8_t *dma_calc_addr_0456(uint8_t offset)
+{
+    return (__xdata uint8_t *)(0x0456 + offset);
+}
+
+/*
+ * dma_write_idata_to_dptr - Write IDATA[0x41]+2 and +3 to consecutive DPTR
+ * Address: 0x17d8-0x17e2 (11 bytes)
+ *
+ * Writes IDATA[0x41]+2 to DPTR, then IDATA[0x41]+3 to DPTR+1.
+ *
+ * Original disassembly:
+ *   17d8: mov a, 0x41          ; IDATA[0x41]
+ *   17da: add a, #0x02         ; A = IDATA[0x41] + 2
+ *   17dc: movx @dptr, a
+ *   17dd: mov a, 0x41
+ *   17df: add a, #0x03         ; A = IDATA[0x41] + 3
+ *   17e1: movx @dptr, a
+ *   17e2: ret
+ */
+void dma_write_idata_to_dptr(__xdata uint8_t *ptr)
+{
+    uint8_t val = *(__idata uint8_t *)0x41;
+    *ptr = val + 2;
+    *ptr = val + 3;  /* Note: Same address, second write */
+}
+
+/*
+ * dma_config_channel_0x10 - Configure DMA channel with R2=0x10
+ * Address: 0x17e3-0x17ec (10 bytes)
+ *
+ * Calls dma_config_channel with specific parameters.
+ *
+ * Original disassembly:
+ *   17e3: mov r2, #0x10
+ *   17e5: lcall 0x4a57         ; dma_config_channel
+ *   17e8: mov r2, #0x02
+ *   17ea: mov r4, #0xb0
+ *   17ec: ret
+ */
+void dma_config_channel_0x10(void)
+{
+    dma_config_channel(0x10, 0);
+    /* Note: Returns R2=0x02, R4=0xB0 for caller use */
+}
+
+/*
+ * dma_read_0461 - Read from 0x0461 and call reg_wait_bit_set
+ * Address: 0x17ed-0x17f2 (6 bytes)
+ *
+ * Jumps to 0x0ddd (reg_wait_bit_set) with DPTR=0x0461.
+ *
+ * Original disassembly:
+ *   17ed: mov dptr, #0x0461
+ *   17f0: ljmp 0x0ddd          ; reg_wait_bit_set
+ */
+void dma_read_0461(void)
+{
+    /* Reads triple from 0x0461-0x0463 as a wait/sync operation */
+    (void)xdata_load_triple((__xdata uint8_t *)0x0461);
+}
+
+/*
+ * dma_calc_addr_002c - Calculate address 0x002C + offset
+ * Address: 0x17fd-0x1803 (7 bytes)
+ *
+ * Adds 0x2C to A, stores in R1, adds carry to R2.
+ *
+ * Original disassembly:
+ *   17fd: add a, #0x2c         ; A = A + 0x2C
+ *   17ff: mov r1, a
+ *   1800: clr a
+ *   1801: addc a, r2           ; R2 = R2 + carry
+ *   1802: mov r2, a
+ *   1803: ret
+ */
+uint16_t dma_calc_addr_002c(uint8_t offset, uint8_t high)
+{
+    uint16_t result = offset + 0x2C;
+    result |= (high + (result > 0xFF ? 1 : 0)) << 8;
+    return result;
+}
+
+/*
+ * dma_store_and_dispatch - Store to 0x0A7D and dispatch based on value
+ * Address: 0x180d-0x181d (17 bytes)
+ *
+ * Stores R7 to 0x0A7D, if R7==1, reads 0x000A and dispatches.
+ *
+ * Original disassembly:
+ *   180d: mov dptr, #0x0a7d
+ *   1810: mov a, r7
+ *   1811: movx @dptr, a        ; [0x0A7D] = R7
+ *   1812: xrl a, #0x01         ; Check if R7 == 1
+ *   1814: jz 0x1819            ; If equal, continue
+ *   1816: ljmp 0x19fa          ; Else jump to dispatcher
+ *   1819: mov dptr, #0x000a
+ *   181c: movx a, @dptr        ; Read [0x000A]
+ *   181d: jnz 0x182f           ; If non-zero, jump
+ */
+void dma_store_and_dispatch(uint8_t val)
+{
+    G_EP_DISPATCH_VAL3 = val;
+
+    if (val != 0x01) {
+        /* Would dispatch elsewhere - not implemented here */
+        return;
+    }
+
+    /* Check flag at 0x000A */
+    if (G_EP_CHECK_FLAG != 0) {
+        return;
+    }
+
+    /* Additional dispatch logic follows in original */
+}
 

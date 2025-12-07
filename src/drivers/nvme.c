@@ -525,3 +525,196 @@ void nvme_add_to_global_053a(void)
     val += 0x20;
     G_NVME_PARAM_053A = val;
 }
+
+/*
+ * nvme_check_completion - Set completion bit on register
+ * Address: 0x3244-0x3248 (5 bytes)
+ *
+ * Sets bit 0 of the register pointed to by the parameter.
+ * Used to signal completion status.
+ *
+ * Original disassembly:
+ *   3244: movx a, @dptr       ; read current value
+ *   3245: anl a, #0xfe        ; clear bit 0
+ *   3247: orl a, #0x01        ; set bit 0
+ *   3247: movx @dptr, a       ; write back
+ *   3248: ret
+ */
+void nvme_check_completion(__xdata uint8_t *ptr)
+{
+    *ptr = (*ptr & 0xFE) | 0x01;
+}
+
+/*
+ * nvme_initialize - Initialize NVMe state
+ * Address: 0x3249-0x3256 (14 bytes)
+ *
+ * Sets the target register to 1 and clears bit 0 of 0xC509.
+ * Called to initialize NVMe state after command completion.
+ *
+ * Original disassembly:
+ *   3249: mov a, #0x01
+ *   324b: movx @dptr, a       ; *param = 1
+ *   324c: mov dptr, #0xc509
+ *   324f: movx a, @dptr       ; read 0xC509
+ *   3250: anl a, #0xfe        ; clear bit 0
+ *   3252: movx @dptr, a       ; write back
+ *   3253: mov dptr, #0x0af5   ; setup for return
+ *   3256: ret
+ */
+void nvme_initialize(__xdata uint8_t *ptr)
+{
+    uint8_t val;
+
+    /* Set target to 1 */
+    *ptr = 1;
+
+    /* Clear bit 0 of 0xC509 */
+    val = REG_NVME_LINK_STATUS;
+    val &= 0xFE;
+    REG_NVME_LINK_STATUS = val;
+}
+
+/*
+ * nvme_ring_doorbell - Ring NVMe doorbell register
+ * Address: 0x3247 (1 byte - just a write)
+ *
+ * Writes value to doorbell register at specified offset.
+ * Used to notify NVMe device of new commands in queue.
+ *
+ * Original disassembly:
+ *   3247: movx @dptr, a       ; write to doorbell
+ *   3248: ret
+ */
+void nvme_ring_doorbell(__xdata uint8_t *doorbell)
+{
+    *doorbell = 0x00;  /* Ring by writing any value */
+}
+
+/*
+ * nvme_read_and_sum_index - Read value and calculate indexed address
+ * Address: 0x1c3a-0x1c49 (16 bytes)
+ *
+ * Reads from DPTR, adds to value from 0x0216, masks to 5 bits,
+ * then writes to 0x01B4.
+ *
+ * Original disassembly:
+ *   1c3a: movx a, @dptr        ; Read from caller's DPTR
+ *   1c3b: mov r7, a
+ *   1c3c: mov dptr, #0x0216
+ *   1c3f: movx a, @dptr        ; Read [0x0216]
+ *   1c40: mov r6, a
+ *   1c41: mov a, r7
+ *   1c42: add a, r6            ; A = R7 + R6
+ *   1c43: anl a, #0x1f         ; Mask to 5 bits
+ *   1c45: mov dptr, #0x01b4
+ *   1c48: movx @dptr, a        ; Write to [0x01B4]
+ *   1c49: ret
+ */
+void nvme_read_and_sum_index(__xdata uint8_t *ptr)
+{
+    uint8_t val1, val2, result;
+
+    val1 = *ptr;
+    val2 = XDATA_VAR8(0x0216);
+    result = (val1 + val2) & 0x1F;
+    XDATA_VAR8(0x01B4) = result;
+}
+
+/*
+ * nvme_write_params_to_dma - Write value to DMA mode and param registers
+ * Address: 0x1c4a-0x1c54 (11 bytes)
+ *
+ * Writes A to 0x0203, 0x020D, and 0x020E.
+ *
+ * Original disassembly:
+ *   1c4a: mov dptr, #0x0203
+ *   1c4d: movx @dptr, a        ; [0x0203] = A
+ *   1c4e: mov dptr, #0x020d
+ *   1c51: movx @dptr, a        ; [0x020D] = A
+ *   1c52: inc dptr
+ *   1c53: movx @dptr, a        ; [0x020E] = A
+ *   1c54: ret
+ */
+void nvme_write_params_to_dma(uint8_t val)
+{
+    G_DMA_MODE_SELECT = val;
+    G_DMA_PARAM1 = val;
+    G_DMA_PARAM2 = val;
+}
+
+/*
+ * nvme_calc_addr_from_dptr - Calculate address from DPTR value + 0xA8
+ * Address: 0x1c5d-0x1c6c (16 bytes)
+ *
+ * Reads from DPTR, adds 0xA8, forms address in 0x05XX region,
+ * reads that address and stores to 0x05A6.
+ *
+ * Original disassembly:
+ *   1c5d: movx a, @dptr        ; Read from caller's DPTR
+ *   1c5e: add a, #0xa8         ; A = A + 0xA8
+ *   1c60: mov 0x82, a          ; DPL
+ *   1c62: clr a
+ *   1c63: addc a, #0x05        ; DPH = 0x05 + carry
+ *   1c65: mov 0x83, a
+ *   1c67: movx a, @dptr        ; Read from 0x05XX
+ *   1c68: mov dptr, #0x05a6
+ *   1c6b: movx @dptr, a        ; Store to [0x05A6]
+ *   1c6c: ret
+ */
+void nvme_calc_addr_from_dptr(__xdata uint8_t *ptr)
+{
+    uint8_t val = *ptr;
+    uint16_t addr = 0x0500 + val + 0xA8;
+    uint8_t result = *(__xdata uint8_t *)addr;
+    G_PCIE_TXN_COUNT_LO = result;
+}
+
+/*
+ * nvme_copy_idata_to_dptr - Copy 2 bytes from IDATA[0x16-0x17] to DPTR
+ * Address: 0x1cc8-0x1cd3 (12 bytes)
+ *
+ * Reads IDATA[0x16:0x17] and writes to consecutive DPTR addresses.
+ *
+ * Original disassembly:
+ *   1cc8: mov r0, #0x16
+ *   1cca: mov a, @r0           ; A = IDATA[0x16]
+ *   1ccb: mov r7, a
+ *   1ccc: inc r0
+ *   1ccd: mov a, @r0           ; A = IDATA[0x17]
+ *   1cce: xch a, r7            ; Swap
+ *   1ccf: movx @dptr, a        ; Write IDATA[0x16] to DPTR
+ *   1cd0: inc dptr
+ *   1cd1: mov a, r7
+ *   1cd2: movx @dptr, a        ; Write IDATA[0x17] to DPTR+1
+ *   1cd3: ret
+ */
+void nvme_copy_idata_to_dptr(__xdata uint8_t *ptr)
+{
+    uint8_t hi = *(__idata uint8_t *)0x16;
+    uint8_t lo = *(__idata uint8_t *)0x17;
+    ptr[0] = hi;
+    ptr[1] = lo;
+}
+
+/*
+ * nvme_get_pcie_count_config - Read and calculate PCIe transaction config
+ * Address: 0x1c90-0x1c9e (15 bytes)
+ *
+ * Reads 0x05A6, multiplies by 0x22, adds to 0x05B4 index, reads result.
+ *
+ * Original disassembly:
+ *   1c90: mov dptr, #0x05a6
+ *   1c93: movx a, @dptr        ; A = [0x05A6]
+ *   1c94: mov 0xf0, #0x22      ; B = 0x22
+ *   1c97: mov dptr, #0x05b4
+ *   1c9a: lcall 0x0dd1         ; table_index_read
+ *   1c9d: movx a, @dptr
+ *   1c9e: ret
+ */
+uint8_t nvme_get_pcie_count_config(void)
+{
+    uint8_t index = G_PCIE_TXN_COUNT_LO;
+    uint16_t addr = 0x05B4 + (index * 0x22);
+    return *(__xdata uint8_t *)addr;
+}

@@ -367,3 +367,96 @@ void error_handler_ef4e(void)
     /* Empty - original firmware has NOPs at this address */
 }
 
+/*
+ * handler_ed02 - PCIe handler (mid-function entry point)
+ * Bank 1 Address: 0xED02 (file offset 0x16D02)
+ * Size: ~38 bytes (0x16D02-0x16D27, with multiple paths)
+ *
+ * Called by dispatch stub handler_063d.
+ *
+ * This is a mid-function entry point that:
+ * 1. Calls 0x05C5 helper
+ * 2. Clears XDATA[0x023F]
+ * 3. Checks XDATA[0x0775], clears if non-zero
+ * 4. Checks XDATA[0x0719] for value 2
+ * 5. Returns different values in R7 based on result
+ *
+ * Original disassembly:
+ *   ed02: lcall 0x05c5          ; Call setup helper
+ *   ed05: clr a
+ *   ed06: mov dptr, #0x023f
+ *   ed09: movx @dptr, a         ; XDATA[0x023F] = 0
+ *   ed0a: ret
+ *   ed0b: mov dptr, #0x0775
+ *   ed0e: movx a, @dptr         ; Read 0x0775
+ *   ed0f: jz 0x6d19             ; Jump if zero
+ *   ed11: clr a
+ *   ed12: movx @dptr, a         ; Clear 0x0775
+ *   ed13: mov dptr, #0x0719
+ *   ed16: movx @dptr, a         ; Clear 0x0719
+ *   ed17: mov r7, a             ; R7 = 0
+ *   ed18: ret
+ *   ed19: mov dptr, #0x0719
+ *   ed1c: movx a, @dptr         ; Read 0x0719
+ *   ed1d: cjne a, #0x02, 0x6d25 ; Compare with 2
+ *   ed20: clr a
+ *   ed21: movx @dptr, a         ; Clear 0x0719
+ *   ed22: mov r7, #0x02         ; R7 = 2
+ *   ed24: ret
+ *   ed25: mov r7, #0x01         ; R7 = 1
+ *   ed27: ret
+ */
+void handler_ed02(void)
+{
+    uint8_t val;
+
+    /* Call setup helper at 0x05C5 */
+    /* TODO: Implement call to 0x05C5 when available */
+
+    /* Clear 0x023F */
+    XDATA_VAR8(0x023F) = 0;
+}
+
+/*
+ * handler_eef9 - Error handler (UNUSED)
+ * Bank 1 Address: 0xEEF9 (file offset 0x16EF9)
+ *
+ * Called by handler_063d.
+ *
+ * NOTE: This address contains all NOPs (0x00) in the original firmware.
+ * This is likely unused/padding space. The handler exists in the dispatch
+ * table but the target function is empty.
+ *
+ * Original disassembly:
+ *   eef9: nop
+ *   eefa: nop
+ *   ... (all NOPs)
+ */
+void handler_eef9(void)
+{
+    /* Empty - original firmware has NOPs at this address */
+}
+
+/*
+ * handler_e762 - Event/error handler
+ * Bank 1 Address: 0xE762 (file offset 0x16762)
+ *
+ * Handles events and potential error conditions.
+ * This is a complex handler with multiple branches.
+ */
+void handler_e762(void)
+{
+    /* TODO: Implement when reverse engineering is complete */
+}
+
+/*
+ * handler_e677 - Status handler
+ * Bank 1 Address: 0xE677 (file offset 0x16677)
+ *
+ * Handles status updates and state transitions.
+ */
+void handler_e677(void)
+{
+    /* TODO: Implement when reverse engineering is complete */
+}
+

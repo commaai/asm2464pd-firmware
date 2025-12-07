@@ -385,3 +385,188 @@ void state_add_offset_0x0e(uint8_t *lo, uint8_t *hi)
     *lo = addr & 0xFF;
     *hi = addr >> 8;
 }
+
+/*
+ * ============================================================================
+ * PROTOCOL STATE MACHINE HELPERS (for protocol.c)
+ * ============================================================================
+ */
+
+/*
+ * state_action_dispatch - Dispatch state action
+ * Address: 0x2bea
+ *
+ * Takes action code in R7 and dispatches to appropriate handler.
+ * Used by protocol_state_machine().
+ */
+void state_action_dispatch(uint8_t action_code)
+{
+    /* TODO: Implement actual dispatch logic from 0x2bea */
+    (void)action_code;
+}
+
+/*
+ * transfer_func_16a2 - Transfer helper function
+ * Address: 0x16a2
+ *
+ * Called by handler_3adb for transfer status operations.
+ */
+void transfer_func_16a2(void)
+{
+    /* TODO: Implement from address 0x16a2 */
+}
+
+/*
+ * transfer_func_16b7 - Transfer helper function with parameter
+ * Address: 0x16b7
+ *
+ * Called by handler_3adb with flash reset parameter.
+ */
+void transfer_func_16b7(uint8_t param)
+{
+    (void)param;
+    /* TODO: Implement from address 0x16b7 */
+}
+
+/*
+ * transfer_func_17ed - Transfer helper function
+ * Address: 0x17ed
+ *
+ * Called by handler_3adb during state transitions.
+ */
+void transfer_func_17ed(void)
+{
+    /* TODO: Implement from address 0x17ed */
+}
+
+/*
+ * state_helper_15ac - State helper returning bit flag
+ * Address: 0x15ac
+ *
+ * Returns a value where bit 0 is checked by handler_3adb.
+ */
+uint8_t state_helper_15ac(void)
+{
+    /* This is the same as state_add_offset_0x0e in terms of address
+     * but appears to be used differently in protocol.c.
+     * Looking at ghidra.c, this returns a status byte. */
+    return 0;  /* TODO: Implement properly */
+}
+
+/*
+ * state_helper_15af - State helper for computation
+ * Address: 0x15af
+ *
+ * Returns computed value used by handler_3adb.
+ */
+uint8_t state_helper_15af(void)
+{
+    /* TODO: Implement from address 0x15af */
+    return 0;
+}
+
+/*
+ * flash_func_1679 - Flash operation helper
+ * Address: 0x1679
+ *
+ * Called during state transitions in handler_3adb.
+ */
+void flash_func_1679(void)
+{
+    /* TODO: Implement from address 0x1679 */
+}
+
+/*
+ * flash_func_0bc8 - Flash operation (does not return)
+ * Address: 0x0bc8
+ *
+ * Called at end of state transition, never returns.
+ */
+void flash_func_0bc8(void)
+{
+    /* This function is marked noreturn - it likely does a reset
+     * or jumps to a different execution context */
+    while (1) {
+        /* Halt - TODO: implement actual behavior */
+    }
+}
+
+/*
+ * reg_wait_bit_clear - Wait for register bit to clear
+ * Address: 0x0461 region
+ *
+ * Waits for specified bit in register to clear with timeout.
+ */
+void reg_wait_bit_clear(uint16_t addr, uint8_t mask, uint8_t flags, uint8_t timeout)
+{
+    (void)addr;
+    (void)mask;
+    (void)flags;
+    (void)timeout;
+    /* TODO: Implement register polling with timeout */
+}
+
+/*
+ * usb_func_1b14 - USB helper function
+ * Address: 0x1b14
+ *
+ * Takes parameter, returns computed value.
+ */
+uint8_t usb_func_1b14(uint8_t param)
+{
+    (void)param;
+    /* TODO: Implement from address 0x1b14 */
+    return 0;
+}
+
+/*
+ * usb_func_1b20 - USB helper function
+ * Address: 0x1b20
+ *
+ * Takes parameter (register number), returns value.
+ */
+uint8_t usb_func_1b20(uint8_t param)
+{
+    (void)param;
+    /* TODO: Implement from address 0x1b20 */
+    return 0;
+}
+
+/*
+ * usb_func_1b23 - USB helper function
+ * Address: 0x1b23
+ *
+ * Returns USB status value.
+ */
+uint8_t usb_func_1b23(void)
+{
+    /* TODO: Implement from address 0x1b23 */
+    return 0;
+}
+
+/*
+ * usb_reset_interface - Reset USB interface
+ * Address: 0x1bc3
+ *
+ * Resets USB interface with given parameter.
+ */
+void usb_reset_interface(uint8_t param)
+{
+    (void)param;
+    /* TODO: Implement from address 0x1bc3 */
+}
+
+/*
+ * xdata_load_dword_noarg - Load 32-bit value from current DPTR
+ * Address: 0x0d84
+ *
+ * This is the void version called by protocol.c where DPTR is
+ * set by the previous function call. In the original firmware,
+ * this reads into R4-R7 registers.
+ */
+void xdata_load_dword_noarg(void)
+{
+    /* Original reads 4 bytes from DPTR into R4-R7.
+     * Since we can't access DPTR directly in C, this is a stub.
+     * The caller (core_handler_4ff2) doesn't use the return value. */
+}

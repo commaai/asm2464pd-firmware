@@ -150,6 +150,19 @@
 extern uint32_t idata_load_dword(__idata uint8_t *ptr);
 extern uint32_t idata_load_dword_alt(__idata uint8_t *ptr);
 
+/* External handler from main.c */
+extern void handler_039a(void);
+
+/* Forward declaration - USB master handler (0x10e0)
+ * Called at end of endpoint dispatch loop */
+void usb_master_handler(void);
+
+/* Forward declaration - FUN_CODE_4532 */
+static void usb_endpoint_status_handler(void);
+
+/* Forward declaration - usb_set_transfer_active_flag */
+void usb_set_transfer_active_flag(void);
+
 /*
  * usb_enable - Enable USB interface
  * Address: 0x1b7e-0x1b87 (10 bytes)
@@ -324,9 +337,8 @@ static void usb_ep_init_handler(void)
     /* Clear processing complete flag in work area */
     G_STATE_FLAG_06E6 = 0;
 
-    /* Original jumps to 0x039a which dispatches to 0xD810 (buffer handler) */
-    /* handler_039a() is the main buffer handler in main.c */
-    /* Note: Cannot call directly from static function - caller should handle */
+    /* Jump to 0x039a which dispatches to 0xD810 (buffer handler) */
+    handler_039a();
 }
 
 /*
@@ -348,6 +360,107 @@ static void usb_ep_handler(void)
     if (G_EP_CHECK_FLAG == 0) {
         usb_ep_init_handler();
     }
+}
+
+/*
+ * usb_endpoint_status_handler - Handle endpoint status change (FUN_CODE_4532)
+ * Address: 0x4532-0x45xx
+ *
+ * Complex handler that processes endpoint status bits.
+ * Reads XDATA[0x0003], checks bits 7 and 4, dispatches to sub-handlers.
+ *
+ * Original disassembly:
+ *   4532: mov dptr, #0x0003
+ *   4535: movx a, @dptr
+ *   4536: mov 0x3a, a          ; save to IDATA[0x3A]
+ *   4538: mov a, 0x3a
+ *   453a: jnb e0.7, 0x4554     ; if bit 7 clear, skip
+ *   453d-4553: handle bit 7 set case
+ *   4554: mov a, 0x3a
+ *   4556: jnb e0.4, 0x4562     ; if bit 4 clear, skip
+ *   ... continues
+ */
+static void usb_endpoint_status_handler(void)
+{
+    uint8_t status;
+
+    /* Read endpoint status control */
+    status = G_EP_STATUS_CTRL;
+
+    /* Store to IDATA[0x3A] for later checks */
+    *(__idata uint8_t *)0x3A = status;
+
+    /* Check bit 7 */
+    if (status & 0x80) {
+        /* Bit 7 handling - dispatches to 0x051b with R5=0x13, R4=0x00, R7=0x05
+         * Then clears, calls 0x039f with R7=0, writes 1 to 0x0B2F, calls 0x04FD */
+        /* TODO: Implement full logic */
+    }
+
+    /* Check bit 4 */
+    if (status & 0x10) {
+        /* Bit 4 handling - different dispatch */
+        /* TODO: Implement full logic */
+    }
+}
+
+/*
+ * usb_ep_process - USB endpoint processing
+ * Address: 0x52a7-0x52c6 (32 bytes)
+ *
+ * Called to process an endpoint. Checks IDATA[0x6A] state:
+ * - If == 5: write 0x02 to 0x90E3, optionally call FUN_CODE_4532, then init handler
+ * - Otherwise: set transfer active flag, set bit 7 on USB config register
+ *
+ * Original disassembly:
+ *   52a7: mov r0, #0x6a
+ *   52a9: mov a, @r0            ; A = IDATA[0x6A]
+ *   52aa: add a, #0xfb          ; A = A + 0xFB (check if == 5)
+ *   52ac: jnz 0x52c0            ; if not 5, go to 0x52C0
+ *   52ae: mov dptr, #0x90e3
+ *   52b1: mov a, #0x02
+ *   52b3: movx @dptr, a         ; XDATA[0x90E3] = 2
+ *   52b4: mov dptr, #0x0003
+ *   52b7: movx a, @dptr         ; A = XDATA[0x0003]
+ *   52b8: jz 0x52bd             ; if 0, skip call
+ *   52ba: lcall 0x4532          ; call FUN_CODE_4532
+ *   52bd: ljmp 0x5409           ; jump to usb_ep_init_handler
+ *   52c0: lcall 0x312a          ; usb_set_transfer_active_flag
+ *   52c3: lcall 0x31ce          ; nvme_read_status (sets bit 7 on @dptr)
+ *   52c6: ret
+ */
+void usb_ep_process(void)
+{
+    uint8_t state;
+    uint8_t val;
+
+    /* Read IDATA[0x6A] */
+    state = *(__idata uint8_t *)0x6A;
+
+    /* Check if state == 5 (add 0xFB and check if zero) */
+    if (state == 5) {
+        /* Write 0x02 to endpoint status register */
+        REG_USB_EP_STATUS_90E3 = 0x02;
+
+        /* Check XDATA[0x0003] */
+        if (G_EP_STATUS_CTRL != 0) {
+            /* Call endpoint status handler */
+            usb_endpoint_status_handler();
+        }
+
+        /* Jump to init handler */
+        usb_ep_init_handler();
+        return;
+    }
+
+    /* Call usb_set_transfer_active_flag (leaves DPTR = 0x9006) */
+    usb_set_transfer_active_flag();
+
+    /* nvme_read_status: read from DPTR, set bit 7, write back
+     * After usb_set_transfer_active_flag, DPTR = 0x9006 (REG_USB_EP0_CONFIG) */
+    val = REG_USB_EP0_CONFIG;
+    val = (val & 0x7F) | 0x80;
+    REG_USB_EP0_CONFIG = val;
 }
 
 /*===========================================================================
@@ -1080,6 +1193,173 @@ void usb_ep_dispatch_loop(void)
         counter++;
 
     } while (counter < 0x20);
+
+    /*
+     * After main loop: Check 0x909e bit 0
+     * If bit 0 NOT set: jump to usb_master_handler
+     * If bit 0 IS set: handle special case first
+     *
+     * At 0x0efb-0x0f19:
+     *   0efb: mov dptr, #0x909e
+     *   0efe: movx a, @dptr
+     *   0eff: jb e0.0, 0x0f05     ; if bit 0 set, go to special handling
+     *   0f02: ljmp 0x10e0         ; else go to usb_master_handler
+     *   0f05: mov dptr, #0x0af5
+     *   0f08: mov a, #0x40
+     *   0f0a: movx @dptr, a       ; G_EP_DISPATCH_OFFSET = 0x40
+     *   0f0b: lcall 0x5442        ; usb_ep_handler()
+     *   0f0e: mov dptr, #0x909e
+     *   0f11: mov a, #0x01
+     *   0f13: movx @dptr, a       ; 0x909e = 1
+     *   0f14: mov dptr, #0x90e3
+     *   0f17: inc a               ; a = 2
+     *   0f18: movx @dptr, a       ; 0x90e3 = 2
+     *   0f19: ljmp 0x10e0         ; usb_master_handler()
+     */
+    status = XDATA8(0x909E);
+    if (!(status & 0x01)) {
+        usb_master_handler();
+        return;
+    }
+
+    /* Special case: endpoint 0x40 handling */
+    G_EP_DISPATCH_OFFSET = 0x40;
+    usb_ep_handler();
+    XDATA8(0x909E) = 0x01;
+    XDATA8(0x90E3) = 0x02;
+    usb_master_handler();
+}
+
+/*
+ * usb_master_handler - USB Master interrupt handler
+ * Address: 0x10e0-0x117a (155 bytes)
+ *
+ * Called at the end of endpoint dispatch loop. Handles:
+ * - System interrupt status (0xC806 bit 5)
+ * - Link status events (0xCEF3, 0xCEF2)
+ * - USB master interrupt (0xC802 bit 2) -> NVMe queue processing
+ *
+ * Original disassembly:
+ *   10e0: mov dptr, #0xc806
+ *   10e3: movx a, @dptr
+ *   10e4: jnb e0.5, 0x110d    ; if bit 5 not set, skip
+ *   10e7: mov dptr, #0xcef3
+ *   10ea: movx a, @dptr
+ *   10eb: jnb e0.3, 0x10fe    ; if bit 3 not set, skip
+ *   10ee-10f9: clear 0x0464, write 0x08 to 0xcef3, call 0x2608
+ *   10fc: sjmp 0x110d         ; skip to next check
+ *   10fe-110a: check 0xcef2 bit 7, write 0x80, call 0x3adb with r7=0
+ *   110d-1111: check 0xc802 bit 2 for NVMe queue
+ *   1114-117a: NVMe queue processing loop (0x20 iterations)
+ */
+void usb_master_handler(void)
+{
+    uint8_t status;
+    uint8_t counter;
+
+    /* Check system interrupt status bit 5 (0xC806) */
+    status = REG_INT_SYSTEM;
+    if (status & 0x20) {
+        /* Check link status 0xCEF3 bit 3 */
+        status = REG_CPU_LINK_CEF3;
+        if (status & 0x08) {
+            /* Clear 0x0464, write 0x08 to 0xCEF3 */
+            G_SYS_STATUS_PRIMARY = 0x00;
+            REG_CPU_LINK_CEF3 = 0x08;
+            /* Call handler_2608 - state handler */
+            /* TODO: Add call to handler_2608 when implemented */
+        } else {
+            /* Check 0xCEF2 bit 7 */
+            status = REG_CPU_LINK_CEF2;
+            if (status & 0x80) {
+                /* Write 0x80 to 0xCEF2 */
+                REG_CPU_LINK_CEF2 = 0x80;
+                /* Call 0x3ADB (handler_3adb) with R7=0 */
+                /* TODO: Add call to handler_3adb when implemented */
+            }
+        }
+    }
+
+    /* Check USB master interrupt bit 2 (0xC802) - NVMe queue processing */
+    status = REG_INT_USB_MASTER;
+    if (!(status & 0x04)) {
+        return;
+    }
+
+    /* NVMe queue processing loop - up to 32 iterations
+     *
+     * Loop at 0x1117-0x1138:
+     *   - Check 0xC471 bit 0
+     *   - If set: check 0x0055 for zero
+     *   - If 0x0055 is zero: check 0xC520 bit 1, call 0x488f if set
+     *   - Call 0x1196 (nvme queue helper)
+     *   - Increment counter, loop while counter < 0x20
+     */
+    for (counter = 0; counter < 0x20; counter++) {
+        /* Check NVMe queue pointer bit 0 */
+        status = REG_NVME_QUEUE_PTR_C471;
+        if (!(status & 0x01)) {
+            break;  /* No more queue entries */
+        }
+
+        /* Check if NVMe queue ready flag is zero */
+        if (G_NVME_QUEUE_READY == 0) {
+            /* Check NVMe link status bit 1 */
+            status = REG_NVME_LINK_STATUS;
+            if (status & 0x02) {
+                /* Call handler at 0x488f */
+                /* TODO: Implement FUN_CODE_488f */
+            }
+        }
+
+        /* Call NVMe queue helper at 0x1196 */
+        /* TODO: Implement nvme_queue_helper */
+    }
+
+    /* Post-loop processing at 0x113a-0x117a:
+     *
+     * Check USB status (0x9000) bit 0:
+     *   - If set: check 0xC520 bit 0, call 0x3E81 if set
+     *             check 0xC520 bit 1, call 0x488f if set
+     *   - If clear: check 0xC520 bit 1, call 0x4784 if set
+     *               check 0xC520 bit 0, call 0x49e9 if set
+     *
+     * Finally check 0xC42C bit 0, call 0x4784 and write 0x01 to 0xC42C if set
+     */
+    status = REG_USB_STATUS;
+    if (status & 0x01) {
+        /* USB status bit 0 set path */
+        status = REG_NVME_LINK_STATUS;
+        if (status & 0x01) {
+            /* Call 0x3E81 */
+            /* TODO: Implement FUN_CODE_3e81 */
+        }
+        status = REG_NVME_LINK_STATUS;
+        if (status & 0x02) {
+            /* Call 0x488f */
+            /* TODO: Implement FUN_CODE_488f */
+        }
+    } else {
+        /* USB status bit 0 clear path */
+        status = REG_NVME_LINK_STATUS;
+        if (status & 0x02) {
+            /* Call 0x4784 */
+            /* TODO: Implement FUN_CODE_4784 */
+        }
+        status = REG_NVME_LINK_STATUS;
+        if (status & 0x01) {
+            /* Call 0x49e9 */
+            /* TODO: Implement FUN_CODE_49e9 */
+        }
+    }
+
+    /* Check MSC control bit 0, clear it if set */
+    status = REG_USB_MSC_CTRL;
+    if (status & 0x01) {
+        /* Call 0x4784 */
+        /* TODO: Implement FUN_CODE_4784 */
+        REG_USB_MSC_CTRL = 0x01;  /* Clear bit by writing 1 */
+    }
 }
 
 /*===========================================================================

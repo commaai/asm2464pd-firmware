@@ -70,11 +70,11 @@
  * IMPLEMENTATION STATUS
  *===========================================================================
  * phy_init_sequence         [DONE] 0xcb54-0xcb97 - Full PHY init
- * phy_config_link_params    [SKIP] 0x5284-0x52a6 - In main.c
+ * phy_config_link_params    [DONE] 0x5284-0x52a6 - Configure link params
  * phy_poll_link_ready       [DONE] Based on 0x4fdb-0x4fe1 - Poll for ready
  * phy_check_usb_state       [DONE] 0x3031-0x303a - Check USB PHY state
  *
- * Total: 3 functions implemented (phy_config_link_params in main.c)
+ * Total: 4 functions implemented
  *===========================================================================
  */
 
@@ -189,7 +189,47 @@ void phy_init_sequence(void)
     REG_USB_PHY_CONFIG_9241 = val;
 }
 
-/* NOTE: phy_config_link_params() is in main.c at 0x5284-0x52a6 */
+/*
+ * phy_config_link_params - Configure PHY link parameters
+ * Address: 0x5284-0x52a6 (35 bytes)
+ *
+ * Sets up PHY extended registers for link training parameters.
+ *
+ * From ghidra.c FUN_CODE_5284:
+ *   DAT_EXTMEM_c65b = DAT_EXTMEM_c65b & 0xf7 | 8;   // set bit 3
+ *   DAT_EXTMEM_c656 = DAT_EXTMEM_c656 & 0xdf;       // clear bit 5
+ *   DAT_EXTMEM_c65b = DAT_EXTMEM_c65b & 0xdf | 0x20; // set bit 5
+ *   DAT_EXTMEM_c62d = DAT_EXTMEM_c62d & 0xe0 | 7;   // set low 3 bits to 7
+ *
+ * Original disassembly:
+ *   5284: mov dptr, #0xc65b   ; PHY extended config
+ *   5287: movx a, @dptr
+ *   5288: anl a, #0xf7        ; clear bit 3
+ *   528a: orl a, #0x08        ; set bit 3
+ *   528c: movx @dptr, a
+ *   528d: mov dptr, #0xc656   ; PHY extended config
+ *   5290: movx a, @dptr
+ *   5291: anl a, #0xdf        ; clear bit 5
+ *   5293: movx @dptr, a
+ *   5294: mov dptr, #0xc65b   ; PHY extended config
+ *   5297: movx a, @dptr
+ *   5298: anl a, #0xdf        ; clear bit 5
+ *   529a: orl a, #0x20        ; set bit 5
+ *   529c: movx @dptr, a
+ *   529d: mov dptr, #0xc62d   ; PHY extended config
+ *   52a0: movx a, @dptr
+ *   52a1: anl a, #0xe0        ; clear bits 0-4
+ *   52a3: orl a, #0x07        ; set bits 0-2 (lane config = 7)
+ *   52a5: movx @dptr, a
+ *   52a6: ret
+ */
+void phy_config_link_params(void)
+{
+    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & 0xF7) | 0x08;
+    REG_PHY_EXT_56 = REG_PHY_EXT_56 & 0xDF;
+    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & 0xDF) | 0x20;
+    REG_PHY_EXT_2D = (REG_PHY_EXT_2D & 0xE0) | 0x07;
+}
 
 /*
  * phy_poll_link_ready - Poll PHY status for link ready

@@ -218,25 +218,78 @@ uint8_t scsi_get_command_byte(void)
 
 /*
  * scsi_send_csw - Send Command Status Wrapper
- * Address: various locations
+ * Address: 0x4904-0x4974 (init), 0x314b-0x3167 (tag copy), 0x53c0-0x53d3 (residue)
  *
- * Builds and sends a CSW response to the host.
+ * Builds and sends a 13-byte CSW response to the host.
+ * CSW structure at 0xD800:
+ *   Bytes 0-3:   Signature 'USBS' (0x55, 0x53, 0x42, 0x53)
+ *   Bytes 4-7:   Tag (copied from CBW at 0x9120-0x9123)
+ *   Bytes 8-11:  Data Residue (little-endian)
+ *   Byte 12:     Status (0=pass, 1=fail, 2=phase error)
  *
  * Parameters:
  *   status: CSW status code (0=pass, 1=fail, 2=phase error)
  *   residue: Number of bytes not transferred
+ *
+ * Original disassembly (0x4955-0x4974):
+ *   4955: mov r7, #0x53       ; 'S'
+ *   4957: mov r6, #0x42       ; 'B'
+ *   4959: mov r5, #0x53       ; 'S'
+ *   495b: mov r4, #0x55       ; 'U'
+ *   495d: mov dptr, #0xd800   ; CSW buffer
+ *   4960: lcall 0x0dc5        ; xdata_store_dword - writes "USBS"
+ *   4963: mov dptr, #0x901a   ; MSC packet length register
+ *   4966: mov a, #0x0d        ; 13 bytes
+ *   4968: movx @dptr, a
+ *   4969: mov dptr, #0xc42c   ; MSC control register
+ *   496c: mov a, #0x01        ; trigger transmission
+ *   496e: movx @dptr, a
+ *   496f: inc dptr            ; 0xC42D
+ *   4970: movx a, @dptr
+ *   4971: anl a, #0xfe        ; clear bit 0
+ *   4973: movx @dptr, a
+ *   4974: ljmp 0x0331         ; return to bank1 dispatch
+ *
+ * Tag copy (0x314b-0x3167):
+ *   Copies 4 bytes from 0x9120-0x9123 to 0xD804-0xD807
+ *
+ * Residue write (0x53c0-0x53d3):
+ *   Copies 4 bytes from IDATA[0x6F-0x72] to 0xD808-0xD80B
  */
 void scsi_send_csw(uint8_t status, uint32_t residue)
 {
-    /* Build CSW in endpoint buffer */
-    /* Signature 'USBS' */
-    /* Tag (copy from CBW) */
-    /* Residue (4 bytes) */
-    /* Status (1 byte) */
+    uint8_t msc_status;
 
-    (void)status;
-    (void)residue;
-    /* TODO: Implement actual CSW transmission */
+    /* Write CSW signature 'USBS' to 0xD800-0xD803 */
+    REG_CSW_SIGNATURE_0 = USB_CSW_SIGNATURE_0;  /* 'U' = 0x55 */
+    REG_CSW_SIGNATURE_1 = USB_CSW_SIGNATURE_1;  /* 'S' = 0x53 */
+    REG_CSW_SIGNATURE_2 = USB_CSW_SIGNATURE_2;  /* 'B' = 0x42 */
+    REG_CSW_SIGNATURE_3 = USB_CSW_SIGNATURE_3;  /* 'S' = 0x53 */
+
+    /* Copy tag from CBW (0x9120-0x9123) to CSW (0xD804-0xD807) */
+    REG_CSW_TAG_0 = REG_CBW_TAG_0;
+    REG_CSW_TAG_1 = REG_CBW_TAG_1;
+    REG_CSW_TAG_2 = REG_CBW_TAG_2;
+    REG_CSW_TAG_3 = REG_CBW_TAG_3;
+
+    /* Write data residue (little-endian) to 0xD808-0xD80B */
+    REG_CSW_RESIDUE_0 = (uint8_t)(residue & 0xFF);
+    REG_CSW_RESIDUE_1 = (uint8_t)((residue >> 8) & 0xFF);
+    REG_CSW_RESIDUE_2 = (uint8_t)((residue >> 16) & 0xFF);
+    REG_CSW_RESIDUE_3 = (uint8_t)((residue >> 24) & 0xFF);
+
+    /* Write status byte to 0xD80C */
+    REG_CSW_STATUS = status;
+
+    /* Set CSW packet length (13 bytes) */
+    REG_USB_MSC_LENGTH = CSW_LENGTH;
+
+    /* Trigger USB transmission */
+    REG_USB_MSC_CTRL = 0x01;
+
+    /* Clear bit 0 of MSC status register */
+    msc_status = REG_USB_MSC_STATUS;
+    REG_USB_MSC_STATUS = msc_status & 0xFE;
 }
 
 /*

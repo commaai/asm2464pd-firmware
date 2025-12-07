@@ -25,7 +25,9 @@
 // System Work Area (0x0000-0x01FF)
 //=============================================================================
 #define G_SYSTEM_CTRL           XDATA_VAR8(0x0000)  /* System control byte */
+#define G_EP_STATUS_CTRL        XDATA_VAR8(0x0003)  /* Endpoint status control (checked by usb_ep_process) */
 #define G_EP_CHECK_FLAG         XDATA_VAR8(0x000A)  /* Endpoint check flag */
+#define G_NVME_QUEUE_READY      XDATA_VAR8(0x0055)  /* NVMe queue ready flag */
 #define G_USB_INDEX_COUNTER     XDATA_VAR8(0x014E)  /* USB index counter (5-bit) */
 #define G_SCSI_CTRL             XDATA_VAR8(0x0171)  /* SCSI control */
 
