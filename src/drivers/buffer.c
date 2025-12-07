@@ -88,7 +88,7 @@
 void buf_set_ctrl_mode_4(void)
 {
     REG_BUFFER_CTRL = 0x04;
-    REG_BUFFER_LENGTH_HIGH = XDATA_VAR8(0x0054);
+    REG_BUFFER_LENGTH_HIGH = G_BUFFER_LENGTH_HIGH;
 }
 
 /*
@@ -142,10 +142,10 @@ void buf_write_idata_params(void)
      */
     __idata uint8_t *ptr = (__idata uint8_t *)0x72;
 
-    REG_BUFFER_CTRL_GLOBAL = *ptr--;      /* idata[0x72] -> 0xD808 */
-    REG_BUFFER_THRESHOLD_HIGH = *ptr--;   /* idata[0x71] -> 0xD809 */
-    REG_BUFFER_THRESHOLD_LOW = *ptr--;    /* idata[0x70] -> 0xD80A */
-    REG_BUFFER_FLOW_CTRL = *ptr;          /* idata[0x6f] -> 0xD80B */
+    REG_BUFFER_CTRL_GLOBAL = *ptr--;     /* idata[0x72] -> 0xD808 */
+    REG_BUFFER_THRESHOLD_HIGH = *ptr--;  /* idata[0x71] -> 0xD809 */
+    REG_BUFFER_THRESHOLD_LOW = *ptr--;   /* idata[0x70] -> 0xD80A */
+    REG_BUFFER_FLOW_CTRL = *ptr;         /* idata[0x6f] -> 0xD80B */
 }
 
 /*
@@ -176,10 +176,10 @@ void buf_write_idata_params(void)
  */
 void buf_config_from_status(void)
 {
-    REG_BUFFER_PTR_HIGH = XDATA_REG8(0x911F);
-    REG_BUFFER_LENGTH_LOW = XDATA_REG8(0x9120);
-    REG_BUFFER_STATUS = XDATA_REG8(0x9121);
-    REG_BUFFER_LENGTH_HIGH = XDATA_REG8(0x9122);
+    REG_BUFFER_PTR_HIGH = REG_USB_STATUS_1F;
+    REG_BUFFER_LENGTH_LOW = REG_USB_STATUS_20;
+    REG_BUFFER_STATUS = REG_USB_STATUS_21;
+    REG_BUFFER_LENGTH_HIGH = REG_USB_STATUS_22;
 }
 
 /*

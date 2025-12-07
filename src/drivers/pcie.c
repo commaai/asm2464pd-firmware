@@ -855,3 +855,201 @@ void pcie_setup_config_tlp(void)
         }
     }
 }
+
+/*
+ * pcie_event_handler - PCIe event handler (handler_c105)
+ * Address: 0xC105-0xC17E
+ *
+ * This is a PCIe event/interrupt handler that processes PCIe-related events.
+ * It checks various status bits and dispatches to appropriate sub-handlers.
+ *
+ * The function:
+ * 1. Calls bank-switching helper 0xBCDE (reads reg with DPX=1)
+ * 2. If bit 0 set: calls 0xA522 (PCIe interrupt handler)
+ * 3. Calls bank-switching helper 0xBCAF
+ * 4. If bit 0 set and G_EVENT_CTRL_09FA bit 1 set:
+ *    - Checks 0x92C2 (power status) bit 6
+ *    - If set: writes 0x01 to 0x0AE2 and calls 0xCA0D
+ *    - Calls 0xE74E and writes 0x69 to 0x07FF
+ * 5. If bit 0 clear: handles alternate path based on event state
+ *
+ * Original disassembly at 0xC105:
+ *   c105: lcall 0xbcde        ; Bank-switch read
+ *   c108: jnb acc.0, 0xc10e   ; Skip if bit 0 clear
+ *   c10b: lcall 0xa522        ; PCIe interrupt sub-handler
+ *   c10e: lcall 0xbcde        ; Bank-switch read again
+ *   c111: jnb acc.3, 0xc117   ; Skip if bit 3 clear
+ *   c114: lcall 0x0543        ; Another handler
+ *   c117: lcall 0xbcaf        ; Different bank read
+ *   c11a: jnb acc.0, 0xc143   ; Check bit 0
+ *   ... (continues with state machine logic)
+ */
+void pcie_event_handler(void)
+{
+    uint8_t status;
+    uint8_t event_ctrl;
+
+    /*
+     * Note: The original function uses complex bank-switching via DPX
+     * register to access code bank 1 registers. In our implementation,
+     * we'll use simpler register access patterns.
+     *
+     * The actual hardware behavior depends on:
+     * - REG_BANK_CONFIG at 0xB214 for bank switching
+     * - Event control at 0x09FA for state machine
+     * - Power status at 0x92C2 for power events
+     * - System state at 0x0AE2 for handler dispatch
+     */
+
+    /* First bank read and check (0xBCDE pattern) */
+    /* Original reads from bank 1 address loaded via DPTR */
+    status = REG_PCIE_STATUS;  /* Simplified - actual reads bank 1 reg */
+
+    if (status & 0x01) {
+        /* Bit 0 set - call PCIe interrupt sub-handler (0xA522) */
+        /* This handles PCIe link events */
+    }
+
+    /* Second check - bit 3 */
+    if (status & 0x08) {
+        /* Call handler at 0x0543 - likely another PCIe event type */
+    }
+
+    /* Different bank read (0xBCAF pattern) */
+    /* Check event control flags */
+    event_ctrl = G_EVENT_CTRL_09FA;
+
+    if (status & 0x01) {
+        /* Path 1: Event bit set */
+        /* Write 0x01 to event handler params */
+        /* This is func at 0x0BE6 with A=0x01 */
+
+        if (event_ctrl & 0x02) {
+            /* Event control bit 1 set */
+            /* Check power status bit 6 */
+            if (REG_POWER_STATUS & 0x40) {
+                /* Power event - set system state and call handler */
+                G_SYSTEM_STATE_0AE2 = 0x01;
+                /* Call 0xCA0D - system state handler */
+            }
+
+            /* Call 0xE74E - bank 1 event handler */
+            /* Write marker 0x69 to 0x07FF */
+            XDATA8(0x07FF) = 0x69;
+            return;
+        }
+    }
+
+    /* Path 2: Alternate event handling */
+    /* Write 0x02 to event handler params */
+
+    if (event_ctrl & 0x02) {
+        /* Read 0xBC88 pattern - another bank helper */
+        /* Mask with 0xC0, OR with 0x04 */
+        /* Write back via 0xBC9F */
+
+        /* Read again, mask with 0x3F, OR with 0x40 */
+        /* Call 0x0BE6 with result */
+
+        /* Write 0x09 via 0xBC63 */
+        /* Call 0xE890 - bank 1 handler */
+
+        /* Call 0xBC98 with R1=0x43 */
+        /* Check bit 6 of result */
+        if (REG_POWER_STATUS & 0x40) {
+            /* Call 0xD916 with R7=0 */
+            /* Call 0xBF8E */
+        }
+    }
+}
+
+/*
+ * pcie_error_handler - PCIe error handler and recovery
+ * Address: 0xC00D-0xC087
+ *
+ * Called when a PCIe error is detected. This function:
+ * 1. Checks if error flag (0x06E6) is set - returns if not
+ * 2. Clears error flags at 0x06E6-0x06E8
+ * 3. Clears transaction parameters at 0x05A7, 0x06EB, 0x05AC-0x05AD
+ * 4. Calls USB reset helper at 0x545C
+ * 5. Configures PCIe reset via 0xB401 register
+ * 6. Clears state machine variables
+ *
+ * Original disassembly:
+ *   c00d: mov dptr, #0x06e6     ; Error flag
+ *   c010: movx a, @dptr         ; Read flag
+ *   c011: jz 0xc088             ; Return if no error
+ *   c013: clr a                 ; Clear A
+ *   c014: movx @dptr, a         ; Clear 0x06E6
+ *   c015: inc dptr              ; 0x06E7
+ *   c016: inc a                 ; A = 1
+ *   c017: movx @dptr, a         ; Write 1 to 0x06E7
+ *   c018: inc dptr              ; 0x06E8
+ *   c019: movx @dptr, a         ; Write 1 to 0x06E8
+ *   c01a: clr a
+ *   c01b: mov dptr, #0x05a7     ; Clear PCIe TXN count hi
+ *   c01e: movx @dptr, a
+ *   c01f: mov dptr, #0x06eb
+ *   c022: movx @dptr, a
+ *   c023: mov dptr, #0x05ac
+ *   c026: movx @dptr, a         ; Clear 0x05AC
+ *   c027: inc dptr
+ *   c028: movx @dptr, a         ; Clear 0x05AD
+ *   c029: lcall 0x545c          ; USB reset helper
+ *   c02c: mov dptr, #0xb401     ; PCIe config
+ *   c02f: lcall 0x99e4          ; Write config
+ *   c032: movx a, @dptr
+ *   c033: anl a, #0xfe          ; Clear bit 0
+ *   c035: movx @dptr, a
+ *   ... (continues with more cleanup)
+ */
+void pcie_error_handler(void)
+{
+    uint8_t tmp;
+
+    /* Check if error flag is set */
+    if (G_STATE_FLAG_06E6 == 0) {
+        return;
+    }
+
+    /* Clear error flags */
+    G_STATE_FLAG_06E6 = 0x00;
+    XDATA8(0x06E7) = 0x01;  /* Set recovery state */
+    XDATA8(0x06E8) = 0x01;
+
+    /* Clear PCIe transaction parameters */
+    G_PCIE_TXN_COUNT_HI = 0x00;
+    XDATA8(0x06EB) = 0x00;
+    XDATA8(0x05AC) = 0x00;
+    XDATA8(0x05AD) = 0x00;
+
+    /* Call USB reset helper (0x545C) */
+    /* This clears USB endpoint state during PCIe error recovery */
+
+    /* Configure PCIe reset via 0xB401 */
+    /* Call 0x99E4 to write PCIe config, then clear bit 0 */
+    tmp = XDATA8(0xB401);
+    tmp &= 0xFE;  /* Clear bit 0 - PCIe reset bit */
+    XDATA8(0xB401) = tmp;
+
+    /* Call 0xCD6C - additional error cleanup */
+
+    /* Configure 0xCA06 - clear bit 4 */
+    tmp = XDATA8(0xCA06);
+    tmp &= 0xEF;  /* Clear bit 4 */
+    /* Call 0x99E0 to write back */
+
+    /* Call bank 1 handlers for recovery */
+    /* 0xE8A9 with R7=0x01 */
+    /* 0xD436 with R7=0x0F */
+
+    /* Clear IDATA[0x62] */
+    __asm
+        clr     a
+        mov     r0, #0x62
+        mov     @r0, a
+    __endasm;
+
+    /* Clear max log entries */
+    G_MAX_LOG_ENTRIES = 0x00;
+}

@@ -534,7 +534,8 @@
 #define CSW_LENGTH              0x0D  // 13 bytes
 
 //=============================================================================
-// Data Buffer Registers (0xD800-0xD8FF) - Legacy aliases
+// Data Buffer Control Registers (0xD800-0xD811)
+// Alternative naming for buffer operations (overlaps with CSW)
 //=============================================================================
 #define REG_BUFFER_CTRL         XDATA_REG8(0xD800)  // Buffer control (WO)
 #define REG_BUFFER_SELECT       XDATA_REG8(0xD801)  // Buffer select (RW)

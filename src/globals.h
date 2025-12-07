@@ -27,6 +27,7 @@
 #define G_SYSTEM_CTRL           XDATA_VAR8(0x0000)  /* System control byte */
 #define G_EP_STATUS_CTRL        XDATA_VAR8(0x0003)  /* Endpoint status control (checked by usb_ep_process) */
 #define G_EP_CHECK_FLAG         XDATA_VAR8(0x000A)  /* Endpoint check flag */
+#define G_BUFFER_LENGTH_HIGH    XDATA_VAR8(0x0054)  /* Buffer length high byte (for mode 4) */
 #define G_NVME_QUEUE_READY      XDATA_VAR8(0x0055)  /* NVMe queue ready flag */
 #define G_USB_INDEX_COUNTER     XDATA_VAR8(0x014E)  /* USB index counter (5-bit) */
 #define G_SCSI_CTRL             XDATA_VAR8(0x0171)  /* SCSI control */
@@ -65,6 +66,8 @@
 #define G_EP_CONFIG_ARRAY       XDATA_VAR8(0x054E)  /* EP config array */
 #define G_EP_QUEUE_CTRL         XDATA_VAR8(0x0564)  /* Endpoint queue control */
 #define G_EP_QUEUE_STATUS       XDATA_VAR8(0x0565)  /* Endpoint queue status */
+#define G_EP_QUEUE_PARAM        XDATA_VAR8(0x0566)  /* Endpoint queue parameter */
+#define G_EP_QUEUE_IDATA        XDATA_VAR8(0x0567)  /* Endpoint queue IDATA copy */
 #define G_BUF_OFFSET_HI         XDATA_VAR8(0x0568)  /* Buffer offset result high */
 #define G_LOG_PROCESS_STATE     XDATA_VAR8(0x0574)  /* Log processing state */
 #define G_LOG_ENTRY_VALUE       XDATA_VAR8(0x0575)  /* Log entry value */

@@ -718,3 +718,448 @@ uint8_t nvme_get_pcie_count_config(void)
     uint16_t addr = 0x05B4 + (index * 0x22);
     return *(__xdata uint8_t *)addr;
 }
+
+/*
+ * nvme_init_step - Set EP configuration for NVMe endpoint setup
+ * Address: 0x3267-0x3271 (11 bytes)
+ *
+ * Writes endpoint configuration values for NVMe mode.
+ * Sets REG_USB_EP_CFG1 to 2 and REG_USB_EP_CFG2 to 0x10.
+ *
+ * Original disassembly:
+ *   3267: mov dptr, #0x9093
+ *   326a: mov a, #0x02
+ *   326c: movx @dptr, a        ; REG_USB_EP_CFG1 = 2
+ *   326d: inc dptr
+ *   326e: mov a, #0x10
+ *   3270: movx @dptr, a        ; REG_USB_EP_CFG2 = 0x10
+ *   3271: ret
+ */
+void nvme_init_step(void)
+{
+    REG_USB_EP_CFG1 = 0x02;
+    REG_USB_EP_CFG2 = 0x10;
+}
+
+/*
+ * nvme_read_status - Set bit 4 on the given register pointer
+ * Address: 0x3272-0x3278 (7 bytes)
+ *
+ * Reads the byte at ptr, clears bit 4, sets bit 4, writes back.
+ * Used for status indication on NVMe registers.
+ *
+ * Original disassembly:
+ *   3272: movx a, @dptr        ; read
+ *   3273: anl a, #0xef         ; clear bit 4
+ *   3275: orl a, #0x10         ; set bit 4
+ *   3277: movx @dptr, a        ; write
+ *   3278: ret
+ */
+void nvme_read_status(__xdata uint8_t *ptr)
+{
+    *ptr = (*ptr & 0xEF) | 0x10;
+}
+
+/*
+ * nvme_set_int_aux_bit1 - Set bit 1 on interrupt auxiliary register
+ * Address: 0x3280-0x3289 (10 bytes)
+ *
+ * Manipulates REG_INT_AUX_C805: clears bits 1 and 2, then sets bit 1.
+ *
+ * Original disassembly:
+ *   3280: mov dptr, #0xc805
+ *   3283: movx a, @dptr        ; read REG_INT_AUX_C805
+ *   3284: anl a, #0xf9         ; clear bits 1 and 2
+ *   3286: orl a, #0x02         ; set bit 1
+ *   3288: movx @dptr, a        ; write back
+ *   3289: ret
+ */
+void nvme_set_int_aux_bit1(void)
+{
+    uint8_t val = REG_INT_AUX_C805;
+    val = (val & 0xF9) | 0x02;
+    REG_INT_AUX_C805 = val;
+}
+
+/*
+ * nvme_get_link_status_masked - Get NVMe link status masked to bits 0-1
+ * Address: 0x328a-0x3290 (7 bytes)
+ *
+ * Reads 0x9100 (USB peripheral status) and masks to lower 2 bits.
+ *
+ * Original disassembly:
+ *   328a: mov dptr, #0x9100
+ *   328d: movx a, @dptr        ; read 0x9100
+ *   328e: anl a, #0x03         ; mask bits 0-1
+ *   3290: ret
+ */
+uint8_t nvme_get_link_status_masked(void)
+{
+    return XDATA_REG8(0x9100) & 0x03;
+}
+
+/*
+ * nvme_set_ep_ctrl_bits - Set control bits on EP register (bits 1 and 2)
+ * Address: 0x320c-0x3218 (13 bytes)
+ *
+ * Sets bit 1 on register, then sets bit 2 on same register.
+ * Used for endpoint control configuration.
+ *
+ * Original disassembly:
+ *   320c: movx a, @dptr        ; read
+ *   320d: anl a, #0xfd         ; clear bit 1
+ *   320f: orl a, #0x02         ; set bit 1
+ *   3211: movx @dptr, a        ; write
+ *   3212: movx a, @dptr        ; read again
+ *   3213: anl a, #0xfb         ; clear bit 2
+ *   3215: orl a, #0x04         ; set bit 2
+ *   3217: movx @dptr, a        ; write
+ *   3218: ret
+ */
+void nvme_set_ep_ctrl_bits(__xdata uint8_t *ptr)
+{
+    uint8_t val;
+
+    /* Set bit 1 */
+    val = *ptr;
+    val = (val & 0xFD) | 0x02;
+    *ptr = val;
+
+    /* Set bit 2 */
+    val = *ptr;
+    val = (val & 0xFB) | 0x04;
+    *ptr = val;
+}
+
+/*
+ * nvme_set_usb_ep_ctrl_bit2 - Set just bit 2 on EP register
+ * Address: 0x3212-0x3218 (7 bytes, alt entry point)
+ *
+ * Sets only bit 2 on the register - subset of nvme_set_ep_ctrl_bits.
+ *
+ * Original disassembly:
+ *   3212: movx a, @dptr        ; read
+ *   3213: anl a, #0xfb         ; clear bit 2
+ *   3215: orl a, #0x04         ; set bit 2
+ *   3217: movx @dptr, a        ; write
+ *   3218: ret
+ */
+void nvme_set_usb_ep_ctrl_bit2(__xdata uint8_t *ptr)
+{
+    uint8_t val = *ptr;
+    val = (val & 0xFB) | 0x04;
+    *ptr = val;
+}
+
+/*
+ * nvme_call_and_signal - Call function and signal via 0x90A1
+ * Address: 0x3219-0x3222 (10 bytes)
+ *
+ * Calls function at 0x53c0, then writes 1 to 0x90A1.
+ * Note: The function at 0x53c0 is not yet reverse engineered.
+ *
+ * Original disassembly:
+ *   3219: lcall 0x53c0         ; call function
+ *   321c: mov dptr, #0x90a1
+ *   321f: mov a, #0x01
+ *   3221: movx @dptr, a        ; write 1 to 0x90A1
+ *   3222: ret
+ */
+void nvme_call_and_signal(void)
+{
+    /* TODO: Call function at 0x53c0 when implemented */
+    /* For now, just set the signal register */
+    XDATA_REG8(0x90A1) = 0x01;
+}
+
+/*
+ * usb_validate_descriptor - Copy descriptor validation data
+ * Address: 0x31fb-0x320b (17 bytes)
+ *
+ * Copies values from 0xCEB2-0xCEB3 to 0x0056-0x0057.
+ * Used during USB descriptor validation.
+ *
+ * Original disassembly:
+ *   31fb: mov dptr, #0xceb2
+ *   31fe: movx a, @dptr        ; read 0xCEB2
+ *   31ff: mov dptr, #0x0056
+ *   3202: movx @dptr, a        ; write to 0x0056
+ *   3203: mov dptr, #0xceb3
+ *   3206: movx a, @dptr        ; read 0xCEB3
+ *   3207: mov dptr, #0x0057
+ *   320a: movx @dptr, a        ; write to 0x0057
+ *   320b: ret
+ */
+void usb_validate_descriptor(void)
+{
+    XDATA_VAR8(0x0056) = XDATA_REG8(0xCEB2);
+    XDATA_VAR8(0x0057) = XDATA_REG8(0xCEB3);
+}
+
+/*
+ * nvme_get_dma_status_masked - Get DMA status masked to upper bits
+ * Address: 0x3298-0x329e (7 bytes)
+ *
+ * Reads DMA status register 0xC8D9 and masks to upper 5 bits.
+ *
+ * Original disassembly:
+ *   3298: mov dptr, #0xc8d9
+ *   329b: movx a, @dptr        ; read 0xC8D9
+ *   329c: anl a, #0xf8         ; mask to upper bits
+ *   329e: ret
+ */
+uint8_t nvme_get_dma_status_masked(void)
+{
+    return XDATA_REG8(0xC8D9) & 0xF8;
+}
+
+/* Forward declaration for reg_wait_bit_clear from state_helpers.c */
+extern void reg_wait_bit_clear(uint16_t addr, uint8_t mask, uint8_t flags, uint8_t timeout);
+
+/*
+ * nvme_process_cmd - Process NVMe command with register wait
+ * Address: 0x31a0 region (referenced from ghidra line 6571)
+ *
+ * Calculates a lookup table address based on param, reads configuration
+ * from there, and calls reg_wait_bit_clear with the values.
+ *
+ * The address calculation:
+ * - Low byte: param * 2 + 0xAD
+ * - High byte: 0x5C, or 0x5B if there's overflow from low byte
+ *
+ * This points to a table at 0x5CAD containing 2-byte entries with
+ * register wait configuration (mask and timeout).
+ */
+void nvme_process_cmd(uint8_t param)
+{
+    uint16_t addr;
+    uint8_t *ptr;
+    uint8_t low_byte;
+    uint8_t high_byte;
+
+    /* Calculate address with overflow handling */
+    low_byte = param * 2 + 0xAD;
+    high_byte = (param * 2 > 0x52) ? 0x5B : 0x5C;
+    addr = ((uint16_t)high_byte << 8) | low_byte;
+
+    ptr = (__xdata uint8_t *)addr;
+
+    /* Call reg_wait_bit_clear with config from table
+     * ptr[0] = mask, ptr[1] = flags/timeout */
+    reg_wait_bit_clear(0x0A7E, ptr[1], 0x01, ptr[0]);
+}
+
+/*
+ * nvme_io_request - Copy byte from one computed address to another
+ * Address: 0x31a5 region (referenced from ghidra line 6597)
+ *
+ * This is a memory copy operation between two computed addresses.
+ * The source and destination addresses are computed from the parameters.
+ *
+ * Source: (param2 + offset, param1 + param4) where offset depends on carry
+ * Dest: (param3 - 0x80, param4)
+ */
+void nvme_io_request(uint8_t param1, __xdata uint8_t *param2, uint8_t param3, uint8_t param4)
+{
+    uint8_t src_lo, src_hi;
+    uint8_t dst_lo, dst_hi;
+    uint16_t src_addr, dst_addr;
+
+    /* Calculate source address */
+    src_lo = param1 + param4;
+    /* Handle carry from addition */
+    src_hi = *param2 + param3;
+    if ((uint16_t)param1 + param4 > 0xFF) {
+        src_hi--;
+    }
+    src_addr = ((uint16_t)src_hi << 8) | src_lo;
+
+    /* Calculate destination address */
+    dst_lo = param4;
+    dst_hi = param3 - 0x80;
+    dst_addr = ((uint16_t)dst_hi << 8) | dst_lo;
+
+    /* Copy byte */
+    *(__xdata uint8_t *)dst_addr = *(__xdata uint8_t *)src_addr;
+}
+
+/*
+ * nvme_build_cmd - Calculate build command result
+ * Address: 0x31da-0x31e0 (7 bytes)
+ *
+ * Returns a computed value based on input parameter.
+ * If param > 0xF3, returns 0xFF; otherwise returns 0.
+ *
+ * Original disassembly:
+ *   31da: clr a
+ *   31db: mov r7, a
+ *   31dc: mov a, param
+ *   31dd: clr c
+ *   31de: subb a, #0xf4       ; compare with 0xF4
+ *   31e0: ret                 ; carry indicates result
+ */
+uint8_t nvme_build_cmd(uint8_t param)
+{
+    return (param > 0xF3) ? 0xFF : 0x00;
+}
+
+/*
+ * nvme_submit_cmd - Submit command to NVMe controller
+ * Address: 0x31fb region (part of larger function)
+ *
+ * Note: This is related to descriptor validation.
+ * The actual command submission goes through nvme_ring_doorbell.
+ * This function is called as part of the command flow.
+ */
+void nvme_submit_cmd(void)
+{
+    /* This function is essentially usb_validate_descriptor in the binary,
+     * but in the NVMe context it's called to finalize command state */
+    usb_validate_descriptor();
+}
+
+/*
+ * usb_read_status_pair - Read USB status register pair
+ * Address: 0x3181-0x3189 (9 bytes)
+ *
+ * Reads two USB status registers (0x910D and 0x910E) in sequence.
+ * Returns the second value (0x910E).
+ *
+ * Original disassembly:
+ *   3181: mov dptr, #0x910d
+ *   3184: movx a, @dptr        ; read 0x910D (ignored)
+ *   3185: mov dptr, #0x910e
+ *   3188: movx a, @dptr        ; read 0x910E
+ *   3189: ret
+ */
+uint8_t usb_read_status_pair(void)
+{
+    (void)REG_USB_STATUS_0D;  /* Read but ignore */
+    return REG_USB_STATUS_0E;
+}
+
+/*
+ * usb_copy_status_to_buffer - Copy USB status to buffer registers
+ * Address: 0x314d-0x3166 (26 bytes)
+ *
+ * Copies USB status registers 0x911F-0x9122 to buffer registers
+ * 0xD804-0xD807.
+ *
+ * Original disassembly:
+ *   314d: mov dptr, #0x911f
+ *   3150: movx a, @dptr
+ *   3151: mov dptr, #0xd804    ; REG_BUFFER_PTR_HIGH
+ *   3154: movx @dptr, a
+ *   ...repeats for other registers...
+ */
+void usb_copy_status_to_buffer(void)
+{
+    REG_BUFFER_PTR_HIGH = REG_USB_STATUS_1F;
+    REG_BUFFER_LENGTH_LOW = REG_USB_STATUS_20;
+    REG_BUFFER_STATUS = REG_USB_STATUS_21;
+    REG_BUFFER_LENGTH_HIGH = REG_USB_STATUS_22;
+}
+
+/*
+ * usb_set_transfer_active_flag - Set transfer active flag
+ * Address: 0x33f6-0x33fe (9 bytes)
+ *
+ * Writes 0x01 to the transfer active flag at 0x07E5.
+ *
+ * Original disassembly:
+ *   33f6: mov dptr, #0x07e5
+ *   33f9: mov a, #0x01
+ *   33fb: movx @dptr, a
+ *   33fc: ret
+ */
+void usb_set_transfer_active_flag(void)
+{
+    G_TRANSFER_ACTIVE = 0x01;
+}
+
+/*
+ * nvme_io_handler - Main NVMe I/O handler state machine
+ * Address: 0x32a4-0x3418 (large function)
+ *
+ * Handles NVMe I/O operations based on current state in IDATA[0x6A].
+ * This is a complex state machine that processes NVMe commands.
+ *
+ * States:
+ * - State 2 (0x02): Process command based on XDATA[0x0002]
+ * - Other states: Set transfer active and read status
+ *
+ * Note: This is a simplified implementation. The full function has
+ * many more branches and state transitions.
+ */
+void nvme_io_handler(uint8_t param)
+{
+    uint8_t state;
+    uint8_t cmd_type;
+    uint8_t usb_status;
+
+    state = *(__idata uint8_t *)0x6A;
+
+    if (state != 0x02) {
+        goto handle_default;
+    }
+
+    /* State 2: Check command type from XDATA[0x0002] */
+    cmd_type = XDATA_VAR8(0x0002);
+
+    if (cmd_type == 0xE3 || cmd_type == 0xFB || cmd_type == 0xE1) {
+        /* These command types (0xE3=-0x1D, 0xFB=-0x05, 0xE1=-0x1F)
+         * trigger the I/O path */
+
+        if (cmd_type == 0xE3 || cmd_type == 0xFB) {
+            /* Load IDATA dword, process status, store back */
+            /* This is simplified - actual implementation needs
+             * idata_load_dword, usb_read_status_pair, etc. */
+            goto handle_io_path;
+        }
+
+        /* Check XDATA[0x0001] for additional processing */
+        if (XDATA_VAR8(0x0001) != 0x07) {
+            nvme_set_int_aux_bit1();
+            /* Additional processing would go here */
+            if (param == 0) {
+                /* dma_setup_transfer(0, 3, 3); */
+            }
+            usb_status = REG_USB_STATUS;
+            if ((usb_status & 0x01) == 0) {
+                nvme_call_and_signal();
+            }
+            *(__idata uint8_t *)0x6A = 0x05;
+            return;
+        }
+
+handle_io_path:
+        /* Simplified I/O path handling */
+        usb_read_status_pair();
+        return;
+    }
+
+    /* cmd_type == 0xF9 (-7) also goes through special handling */
+    if (cmd_type == 0xF9) {
+        if (XDATA_VAR8(0x0001) != 0x07) {
+            nvme_set_int_aux_bit1();
+            if (param == 0) {
+                /* dma_setup_transfer(0, 3, 3); */
+            }
+            *(__idata uint8_t *)0x6A = 0x05;
+            return;
+        }
+        /* Fall through to I/O path */
+        goto handle_io_path;
+    }
+
+handle_default:
+    /* Default state: set transfer active and update status */
+    usb_set_transfer_active_flag();
+    nvme_read_status((__xdata uint8_t *)&REG_USB_STATUS);
+
+    usb_status = REG_USB_STATUS;
+    if (usb_status & 0x01) {
+        nvme_check_completion((__xdata uint8_t *)0x905F);
+        nvme_check_completion((__xdata uint8_t *)0x905D);
+    }
+}

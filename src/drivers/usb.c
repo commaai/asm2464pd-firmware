@@ -1563,3 +1563,1032 @@ void usb_init_pcie_txn_state(void)
     /* Store to flash error 1 */
     G_FLASH_ERROR_1 = val;
 }
+
+/*===========================================================================
+ * USB Helper Functions (0x1A00-0x1B60 region)
+ *===========================================================================*/
+
+/*
+ * usb_func_1a00 - USB status check and configuration setup
+ * Address: 0x1a00-0x1aac (173 bytes)
+ *
+ * Complex function that:
+ * 1. Reads REG_CE88, masks to bits 7-6, ORs with IDATA[0x0D], writes back
+ * 2. Polls REG_CE89 bit 0 until set
+ * 3. Sets IDATA[0x39] = 1
+ * 4. Dispatches based on IDATA[0x39] and various conditions
+ * 5. Handles status registers 0x911D/0x911E, writes to 0x0056/0x0057
+ * 6. Calls multiple helper functions (0x3189, 0x31fb, 0x329f, etc.)
+ *
+ * This is a complex state machine entry point for USB processing.
+ *
+ * Original disassembly at 0x1A00:
+ *   1a00: mov dptr, #0xce88
+ *   1a03: movx a, @dptr
+ *   1a04: anl a, #0xc0         ; mask bits 7-6
+ *   1a06: mov r0, #0x0d
+ *   1a08: orl a, @r0           ; OR with IDATA[0x0D]
+ *   1a09: movx @dptr, a        ; write back
+ *   1a0a: mov dptr, #0xce89    ; poll loop start
+ *   1a0d: movx a, @dptr
+ *   1a0e: jnb e0.0, 0x1a0a     ; wait for bit 0
+ *   1a11: mov 0x39, #0x01      ; IDATA[0x39] = 1
+ *   ...
+ */
+void usb_func_1a00(void)
+{
+    uint8_t val;
+    uint8_t idata_0d;
+    uint8_t idata_39;
+
+    /* Read CE88, mask bits 7-6, OR with IDATA[0x0D], write back */
+    val = XDATA8(0xCE88);
+    idata_0d = *(__idata uint8_t *)0x0D;
+    val = (val & 0xC0) | idata_0d;
+    XDATA8(0xCE88) = val;
+
+    /* Poll CE89 bit 0 until set */
+    do {
+        val = XDATA8(0xCE89);
+    } while (!(val & 0x01));
+
+    /* Set IDATA[0x39] = 1 */
+    *(__idata uint8_t *)0x39 = 1;
+
+    /* Check if we should jump to end block at 0x1a3b */
+    /* This depends on various state conditions */
+    idata_39 = *(__idata uint8_t *)0x39;
+
+    /* Check if IDATA[0x39] == 1 */
+    if (idata_39 == 1) {
+        /* Check CE89 bit 1 */
+        val = XDATA8(0xCE89);
+        if (!(val & 0x02)) {
+            /* Check 0x0AF8 */
+            if (XDATA8(0x0AF8) != 0) {
+                /* Jump to 0x2DB7 - another handler */
+                return;
+            }
+        }
+
+        /* Process IDATA[0x0D], call helpers, etc. */
+        /* Complex logic follows - simplified stub */
+    }
+
+    /* Final cleanup: clear 0x0052 and return */
+    XDATA8(0x0052) = 0;
+}
+
+/*
+ * usb_func_1aad - USB init helper with endpoint configuration
+ * Address: 0x1aad-0x1af6 (74 bytes)
+ *
+ * Initializes endpoint queue configuration:
+ * 1. Stores R7 to 0x0566
+ * 2. Reads 0x0B00, multiplies by 0x40, adds to 0x021B, stores at 0x0568/0x0569
+ * 3. Stores IDATA[0x0D] to 0x0567
+ * 4. Copies IDATA[0x18:0x19] to 0x056A:0x056B
+ * 5. Calls idata_load_dword(0x0E), stores to 0x0570
+ * 6. Calls idata_load_dword(0x12), stores to 0x056C
+ *
+ * Original disassembly:
+ *   1aad: mov dptr, #0x0566
+ *   1ab0: mov a, r7
+ *   1ab1: movx @dptr, a         ; [0x0566] = R7
+ *   1ab2: mov dptr, #0x0b00
+ *   1ab5: movx a, @dptr         ; A = [0x0B00]
+ *   1ab6: mov 0xf0, #0x40       ; B = 0x40
+ *   1ab9: mul ab                ; A = A * 0x40
+ *   1aba: mov r7, a             ; R7 = low result
+ *   1abb: mov dptr, #0x021b
+ *   1abe: movx a, @dptr         ; A = [0x021B]
+ *   1abf: add a, r7             ; A += R7
+ *   1ac0: mov r6, a
+ *   ...
+ */
+void usb_func_1aad(uint8_t param)
+{
+    uint8_t val;
+    uint8_t offset_lo;
+    uint8_t offset_hi;
+    uint8_t idata_val;
+
+    /* Store parameter to 0x0566 */
+    G_EP_QUEUE_PARAM = param;
+
+    /* Read 0x0B00, multiply by 0x40 */
+    val = G_USB_PARAM_0B00;
+    offset_lo = val * 0x40;  /* Low byte of multiplication */
+
+    /* Add to value at 0x021B */
+    val = G_BUF_BASE_LO;
+    offset_lo += val;
+
+    /* Add carry to 0x021A */
+    offset_hi = G_BUF_BASE_HI;
+    if (offset_lo < val) {
+        offset_hi++;  /* Add carry */
+    }
+
+    /* Store to 0x0568/0x0569 */
+    G_BUF_OFFSET_HI = offset_hi;
+    G_BUF_OFFSET_LO = offset_lo;
+
+    /* Store IDATA[0x0D] to 0x0567 */
+    idata_val = *(__idata uint8_t *)0x0D;
+    G_EP_QUEUE_IDATA = idata_val;
+
+    /* Copy IDATA[0x18:0x19] to 0x056A:0x056B */
+    idata_val = *(__idata uint8_t *)0x18;
+    XDATA8(0x056A) = idata_val;
+    idata_val = *(__idata uint8_t *)0x19;
+    XDATA8(0x056B) = idata_val;
+
+    /* Load dword from IDATA[0x0E] and store to 0x0570 */
+    idata_load_dword((__idata uint8_t *)0x0E);
+    /* Note: Result is in R4-R7, caller stores to DPTR=0x0570 via xdata_store_dword */
+
+    /* Load dword from IDATA[0x12] and store to 0x056C */
+    idata_load_dword((__idata uint8_t *)0x12);
+    /* Note: Result stored to 0x056C via xdata_store_dword */
+}
+
+/*
+ * usb_func_1af9 - Decrement indexed XDATA counter
+ * Address: 0x1af9-0x1b13 (27 bytes)
+ *
+ * Calculates address 0x0171 + IDATA[0x3E], reads byte, decrements, writes back.
+ * Then reads the decremented value.
+ *
+ * Original disassembly:
+ *   1af9: mov a, #0x71
+ *   1afb: add a, 0x3e           ; A = 0x71 + IDATA[0x3E]
+ *   1afd: mov 0x82, a           ; DPL
+ *   1aff: clr a
+ *   1b00: addc a, #0x01         ; DPH = 0x01 + carry
+ *   1b02: mov 0x83, a
+ *   1b04: movx a, @dptr         ; read
+ *   1b05: dec a                 ; decrement
+ *   1b06: movx @dptr, a         ; write back
+ *   1b07-1b12: recalculate same address and read again
+ *   1b13: ret
+ */
+uint8_t usb_func_1af9(void)
+{
+    uint8_t offset = *(__idata uint8_t *)0x3E;
+    uint16_t addr = 0x0171 + offset;
+    uint8_t val;
+
+    /* Decrement value at address */
+    val = XDATA8(addr);
+    val--;
+    XDATA8(addr) = val;
+
+    /* Read back and return */
+    return XDATA8(addr);
+}
+
+/*
+ * usb_func_1b14 - Address calculation and store helper
+ * Address: 0x1b14-0x1b13 (bytes overlap - actually 0x1b14-0x1b2a, 23 bytes)
+ *
+ * Takes R1:R2 (address), stores to DPTR, calls 0x0D84, then calls
+ * idata_store_dword with R0=0x12, then calls 0x0DDD with DPTR=0x0007.
+ *
+ * Original disassembly:
+ *   1b14: mov r1, a             ; R1 = A (low byte)
+ *   1b15: clr a
+ *   1b16: addc a, r2            ; A = R2 + carry
+ *   1b17: mov 0x82, r1          ; DPL = R1
+ *   1b19: mov 0x83, a           ; DPH = A
+ *   1b1b: lcall 0x0d84          ; xdata_store_dword helper
+ *   1b1e: mov r0, #0x12
+ *   1b20: lcall 0x0db9          ; idata_store_dword
+ *   1b23: mov dptr, #0x0007
+ *   1b26: lcall 0x0ddd          ; another helper
+ *   1b29: mov a, r1
+ *   1b2a: ret
+ */
+/* Note: usb_func_1b14 is now in state_helpers.c with correct signature for protocol.c */
+
+void usb_func_1b14_addr(uint8_t addr_lo, uint8_t addr_hi)
+{
+    /* This function propagates address calculations between helpers.
+     * Due to register-based calling convention in 8051, this is
+     * mostly handled by the caller in C. */
+    (void)addr_lo;
+    (void)addr_hi;
+}
+
+/*
+ * usb_func_1b2b - Calculate address 0x0108 + IDATA[0x0D]
+ * Address: 0x1b2b-0x1b37 (13 bytes)
+ *
+ * Reads IDATA[0x0D], adds to 0x08, returns DPTR pointing to 0x01XX.
+ *
+ * Original disassembly:
+ *   1b2b: mov r0, #0x0d
+ *   1b2d: mov a, @r0            ; A = IDATA[0x0D]
+ *   1b2e: add a, #0x08          ; A += 8
+ *   1b30: mov 0x82, a           ; DPL
+ *   1b32: clr a
+ *   1b33: addc a, #0x01         ; DPH = 0x01 + carry
+ *   1b35: mov 0x83, a
+ *   1b37: ret
+ */
+__xdata uint8_t *usb_func_1b2b(void)
+{
+    uint8_t offset = *(__idata uint8_t *)0x0D;
+    uint16_t addr = 0x0108 + offset;
+    return (__xdata uint8_t *)addr;
+}
+
+/*
+ * usb_func_1b38 - Mask input and calculate address 0x014E + IDATA[0x3E]
+ * Address: 0x1b38-0x1b46 (15 bytes)
+ *
+ * Masks input to 5 bits, calculates 0x014E + IDATA[0x3E], returns DPTR.
+ *
+ * Original disassembly:
+ *   1b38: anl a, #0x1f          ; A &= 0x1F
+ *   1b3a: mov r7, a             ; R7 = masked value
+ *   1b3b: mov a, #0x4e
+ *   1b3d: add a, 0x3e           ; A = 0x4E + IDATA[0x3E]
+ *   1b3f: mov 0x82, a           ; DPL
+ *   1b41: clr a
+ *   1b42: addc a, #0x01         ; DPH = 0x01 + carry
+ *   1b44: mov 0x83, a
+ *   1b46: ret
+ */
+__xdata uint8_t *usb_func_1b38(uint8_t val)
+{
+    uint8_t masked = val & 0x1F;
+    uint8_t offset = *(__idata uint8_t *)0x3E;
+    uint16_t addr = 0x014E + offset;
+    (void)masked;  /* Stored in R7 for caller */
+    return (__xdata uint8_t *)addr;
+}
+
+/*
+ * usb_func_1b47 - Combine 0x0475 value with C415 status
+ * Address: 0x1b47-0x1b5f (25 bytes)
+ *
+ * Reads G_STATE_HELPER_42 (0x0475), reads REG_NVME_DEV_STATUS (0xC415),
+ * masks to bits 7-6, ORs together, writes to C415.
+ * Then modifies 0xC412 (clear bit 1, set bit 1).
+ *
+ * Original disassembly:
+ *   1b47: mov dptr, #0x0475
+ *   1b4a: movx a, @dptr         ; A = [0x0475]
+ *   1b4b: mov r6, a
+ *   1b4c: mov dptr, #0xc415
+ *   1b4f: movx a, @dptr         ; A = [0xC415]
+ *   1b50: anl a, #0xc0          ; mask bits 7-6
+ *   1b52: mov r5, a
+ *   1b53: mov a, r6
+ *   1b54: orl a, r5             ; combine
+ *   1b55: movx @dptr, a         ; [0xC415] = combined
+ *   1b56: mov dptr, #0xc412
+ *   1b59: movx a, @dptr
+ *   1b5a: anl a, #0xfd          ; clear bit 1
+ *   1b5c: orl a, #0x02          ; set bit 1
+ *   1b5e: movx @dptr, a
+ *   1b5f: ret
+ */
+void usb_func_1b47(void)
+{
+    uint8_t state_val;
+    uint8_t dev_status;
+    uint8_t combined;
+    uint8_t ctrl_val;
+
+    /* Read state helper from 0x0475 */
+    state_val = G_STATE_HELPER_42;
+
+    /* Read device status, mask bits 7-6 */
+    dev_status = REG_NVME_DEV_STATUS;
+    dev_status &= 0xC0;
+
+    /* Combine and write back */
+    combined = state_val | dev_status;
+    REG_NVME_DEV_STATUS = combined;
+
+    /* Modify NVMe control/status: clear bit 1, then set bit 1 */
+    ctrl_val = REG_NVME_CTRL_STATUS;
+    ctrl_val = (ctrl_val & 0xFD) | 0x02;
+    REG_NVME_CTRL_STATUS = ctrl_val;
+}
+
+/*
+ * usb_func_1b60 - Complex IDATA/XDATA copy helper
+ * Address: 0x1b60-0x1b7d (30 bytes)
+ *
+ * Calls 0x0D08, loads from IDATA[0x0E], stores to DPTR,
+ * loads from IDATA[0x12], stores to DPTR+4,
+ * calls helper at 0x0D46 with R0=3,
+ * loads from IDATA[0x12] again, stores,
+ * then reads IDATA[0x16:0x17] and returns in R6:A.
+ *
+ * This is a data marshalling function for endpoint configuration.
+ *
+ * Original disassembly:
+ *   1b60: lcall 0x0d08          ; helper
+ *   1b63: mov r0, #0x0e
+ *   1b65: lcall 0x0db9          ; idata_store_dword
+ *   1b68: mov r0, #0x12
+ *   1b6a: lcall 0x0d78          ; idata_load_dword
+ *   1b6d: mov r0, #0x03
+ *   1b6f: lcall 0x0d46          ; helper
+ *   1b72: mov r0, #0x12
+ *   1b74: lcall 0x0db9          ; idata_store_dword
+ *   1b77: mov r0, #0x16
+ *   1b79: mov a, @r0            ; A = IDATA[0x16]
+ *   1b7a: mov r6, a
+ *   1b7b: inc r0
+ *   1b7c: mov a, @r0            ; A = IDATA[0x17]
+ *   1b7d: ret
+ */
+uint16_t usb_func_1b60(void)
+{
+    uint8_t hi, lo;
+
+    /* This function marshals data between IDATA and XDATA locations.
+     * The actual dword operations require assembly helpers.
+     * For C, we just return the 16-bit value from IDATA[0x16:0x17]. */
+
+    hi = *(__idata uint8_t *)0x16;
+    lo = *(__idata uint8_t *)0x17;
+
+    return ((uint16_t)hi << 8) | lo;
+}
+
+/*
+ * usb_reset_interface - Reset USB interface state
+ * Address: Derived from multiple reset sequences in firmware
+ *
+ * Clears various USB state variables to reset the interface.
+ */
+/* Note: usb_reset_interface is now in state_helpers.c with correct signature for protocol.c */
+
+void usb_reset_interface_full(void)
+{
+    /* Clear transfer flags */
+    G_USB_TRANSFER_FLAG = 0;
+    G_TRANSFER_FLAG_0AF2 = 0;
+
+    /* Clear endpoint dispatch values */
+    G_EP_DISPATCH_VAL1 = 0;
+    G_EP_DISPATCH_VAL2 = 0;
+    G_EP_DISPATCH_OFFSET = 0;
+
+    /* Clear IDATA state */
+    *(__idata uint8_t *)0x6A = 0;
+    *(__idata uint8_t *)0x39 = 0;
+
+    /* Clear processing flag */
+    G_STATE_FLAG_06E6 = 0;
+}
+
+/*
+ * usb_func_1b7e - Load IDATA dword and transfer to XDATA
+ * Address: 0x1b7e-0x1b85 (8 bytes)
+ *
+ * Loads dword from IDATA[0x09], then stores to IDATA[0x6B].
+ */
+void usb_func_1b7e(void)
+{
+    __idata uint8_t *src = (__idata uint8_t *)0x09;
+    __idata uint8_t *dst = (__idata uint8_t *)0x6B;
+    dst[0] = src[0];
+    dst[1] = src[1];
+    dst[2] = src[2];
+    dst[3] = src[3];
+}
+
+/*
+ * usb_func_1b88 - Calculate address 0x009F + IDATA[0x3E] and read
+ * Address: 0x1b88-0x1b95 (14 bytes)
+ */
+uint8_t usb_func_1b88(uint8_t input)
+{
+    uint8_t offset = *(__idata uint8_t *)0x3E;
+    uint16_t addr = 0x009F + offset;
+    (void)input;
+    return XDATA8(addr);
+}
+
+/*
+ * usb_func_1b96 - EP config lookup with multiply
+ * Address: 0x1b96-0x1ba4 (15 bytes)
+ *
+ * Reads G_SYS_STATUS_SECONDARY (0x0465), multiplies by 0x14 (20),
+ * adds to base 0x054E, reads byte from result.
+ */
+uint8_t usb_func_1b96(void)
+{
+    uint8_t status = G_SYS_STATUS_SECONDARY;
+    uint16_t addr = 0x054E + ((uint16_t)status * 0x14);
+    return XDATA8(addr);
+}
+
+/*
+ * usb_func_1ba5 - Read 16-bit value from G_BUF_ADDR (0x0218/0x0219)
+ * Address: 0x1ba5-0x1bad (9 bytes)
+ */
+uint16_t usb_func_1ba5(void)
+{
+    uint8_t hi = G_BUF_ADDR_HI;
+    uint8_t lo = G_BUF_ADDR_LO;
+    return ((uint16_t)hi << 8) | lo;
+}
+
+/*
+ * usb_func_1bae - Extract bits from IDATA[0x12] (shift right 5)
+ * Address: 0x1bae-0x1bc0 (19 bytes)
+ */
+uint8_t usb_func_1bae(void)
+{
+    uint8_t val = *(__idata uint8_t *)0x12;
+    return (val >> 5) & 0x07;
+}
+
+/*
+ * usb_func_1bc1 - Add offset 0x0F to address in A:R2
+ * Address: 0x1bc1-0x1bca (10 bytes)
+ */
+__xdata uint8_t *usb_func_1bc1(uint8_t addr_lo, uint8_t addr_hi)
+{
+    uint16_t addr = ((uint16_t)addr_hi << 8) | addr_lo;
+    addr += 0x0F;
+    return (__xdata uint8_t *)addr;
+}
+
+/*
+ * usb_func_1bcb - Load from IDATA[0x6B] and store to IDATA[0x6F]
+ * Address: 0x1bcb-0x1bd4 (10 bytes)
+ */
+void usb_func_1bcb(void)
+{
+    __idata uint8_t *src = (__idata uint8_t *)0x6B;
+    __idata uint8_t *dst = (__idata uint8_t *)0x6F;
+    dst[0] = src[0];
+    dst[1] = src[1];
+    dst[2] = src[2];
+    dst[3] = src[3];
+}
+
+/*
+ * usb_func_1bde - Set EP0 config bit 0
+ * Address: 0x1bde-0x1be7 (10 bytes)
+ */
+void usb_func_1bde(void)
+{
+    uint8_t val = REG_USB_EP0_CONFIG;
+    val = (val & 0xFE) | 0x01;
+    REG_USB_EP0_CONFIG = val;
+}
+
+/*
+ * usb_func_1be8 - Calculate address 0x0456 + G_SYS_STATUS_PRIMARY
+ * Address: 0x1be8-0x1bf5 (14 bytes)
+ */
+__xdata uint8_t *usb_func_1be8(void)
+{
+    uint8_t status = G_SYS_STATUS_PRIMARY;
+    uint16_t addr = 0x0456 + status;
+    return (__xdata uint8_t *)addr;
+}
+
+/*
+ * usb_func_1bf6 - Buffer offset calculation with multiply
+ * Address: 0x1bf6-0x1c0a+ (continues)
+ */
+void usb_func_1bf6(uint8_t index)
+{
+    uint16_t offset = (uint16_t)index * 0x40;
+    uint8_t base_lo = G_BUF_BASE_LO;
+    uint8_t base_hi = G_BUF_BASE_HI;
+    uint16_t result = ((uint16_t)base_hi << 8) | base_lo;
+    result += offset;
+    G_BUF_OFFSET_HI = (uint8_t)(result >> 8);
+    G_BUF_OFFSET_LO = (uint8_t)(result & 0xFF);
+}
+
+/*
+ * usb_func_1c0f - Calculate address 0x000C + IDATA[0x3C]
+ * Address: 0x1c0f-0x1c1a (12 bytes)
+ */
+__xdata uint8_t *usb_func_1c0f(void)
+{
+    uint8_t offset = *(__idata uint8_t *)0x3C;
+    uint16_t addr = 0x000C + offset;
+    return (__xdata uint8_t *)addr;
+}
+
+/*
+ * usb_func_1c22 - Check SCSI control counter
+ * Address: 0x1c22-0x1c29 (8 bytes)
+ *
+ * Reads G_SCSI_CTRL (0x0171), subtracts 0 with borrow, returns carry flag.
+ */
+uint8_t usb_func_1c22(void)
+{
+    return (G_SCSI_CTRL != 0) ? 1 : 0;
+}
+
+/*
+ * usb_func_1c2a - Lookup in table 0x5CAD
+ * Address: 0x1c2a-0x1c39 (16 bytes)
+ *
+ * Multiplies IDATA[0x3C] by 2, adds to 0x5CAD, reads code table.
+ */
+uint8_t usb_func_1c2a(uint8_t input)
+{
+    uint8_t idx = *(__idata uint8_t *)0x3C;
+    uint16_t addr = 0x5CAD + ((uint16_t)idx * 2);
+    (void)input;
+    /* Read from CODE space via movc */
+    return XDATA8(addr + 1);  /* Second byte of table entry */
+}
+
+/*
+ * usb_func_1c3a - Add values and mask, store result
+ * Address: 0x1c3a-0x1c49 (16 bytes)
+ *
+ * Reads DPTR, adds to 0x0216, masks to 5 bits, stores to 0x01B4.
+ */
+void usb_func_1c3a(__xdata uint8_t *ptr)
+{
+    uint8_t val = *ptr;
+    uint8_t base = XDATA8(0x0216);
+    uint8_t result = (val + base) & 0x1F;
+    XDATA8(0x01B4) = result;
+}
+
+/*
+ * usb_func_1c4a - Store to DMA mode and params
+ * Address: 0x1c4a-0x1c54 (11 bytes)
+ *
+ * Writes A to 0x0203 (DMA mode), 0x020D (DMA param1), 0x020E (DMA param2).
+ */
+void usb_func_1c4a(uint8_t val)
+{
+    G_DMA_MODE_SELECT = val;
+    G_DMA_PARAM1 = val;
+    G_DMA_PARAM2 = val;
+}
+
+/*
+ * usb_func_1c55 - Read C415 status masked
+ * Address: 0x1c55-0x1c5c (8 bytes)
+ *
+ * Stores input in R7, reads REG_NVME_DEV_STATUS, masks bits 7-6, returns.
+ */
+uint8_t usb_func_1c55(uint8_t input)
+{
+    (void)input;
+    return REG_NVME_DEV_STATUS & 0xC0;
+}
+
+/*
+ * usb_func_1c5d - Read from address + 0x05A8, store to 0x05A6
+ * Address: 0x1c5d-0x1c6c (16 bytes)
+ *
+ * Reads DPTR, adds 0xA8, reads from 0x05XX, stores to G_PCIE_TXN_COUNT_LO.
+ */
+void usb_func_1c5d(__xdata uint8_t *ptr)
+{
+    uint8_t val = *ptr;
+    uint16_t addr = 0x05A8 + val;
+    val = XDATA8(addr);
+    G_PCIE_TXN_COUNT_LO = val;
+}
+
+/*
+ * usb_func_1c6d - Subtract R6:R7 from IDATA[0x16:0x17]
+ * Address: 0x1c6d-0x1c76 (10 bytes)
+ */
+void usb_func_1c6d(uint8_t hi, uint8_t lo)
+{
+    __idata uint8_t *ptr = (__idata uint8_t *)0x16;
+    uint8_t val_lo = ptr[1];
+    uint8_t val_hi = ptr[0];
+
+    /* Subtract with borrow */
+    if (val_lo < lo) {
+        val_hi--;
+    }
+    val_lo -= lo;
+    val_hi -= hi;
+
+    ptr[1] = val_lo;
+    ptr[0] = val_hi;
+}
+
+/*
+ * usb_func_1c77 - Read NVMe command param masked
+ * Address: 0x1c77-0x1c7d (7 bytes)
+ *
+ * Reads REG_NVME_CMD_PARAM (0xC429), masks bits 7-5, returns.
+ */
+uint8_t usb_func_1c77(void)
+{
+    return XDATA8(0xC429) & 0xE0;
+}
+
+/*
+ * usb_func_1c88 - Set DPTR to 0x01XX
+ * Address: 0x1c88-0x1c8f (8 bytes)
+ *
+ * Takes A, makes DPTR = 0x01XX where XX = A.
+ */
+__xdata uint8_t *usb_func_1c88(uint8_t lo)
+{
+    return (__xdata uint8_t *)(0x0100 | lo);
+}
+
+/*
+ * usb_func_1c90 - Lookup in EP config table with multiply
+ * Address: 0x1c90-0x1c9e (15 bytes)
+ *
+ * Reads G_PCIE_TXN_COUNT_LO (0x05A6), multiplies by 0x22 (34),
+ * adds to 0x05B4, reads result.
+ */
+uint8_t usb_func_1c90(void)
+{
+    uint8_t idx = G_PCIE_TXN_COUNT_LO;
+    uint16_t addr = 0x05B4 + ((uint16_t)idx * 0x22);
+    return XDATA8(addr);
+}
+
+/*
+ * usb_func_1c9f - Call core handler and helper
+ * Address: 0x1c9f-0x1ca4 (6 bytes)
+ *
+ * Calls core_handler_4ff2 (protocol core), then calls 0x4e6d helper.
+ *
+ * Original disassembly:
+ *   1c9f: lcall 0x4ff2      ; core_handler_4ff2
+ *   1ca2: lcall 0x4e6d      ; helper function
+ */
+void usb_func_1c9f(void)
+{
+    /* Calls core handler and nvme helper */
+    /* core_handler_4ff2();  TODO: link when implemented */
+    /* helper_4e6d();        TODO: link when implemented */
+}
+
+/*
+ * usb_func_1ca5 - Read IDATA 16-bit and OR to check non-zero
+ * Address: 0x1ca5-0x1cad (9 bytes)
+ *
+ * Reads IDATA[0x16] into R4, IDATA[0x17] into R5, ORs them together.
+ * Returns non-zero if either byte is set.
+ *
+ * Original disassembly:
+ *   1ca5: mov r0, #0x16
+ *   1ca7: mov a, @r0        ; A = IDATA[0x16]
+ *   1ca8: mov r4, a         ; R4 = A
+ *   1ca9: inc r0
+ *   1caa: mov a, @r0        ; A = IDATA[0x17]
+ *   1cab: mov r5, a         ; R5 = A
+ *   1cac: orl a, r4         ; A = R4 | R5
+ *   1cad: ret
+ */
+uint8_t usb_func_1ca5(void)
+{
+    __idata uint8_t *ptr = (__idata uint8_t *)0x16;
+    return ptr[0] | ptr[1];
+}
+
+/*
+ * usb_func_1cae - Increment counter at 0x0B00 with mask
+ * Address: 0x1cae-0x1cb6 (9 bytes)
+ *
+ * Reads 0x0B00, increments, masks to 5 bits, writes back.
+ *
+ * Original disassembly:
+ *   1cae: mov dptr, #0x0b00
+ *   1cb1: movx a, @dptr     ; A = [0x0B00]
+ *   1cb2: inc a             ; A++
+ *   1cb3: anl a, #0x1f      ; A &= 0x1F
+ *   1cb5: movx @dptr, a     ; [0x0B00] = A
+ *   1cb6: ret
+ */
+void usb_func_1cae(void)
+{
+    uint8_t val = G_USB_PARAM_0B00;
+    val = (val + 1) & 0x1F;
+    G_USB_PARAM_0B00 = val;
+}
+
+/*
+ * usb_func_1cb7 - Calculate address 0x012B + A
+ * Address: 0x1cb7-0x1cc0 (10 bytes)
+ *
+ * Adds 0x2B to input A, returns DPTR = 0x01XX.
+ *
+ * Original disassembly:
+ *   1cb7: add a, #0x2b      ; A += 0x2B
+ *   1cb9: mov 0x82, a       ; DPL = A
+ *   1cbb: clr a
+ *   1cbc: addc a, #0x01     ; DPH = 0x01 + carry
+ *   1cbe: mov 0x83, a
+ *   1cc0: ret
+ */
+__xdata uint8_t *usb_func_1cb7(uint8_t offset)
+{
+    uint16_t addr = 0x0100 + offset + 0x2B;
+    return (__xdata uint8_t *)addr;
+}
+
+/*
+ * usb_func_1cc1 - Store 0x84 to 0x0564
+ * Address: 0x1cc1-0x1cc7 (7 bytes)
+ *
+ * Writes constant 0x84 to G_CONFIG_FLAG_0564.
+ *
+ * Original disassembly:
+ *   1cc1: mov dptr, #0x0564
+ *   1cc4: mov a, #0x84
+ *   1cc6: movx @dptr, a
+ *   1cc7: ret
+ */
+void usb_func_1cc1(void)
+{
+    G_CONFIG_FLAG_0564 = 0x84;
+}
+
+/*
+ * usb_func_1cc8 - Copy IDATA 16-bit to DPTR
+ * Address: 0x1cc8-0x1cd3 (12 bytes)
+ *
+ * Reads IDATA[0x16:0x17], stores to DPTR (passed in).
+ *
+ * Original disassembly:
+ *   1cc8: mov r0, #0x16
+ *   1cca: mov a, @r0        ; A = IDATA[0x16]
+ *   1ccb: mov r7, a         ; R7 = high byte
+ *   1ccc: inc r0
+ *   1ccd: mov a, @r0        ; A = IDATA[0x17]
+ *   1cce: xch a, r7         ; swap: A=high, R7=low
+ *   1ccf: movx @dptr, a     ; store high byte
+ *   1cd0: inc dptr
+ *   1cd1: mov a, r7
+ *   1cd2: movx @dptr, a     ; store low byte
+ *   1cd3: ret
+ */
+void usb_func_1cc8(__xdata uint8_t *ptr)
+{
+    __idata uint8_t *idata = (__idata uint8_t *)0x16;
+    ptr[0] = idata[0];  /* high byte */
+    ptr[1] = idata[1];  /* low byte */
+}
+
+/*
+ * usb_func_1cd4 - Clear bit 1 of C401
+ * Address: 0x1cd4-0x1cdb (8 bytes)
+ *
+ * Reads 0xC401, masks off bit 1 (ANL with 0xFD), writes back.
+ *
+ * Original disassembly:
+ *   1cd4: mov dptr, #0xc401
+ *   1cd7: movx a, @dptr
+ *   1cd8: anl a, #0xfd      ; clear bit 1
+ *   1cda: movx @dptr, a
+ *   1cdb: ret
+ */
+void usb_func_1cd4(void)
+{
+    uint8_t val = XDATA8(0xC401);
+    val &= 0xFD;
+    XDATA8(0xC401) = val;
+}
+
+/*
+ * usb_func_1cdc - Add 0x20 to global at 0x053A
+ * Address: 0x1cdc-0x1ce3 (8 bytes)
+ *
+ * Reads 0x053A, adds 0x20, writes back.
+ *
+ * Original disassembly:
+ *   1cdc: mov dptr, #0x053a
+ *   1cdf: movx a, @dptr
+ *   1ce0: add a, #0x20
+ *   1ce2: movx @dptr, a
+ *   1ce3: ret
+ */
+void usb_func_1cdc(void)
+{
+    uint8_t val = G_CONFIG_053A;
+    val += 0x20;
+    G_CONFIG_053A = val;
+}
+
+/*
+ * usb_func_1ce4 - Calculate address 0x04B7 + IDATA[0x23]
+ * Address: 0x1ce4-0x1cef (12 bytes)
+ *
+ * Adds 0xB7 to IDATA[0x23], returns DPTR = 0x04XX.
+ *
+ * Original disassembly:
+ *   1ce4: mov a, #0xb7
+ *   1ce6: add a, 0x23       ; A = 0xB7 + IDATA[0x23]
+ *   1ce8: mov 0x82, a       ; DPL
+ *   1cea: clr a
+ *   1ceb: addc a, #0x04     ; DPH = 0x04 + carry
+ *   1ced: mov 0x83, a
+ *   1cef: ret
+ */
+__xdata uint8_t *usb_func_1ce4(void)
+{
+    uint8_t offset = *(__idata uint8_t *)0x23;
+    uint16_t addr = 0x0400 + 0xB7 + offset;
+    return (__xdata uint8_t *)addr;
+}
+
+/*
+ * usb_func_1cf0 - Initialize transfer with R7=5
+ * Address: 0x1cf0-0x1cfb (12 bytes)
+ *
+ * Sets R3=0, R5=0x20, R7=5, calls 0x523C, returns R7=5.
+ *
+ * Original disassembly:
+ *   1cf0: clr a
+ *   1cf1: mov r3, a         ; R3 = 0
+ *   1cf2: mov r5, #0x20     ; R5 = 0x20
+ *   1cf4: mov r7, #0x05     ; R7 = 5
+ *   1cf6: lcall 0x523c      ; helper function
+ *   1cf9: mov r7, #0x05     ; R7 = 5
+ *   1cfb: ret
+ */
+uint8_t usb_func_1cf0(void)
+{
+    /* Calls transfer setup helper with params:
+     * R3=0 (some flag), R5=0x20 (size), R7=5 (mode/type) */
+    /* helper_523c(0, 0x20, 5);  TODO: link when implemented */
+    return 5;
+}
+
+/*
+ * usb_func_1cfc - Write 0x08, 0x02 to USB regs 0x9093-0x9094
+ * Address: 0x1cfc-0x1d06 (11 bytes)
+ *
+ * Writes 0x08 to 0x9093, 0x02 to 0x9094.
+ *
+ * Original disassembly:
+ *   1cfc: mov dptr, #0x9093
+ *   1cff: mov a, #0x08
+ *   1d01: movx @dptr, a     ; [0x9093] = 0x08
+ *   1d02: inc dptr
+ *   1d03: mov a, #0x02
+ *   1d05: movx @dptr, a     ; [0x9094] = 0x02
+ *   1d06: ret
+ */
+void usb_func_1cfc(void)
+{
+    XDATA8(0x9093) = 0x08;
+    XDATA8(0x9094) = 0x02;
+}
+
+/*
+ * usb_func_1d07 - Write 0x02, 0x10 to USB regs 0x9093-0x9094
+ * Address: 0x1d07-0x1d11 (11 bytes)
+ *
+ * Writes 0x02 to 0x9093, 0x10 to 0x9094.
+ *
+ * Original disassembly:
+ *   1d07: mov dptr, #0x9093
+ *   1d0a: mov a, #0x02
+ *   1d0c: movx @dptr, a     ; [0x9093] = 0x02
+ *   1d0d: inc dptr
+ *   1d0e: mov a, #0x10
+ *   1d10: movx @dptr, a     ; [0x9094] = 0x10
+ *   1d11: ret
+ */
+void usb_func_1d07(void)
+{
+    XDATA8(0x9093) = 0x02;
+    XDATA8(0x9094) = 0x10;
+}
+
+/*
+ * usb_func_1d12 - Code table lookup
+ * Address: 0x1d12-0x1d1c (11 bytes)
+ *
+ * Takes A, uses it as offset from DPTR into code table.
+ * Returns XDATA read from calculated address.
+ *
+ * Original disassembly:
+ *   1d12: mov r5, a         ; R5 = input
+ *   1d13: clr a
+ *   1d14: movc a, @a+dptr   ; A = CODE[DPTR]
+ *   1d15: addc a, #0x00     ; add carry
+ *   1d17: mov 0x82, r5      ; DPL = R5
+ *   1d19: mov 0x83, a       ; DPH = A
+ *   1d1b: movx a, @dptr     ; read XDATA
+ *   1d1c: ret
+ */
+uint8_t usb_func_1d12(__code uint8_t *code_ptr, uint8_t offset)
+{
+    uint8_t hi = *code_ptr;
+    uint16_t addr = ((uint16_t)hi << 8) | offset;
+    return XDATA8(addr);
+}
+
+/*
+ * usb_func_1d1d - Write 0x01 to 0x0B2E
+ * Address: 0x1d1d-0x1d23 (7 bytes)
+ *
+ * Writes constant 0x01 to 0x0B2E.
+ *
+ * Original disassembly:
+ *   1d1d: mov dptr, #0x0b2e
+ *   1d20: mov a, #0x01
+ *   1d22: movx @dptr, a
+ *   1d23: ret
+ */
+void usb_func_1d1d(void)
+{
+    XDATA8(0x0B2E) = 0x01;
+}
+
+/*
+ * usb_func_1d24 - Read C414 masked to bits 7-6
+ * Address: 0x1d24-0x1d2a (7 bytes)
+ *
+ * Reads 0xC414, masks to bits 7-6 (0xC0).
+ *
+ * Original disassembly:
+ *   1d24: mov dptr, #0xc414
+ *   1d27: movx a, @dptr
+ *   1d28: anl a, #0xc0
+ *   1d2a: ret
+ */
+uint8_t usb_func_1d24(void)
+{
+    return XDATA8(0xC414) & 0xC0;
+}
+
+/*
+ * usb_func_1d2b - Set bit 7 at DPTR
+ * Address: 0x1d2b-0x1d31 (7 bytes)
+ *
+ * Reads byte at DPTR, clears bit 7, sets bit 7, writes back.
+ *
+ * Original disassembly:
+ *   1d2b: movx a, @dptr
+ *   1d2c: anl a, #0x7f      ; clear bit 7
+ *   1d2e: orl a, #0x80      ; set bit 7
+ *   1d30: movx @dptr, a
+ *   1d31: ret
+ */
+void usb_func_1d2b(__xdata uint8_t *ptr)
+{
+    uint8_t val = *ptr;
+    val = (val & 0x7F) | 0x80;
+    *ptr = val;
+}
+
+/*
+ * usb_func_1d32 - Store R6:A to IDATA[0x16:0x17]
+ * Address: 0x1d32-0x1d38 (7 bytes)
+ *
+ * Stores A to IDATA[0x17], R6 to IDATA[0x16].
+ *
+ * Original disassembly:
+ *   1d32: mov r1, #0x17
+ *   1d34: mov @r1, a        ; IDATA[0x17] = A (low)
+ *   1d35: mov a, r6
+ *   1d36: dec r1
+ *   1d37: mov @r1, a        ; IDATA[0x16] = R6 (high)
+ *   1d38: ret
+ */
+void usb_func_1d32(uint8_t hi, uint8_t lo)
+{
+    __idata uint8_t *ptr = (__idata uint8_t *)0x16;
+    ptr[0] = hi;
+    ptr[1] = lo;
+}
+
+/*
+ * usb_func_1d39 - Add to 0x014E with mask
+ * Address: 0x1d39-0x1d42 (10 bytes)
+ *
+ * Reads 0x014E, adds input, masks to 5 bits, writes back.
+ *
+ * Original disassembly:
+ *   1d39: mov r7, a         ; R7 = input
+ *   1d3a: mov dptr, #0x014e
+ *   1d3d: movx a, @dptr     ; A = [0x014E]
+ *   1d3e: add a, r7         ; A += R7
+ *   1d3f: anl a, #0x1f      ; A &= 0x1F
+ *   1d41: movx @dptr, a
+ *   1d42: ret
+ */
+void usb_func_1d39(uint8_t val)
+{
+    uint8_t cur = XDATA8(0x014E);
+    cur = (cur + val) & 0x1F;
+    XDATA8(0x014E) = cur;
+}

@@ -550,10 +550,11 @@ void reg_wait_bit_clear(uint16_t addr, uint8_t mask, uint8_t flags, uint8_t time
 }
 
 /*
- * usb_func_1b14 - USB helper function
+ * usb_func_1b14 - USB address helper function
  * Address: 0x1b14
  *
- * Takes parameter, returns computed value.
+ * Takes single param, returns computed value.
+ * Used by protocol.c core_handler_4ff2.
  */
 uint8_t usb_func_1b14(uint8_t param)
 {
@@ -592,6 +593,7 @@ uint8_t usb_func_1b23(void)
  * Address: 0x1bc3
  *
  * Resets USB interface with given parameter.
+ * Used by protocol.c core_handler_4ff2.
  */
 void usb_reset_interface(uint8_t param)
 {
