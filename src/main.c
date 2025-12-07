@@ -481,7 +481,7 @@ void reg_set_bit_0(uint16_t reg_addr)
  */
 void reg_set_bit_0_cpu_exec(void)
 {
-    REG_CPU_EXEC_STATUS = (REG_CPU_EXEC_STATUS & 0xFE) | 0x01;
+    REG_CPU_EXEC_STATUS = (REG_CPU_EXEC_STATUS & ~CPU_EXEC_STATUS_ACTIVE) | CPU_EXEC_STATUS_ACTIVE;
 }
 
 /*===========================================================================
@@ -682,7 +682,7 @@ void handler_4fb6(void)
 
     /* Poll PHY status register until bits 4 or 5 are set */
     /* This waits for PHY link training to complete */
-    while ((REG_PHY_EXT_B3 & 0x30) == 0);
+    while ((REG_PHY_EXT_B3 & PHY_EXT_LINK_READY) == 0);
 
     /* 0x0462 -> dispatches to some handler */
 
@@ -723,7 +723,7 @@ void handler_0327(void)
 
     /* Set bit 7 of power control register 0x92C0 */
     val = REG_POWER_ENABLE;
-    val = (val & 0x7F) | 0x80;
+    val = (val & ~POWER_ENABLE_MAIN) | POWER_ENABLE_MAIN;
     REG_POWER_ENABLE = val;
 
     /* Configure USB PHY control register */
@@ -1422,8 +1422,8 @@ peripheral_handler:
         }
         if (status & 0x80) {
             REG_BUF_CFG_9301 = 0x80;
-            /* Modify 0x92E0: (val & 0xFD) | 0x02 */
-            REG_POWER_DOMAIN = (REG_POWER_DOMAIN & 0xFD) | 0x02;
+            /* Modify 0x92E0: set bit 1 */
+            REG_POWER_DOMAIN = (REG_POWER_DOMAIN & ~POWER_DOMAIN_BIT1) | POWER_DOMAIN_BIT1;
             /* Call 0x0363 dispatch */
             goto usb_master_handler;
         }

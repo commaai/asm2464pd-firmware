@@ -964,7 +964,7 @@ void dma_init_channel_with_config(uint8_t config)
     *(__xdata uint8_t *)(0x0460) = 0x01;
 
     /* Set bit 0 in DMA status 2 */
-    REG_DMA_STATUS2 = (REG_DMA_STATUS2 & 0xFE) | 0x01;
+    REG_DMA_STATUS2 = (REG_DMA_STATUS2 & ~DMA_STATUS2_TRIGGER) | DMA_STATUS2_TRIGGER;
 }
 
 /*
@@ -1295,7 +1295,7 @@ void transfer_init_dma_params(uint8_t param)
     /* reg_wait_bit_clear(0x045E, 0x00, 0xA0, 0x01) */
 
     /* Set bit 0 in REG_DMA_STATUS2 (0xC8D8) */
-    REG_DMA_STATUS2 = (REG_DMA_STATUS2 & 0xFE) | 0x01;
+    REG_DMA_STATUS2 = (REG_DMA_STATUS2 & ~DMA_STATUS2_TRIGGER) | DMA_STATUS2_TRIGGER;
 }
 
 /*

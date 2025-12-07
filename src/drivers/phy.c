@@ -165,17 +165,17 @@ void phy_init_sequence(void)
 
     /* Enable power 0x92C0 bit 0 */
     val = REG_POWER_ENABLE;
-    val = (val & 0xFE) | 0x01;
+    val = (val & ~POWER_ENABLE_BIT) | POWER_ENABLE_BIT;
     REG_POWER_ENABLE = val;
 
     /* Enable clock 0x92C1 bit 0 */
     val = REG_CLOCK_ENABLE;
-    val = (val & 0xFE) | 0x01;
+    val = (val & ~CLOCK_ENABLE_BIT) | CLOCK_ENABLE_BIT;
     REG_CLOCK_ENABLE = val;
 
     /* Set PHY power 0x92C5 bit 2 */
     val = REG_PHY_POWER;
-    val = (val & 0xFB) | 0x04;
+    val = (val & ~PHY_POWER_ENABLE) | PHY_POWER_ENABLE;
     REG_PHY_POWER = val;
 
     /* Configure USB PHY 0x9241 bit 4 */
@@ -225,10 +225,10 @@ void phy_init_sequence(void)
  */
 void phy_config_link_params(void)
 {
-    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & 0xF7) | 0x08;
-    REG_PHY_EXT_56 = REG_PHY_EXT_56 & 0xDF;
-    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & 0xDF) | 0x20;
-    REG_PHY_EXT_2D = (REG_PHY_EXT_2D & 0xE0) | 0x07;
+    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & ~PHY_EXT_ENABLE) | PHY_EXT_ENABLE;
+    REG_PHY_EXT_56 = REG_PHY_EXT_56 & ~PHY_EXT_SIGNAL_CFG;
+    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & ~PHY_EXT_MODE) | PHY_EXT_MODE;
+    REG_PHY_EXT_2D = (REG_PHY_EXT_2D & ~PHY_EXT_LANE_MASK) | PHY_EXT_LANE_MASK;
 }
 
 /*
@@ -249,7 +249,7 @@ void phy_config_link_params(void)
 uint8_t phy_poll_link_ready(void)
 {
     uint8_t val = REG_PHY_EXT_B3;
-    val &= 0x30;  /* Mask bits 4,5 */
+    val &= PHY_EXT_LINK_READY;  /* Mask bits 4,5 */
     return val;
 }
 

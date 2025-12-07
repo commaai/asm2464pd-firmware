@@ -825,47 +825,111 @@ void helper_0206(uint8_t r5, uint8_t r7)
 
 /*
  * helper_45d0 - Transfer control helper
- * Address: 0x45d0
+ * Address: 0x45d0-0x4663+ (complex)
  *
- * Handles transfer control operations.
+ * Handles transfer control operations. Clears 0x044D, then computes
+ * an index based on param (r7) + 0x7C, calls helper functions, and
+ * manages queue state.
+ *
+ * Original disassembly:
+ *   45d0: clr a
+ *   45d1: mov dptr, #0x044d
+ *   45d4: movx @dptr, a          ; Clear 0x044D
+ *   45d5: mov a, #0x7c
+ *   45d7: add a, r7              ; a = param + 0x7c
+ *   45d8: lcall 0x166f           ; Call helper with computed index
+ *   45db: movx a, @dptr          ; Read result
+ *   45dc: mov r6, a
+ *   45dd: cjne a, #0x01, 0x45e9  ; If result != 1, skip
+ *   ... (complex state machine logic)
  */
 void helper_45d0(uint8_t param)
 {
-    /* TODO: Implement from address 0x45d0 */
+    uint8_t result;
+
+    /* Clear state at 0x044D */
+    *(__xdata uint8_t *)0x044D = 0;
+
+    /* TODO: The full implementation requires:
+     * - Call to 0x166f with (param + 0x7c) to get index
+     * - Compare result == 1 for special path
+     * - Multiple helper calls (0x1752, 0x15d4, 0x1646, 0x17cd)
+     * - Queue management with checks against 2 and 4
+     */
+    (void)result;
     (void)param;
 }
 
 /*
- * helper_0421 - Endpoint configuration
- * Address: 0x0421
+ * helper_0421 - Register initialization for 0xE65F
+ * Address: 0x0421-0x0424 (5 bytes)
  *
- * Configures endpoint with given parameter.
+ * Part of register initialization table. Sets DPTR = 0xE65F and
+ * jumps to 0x0300 to perform common initialization.
+ *
+ * The effect is to clear/initialize register 0xE65F.
+ *
+ * Original disassembly:
+ *   0421: mov dptr, #0xe65f
+ *   0424: ajmp 0x0300
  */
 void helper_0421(uint8_t param)
 {
-    /* TODO: Implement from address 0x0421 */
     (void)param;
+    /* Clear/initialize the register at 0xE65F */
+    *(__xdata uint8_t *)0xE65F = 0;
 }
 
 /*
- * helper_0417 - State helper
- * Address: 0x0417
+ * helper_0417 - Register initialization for 0xE62F
+ * Address: 0x0417-0x041a (5 bytes)
  *
- * Called during state transitions.
+ * Part of register initialization table. Sets DPTR = 0xE62F and
+ * jumps to 0x0300 to perform common initialization.
+ *
+ * The effect is to clear/initialize register 0xE62F.
+ *
+ * Original disassembly:
+ *   0417: mov dptr, #0xe62f
+ *   041a: ajmp 0x0300
  */
 void helper_0417(void)
 {
-    /* TODO: Implement from address 0x0417 */
+    /* Clear/initialize the register at 0xE62F */
+    *(__xdata uint8_t *)0xE62F = 0;
 }
 
 /*
- * helper_16f3 - Transfer/state helper
- * Address: 0x16f3
+ * helper_16f3 - DMA status bit clear
+ * Address: 0x16f3-0x16fe (12 bytes)
  *
- * Called when state matches.
+ * Clears bits 3 and 2 of DMA status register 0xC8D6.
+ * This is used to acknowledge/clear DMA interrupt flags.
+ *
+ * Original disassembly:
+ *   16f3: mov dptr, #0xc8d6
+ *   16f6: movx a, @dptr          ; Read DMA status
+ *   16f7: anl a, #0xf7           ; Clear bit 3 (0xF7 = 11110111)
+ *   16f9: movx @dptr, a          ; Write back
+ *   16fa: movx a, @dptr          ; Read again
+ *   16fb: anl a, #0xfb           ; Clear bit 2 (0xFB = 11111011)
+ *   16fd: movx @dptr, a          ; Write back
+ *   16fe: ret
  */
 void helper_16f3(void)
 {
-    /* TODO: Implement from address 0x16f3 */
+    uint8_t status;
+
+    /* Read DMA status register */
+    status = REG_DMA_STATUS;
+
+    /* Clear bit 3 */
+    status &= 0xF7;
+    REG_DMA_STATUS = status;
+
+    /* Read again and clear bit 2 */
+    status = REG_DMA_STATUS;
+    status &= 0xFB;
+    REG_DMA_STATUS = status;
 }
 

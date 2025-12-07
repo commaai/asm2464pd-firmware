@@ -144,6 +144,7 @@ __idata __at(0x55) extern uint8_t I_WORK_55;   /* Work variable 0x55 */
 // Endpoint Dispatch Work Area (0x0A00-0x0BFF)
 //=============================================================================
 #define G_LOOP_STATE            XDATA_VAR8(0x0A59)  /* Main loop state flag */
+#define G_ACTION_CODE_0A83      XDATA_VAR8(0x0A83)  /* Action code storage for state_action_dispatch */
 #define G_EP_DISPATCH_VAL1      XDATA_VAR8(0x0A7B)  /* Endpoint dispatch value 1 */
 #define G_EP_DISPATCH_VAL2      XDATA_VAR8(0x0A7C)  /* Endpoint dispatch value 2 */
 #define G_EP_DISPATCH_VAL3      XDATA_VAR8(0x0A7D)  /* Endpoint dispatch value 3 */

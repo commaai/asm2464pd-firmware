@@ -964,7 +964,7 @@ void pcie_event_handler(void)
         if (event_ctrl & 0x02) {
             /* Event control bit 1 set */
             /* Check power status bit 6 */
-            if (REG_POWER_STATUS & 0x40) {
+            if (REG_POWER_STATUS & POWER_STATUS_SUSPENDED) {
                 /* Power event - set system state and call handler */
                 G_SYSTEM_STATE_0AE2 = 0x01;
                 /* Call 0xCA0D - system state handler */
@@ -993,7 +993,7 @@ void pcie_event_handler(void)
 
         /* Call 0xBC98 with R1=0x43 */
         /* Check bit 6 of result */
-        if (REG_POWER_STATUS & 0x40) {
+        if (REG_POWER_STATUS & POWER_STATUS_SUSPENDED) {
             /* Call 0xD916 with R7=0 */
             /* Call 0xBF8E */
         }

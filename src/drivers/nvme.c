@@ -949,12 +949,15 @@ void nvme_set_usb_ep_ctrl_bit2(__xdata uint8_t *ptr)
     *ptr = val;
 }
 
+/* External helper from protocol.c */
+extern void helper_53c0(void);
+
 /*
  * nvme_call_and_signal - Call function and signal via 0x90A1
  * Address: 0x3219-0x3222 (10 bytes)
  *
  * Calls function at 0x53c0, then writes 1 to 0x90A1.
- * Note: The function at 0x53c0 is not yet reverse engineered.
+ * The function at 0x53c0 copies IDATA[0x6F-0x72] to XDATA 0xD808-0xD80B.
  *
  * Original disassembly:
  *   3219: lcall 0x53c0         ; call function
@@ -965,8 +968,10 @@ void nvme_set_usb_ep_ctrl_bit2(__xdata uint8_t *ptr)
  */
 void nvme_call_and_signal(void)
 {
-    /* TODO: Call function at 0x53c0 when implemented */
-    /* For now, just set the signal register */
+    /* Call DMA buffer write helper */
+    helper_53c0();
+
+    /* Set the signal register */
     REG_USB_SIGNAL_90A1 = 0x01;
 }
 
@@ -1517,7 +1522,7 @@ extern void usb_func_1b47(void);
 void usb_check_status(uint8_t param_1, __xdata uint8_t *param_2)
 {
     *param_2 = param_1;
-    REG_NVME_CTRL_STATUS = (REG_NVME_CTRL_STATUS & 0xFD) | 0x02;
+    REG_NVME_CTRL_STATUS = (REG_NVME_CTRL_STATUS & ~NVME_CTRL_STATUS_READY) | NVME_CTRL_STATUS_READY;
 }
 
 /*
@@ -1940,9 +1945,9 @@ void nvme_state_handler(void)
 
         /* Mode 5 initialization */
         /* Set up NVMe doorbell register */
-        REG_NVME_DOORBELL = (REG_NVME_DOORBELL & 0xF7) | 0x08;  /* Set bit 3 */
-        REG_NVME_DOORBELL &= 0xFE;  /* Clear bit 0 */
-        REG_NVME_DOORBELL &= 0xF7;  /* Clear bit 3 */
+        REG_NVME_DOORBELL = (REG_NVME_DOORBELL & ~NVME_DOORBELL_MODE) | NVME_DOORBELL_MODE;  /* Set bit 3 */
+        REG_NVME_DOORBELL &= ~NVME_DOORBELL_TRIGGER;  /* Clear bit 0 */
+        REG_NVME_DOORBELL &= ~NVME_DOORBELL_MODE;  /* Clear bit 3 */
 
         /* Jump to common exit */
         goto common_exit;

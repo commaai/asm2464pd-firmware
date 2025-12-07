@@ -392,17 +392,111 @@ void state_add_offset_0x0e(uint8_t *lo, uint8_t *hi)
  * ============================================================================
  */
 
+/* External functions called by state_action_dispatch */
+extern uint8_t helper_3f4a(void);  /* 0x3f4a - Returns status */
+extern void helper_1d1d(void);     /* 0x1d1d - Setup helper */
+extern uint8_t helper_1c9f(void);  /* 0x1c9f - Check status, returns NZ on success */
+extern void helper_4f77(uint8_t param);  /* 0x4f77 - Processing helper */
+extern uint8_t helper_11a2(uint8_t param);  /* 0x11a2 - Transfer helper, returns status */
+extern void helper_5359(void);     /* 0x5359 - Buffer setup */
+extern uint8_t helper_1cd4(void);  /* 0x1cd4 - Returns status with bit 1 flag */
+extern void helper_1cc8(void);     /* 0x1cc8 - Register setup */
+extern void helper_1c22(void);     /* 0x1c22 - Carry flag helper */
+
 /*
  * state_action_dispatch - Dispatch state action
- * Address: 0x2bea
+ * Address: 0x2bea-0x2f66 (893 bytes)
  *
- * Takes action code in R7 and dispatches to appropriate handler.
- * Used by protocol_state_machine().
+ * This is a complex state machine dispatcher that:
+ * 1. Stores action_code to 0x0A83
+ * 2. Calls helper_3f4a to get initial status
+ * 3. Based on status and flags, performs various state operations
+ * 4. Returns status codes: 0 (success), 1, 3, 4, 5, or 0x80 (error/pending)
+ *
+ * Return values:
+ * - 0: Action completed successfully
+ * - 1: Pending, more processing needed
+ * - 3: Error with bit 1 set
+ * - 4: Error without bit 1
+ * - 5: Transfer error
+ * - 0x80: Error flag set
+ *
+ * Used by protocol_state_machine() in protocol.c.
  */
-void state_action_dispatch(uint8_t action_code)
+uint8_t state_action_dispatch(uint8_t action_code)
 {
-    /* TODO: Implement actual dispatch logic from 0x2bea */
-    (void)action_code;
+    uint8_t status;
+    uint8_t action_flags;
+
+    /* Store action code to global */
+    G_ACTION_CODE_0A83 = action_code;
+
+    /* Call initial status check - returns 0 on failure */
+    status = helper_3f4a();
+    *(__idata uint8_t *)0x3b = status;
+
+    /* If status is 0, return immediately */
+    if (status == 0) {
+        return 0;  /* ret at 0x2bf8 */
+    }
+
+    /* Setup helper */
+    helper_1d1d();
+
+    /* Read back action code and check bit 1 */
+    action_flags = G_ACTION_CODE_0A83;
+    if (!(action_flags & 0x02)) {
+        /* Bit 1 not set - write 1 to 0x07EA */
+        *(__xdata uint8_t *)0x07EA = 0x01;
+    }
+
+    /* Call status check helper */
+    status = helper_1c9f();
+    if (status == 0) {
+        return 5;  /* ret at 0x2c11 with r7=5 */
+    }
+
+    /* Write R4:R5 to 0xC426:0xC427 (from helper_1c9f) */
+    /* Read 4 bytes from 0xC4CC using helper_0d84 */
+    /* Store to IDATA 0x09, then to IDATA 0x6B-0x6E */
+    /* Call helper_0cab to compute */
+    /* Store R4-R7 to IDATA 0x6F-0x72 */
+
+    /* Check bit 1 of action code again */
+    action_flags = G_ACTION_CODE_0A83;
+    if (action_flags & 0x02) {
+        /* Bit 1 set - r7 = 0x80 */
+        status = 0x80;
+    } else {
+        status = 0;
+    }
+
+    /* Call 4f77 with status parameter */
+    helper_4f77(status);
+
+    /* If helper returns 0 */
+    action_flags = G_ACTION_CODE_0A83;
+    if (action_flags & 0x02) {
+        /* Bit 1 set */
+        return 3;  /* 0x2c55: r7=3 then ret */
+    } else {
+        return 4;  /* 0x2c50: r7=4 then ret */
+    }
+
+    /* Note: The actual function continues with much more complex logic
+     * involving NVMe register manipulation, buffer management, and
+     * state transitions. For now, this captures the key entry/exit behavior.
+     *
+     * The remaining code (0x2c58-0x2f66) handles:
+     * - Write 0x0E to 0x0470
+     * - Complex DMA and buffer setup via 0x1cc8
+     * - Transfer operations via 0x11a2
+     * - Status tracking in 0x0108, 0x012B
+     * - NVMe register writes to 0xC4xx
+     * - CE register operations (CE89, CE6C, CE3A, CE6E, CE00, CE01, CE60)
+     * - State loop management with IDATA 0x3a-0x3e
+     * - Final cleanup via 0x1d1d and return
+     */
 }
 
 /*
@@ -602,54 +696,117 @@ void reg_wait_bit_set(uint16_t addr)
 
 /*
  * usb_func_1b14 - USB address helper function
- * Address: 0x1b14
+ * Address: 0x1b14-0x1b1f (12 bytes, falls through to 0x1b20)
  *
- * Takes single param, returns computed value.
+ * Takes param in A, computes DPTR from param + R2*256, reads 4 bytes
+ * from that address, then writes to IDATA[0x12] and returns value at 0x0009.
+ *
+ * Original disassembly:
+ *   1b14: mov r1, a            ; R1 = param (low byte)
+ *   1b15: clr a
+ *   1b16: addc a, r2           ; A = R2 + carry (high byte)
+ *   1b17: mov 0x82, r1         ; DPL = R1 (param)
+ *   1b19: mov 0x83, a          ; DPH = R2
+ *   1b1b: lcall 0x0d84         ; Read 4 bytes from DPTR into R4-R7
+ *   1b1e: mov r0, #0x12        ; R0 = 0x12
+ *   1b20: lcall 0x0db9         ; Write R4-R7 to IDATA[0x12]
+ *   (continues to 0x1b23)
+ *
  * Used by protocol.c core_handler_4ff2.
  */
 uint8_t usb_func_1b14(uint8_t param)
 {
-    (void)param;
-    /* TODO: Implement from address 0x1b14 */
-    return 0;
+    /* Read 4 bytes from XDATA address (param as low byte, R2 as high)
+     * For simplicity, assuming R2=0, so address is just param */
+    __xdata uint8_t *src = (__xdata uint8_t *)(uint16_t)param;
+    __idata uint8_t *dst = (__idata uint8_t *)0x12;
+
+    /* Copy 4 bytes from XDATA to IDATA[0x12-0x15] */
+    dst[0] = src[0];
+    dst[1] = src[1];
+    dst[2] = src[2];
+    dst[3] = src[3];
+
+    /* Return value at 0x0009 (like usb_func_1b23) */
+    return *(__xdata uint8_t *)0x0009;
 }
 
 /*
- * usb_func_1b20 - USB helper function
- * Address: 0x1b20
+ * usb_func_1b20 - USB helper function / IDATA write
+ * Address: 0x1b20-0x1b22 (3 bytes)
  *
- * Takes parameter (register number), returns value.
+ * Calls 0x0db9 which writes R4-R7 to 4 bytes at IDATA[R0].
+ * The param is passed in R0 as the IDATA address.
+ * Since this function just calls 0x0db9 and falls through to 0x1b23,
+ * it writes to IDATA[param] and then returns the value at 0x0009.
+ *
+ * Original disassembly:
+ *   1b20: lcall 0x0db9      ; Write R4-R7 to IDATA[@R0]
+ *   1b23: (continues to usb_func_1b23)
+ *
+ * Note: The actual implementation continues into 1b23, so it:
+ * 1. Writes 4 bytes to IDATA[param]
+ * 2. Returns the value at XDATA 0x0009
  */
 uint8_t usb_func_1b20(uint8_t param)
 {
-    (void)param;
-    /* TODO: Implement from address 0x1b20 */
-    return 0;
+    /* Write 4 bytes to IDATA address specified by param */
+    /* The values to write would be in R4-R7 from the caller */
+    /* This is a pass-through to 0x0db9 - falls through to 1b23 */
+    __idata uint8_t *dst = (__idata uint8_t *)param;
+
+    /* For now, the write is stubbed as we don't have R4-R7 values */
+    /* The function continues to usb_func_1b23 logic */
+    (void)dst;
+
+    /* Return the value at 0x0009 (like usb_func_1b23) */
+    return *(__xdata uint8_t *)0x0009;
 }
 
 /*
  * usb_func_1b23 - USB helper function
- * Address: 0x1b23
+ * Address: 0x1b23-0x1b2a (8 bytes)
  *
- * Returns USB status value.
+ * Reads 3 bytes from 0x0007-0x0009 and returns the third byte (0x0009).
+ * This appears to read a stored address/value structure.
+ *
+ * Original disassembly:
+ *   1b23: mov dptr, #0x0007
+ *   1b26: lcall 0x0ddd      ; Read 3 bytes from DPTR into R3, R2, R1
+ *   1b29: mov a, r1         ; Return R1 (third byte at 0x0009)
+ *   1b2a: ret
  */
 uint8_t usb_func_1b23(void)
 {
-    /* TODO: Implement from address 0x1b23 */
-    return 0;
+    /* Read the third byte of the 3-byte value at 0x0007 */
+    return *(__xdata uint8_t *)0x0009;
 }
 
 /*
- * usb_reset_interface - Reset USB interface
- * Address: 0x1bc3
+ * usb_reset_interface - Set DPTR from param
+ * Address: 0x1bc3-0x1bca (8 bytes)
  *
- * Resets USB interface with given parameter.
+ * Takes param in A, computes DPTR from param (low) + R2 (high).
+ * This is used to set up a pointer for subsequent operations.
+ *
+ * Original disassembly:
+ *   1bc3: mov r1, a          ; R1 = param
+ *   1bc4: clr a
+ *   1bc5: addc a, r2         ; A = R2 + carry
+ *   1bc6: mov 0x82, r1       ; DPL = param
+ *   1bc8: mov 0x83, a        ; DPH = R2
+ *   1bca: ret
+ *
  * Used by protocol.c core_handler_4ff2.
  */
 void usb_reset_interface(uint8_t param)
 {
+    /* This function sets up DPTR for subsequent operations.
+     * In C we can't directly manipulate DPTR, but the effect
+     * is to prepare for reading from address (R2:param).
+     * The caller uses the result via DPTR reads. */
     (void)param;
-    /* TODO: Implement from address 0x1bc3 */
+    /* No actual state change needed - DPTR setup is implicit */
 }
 
 /*
@@ -763,7 +920,7 @@ static __xdata uint8_t *helper_16de(uint8_t idx)
 static void helper_1633(void)
 {
     uint8_t val = REG_DMA_STATUS;
-    REG_DMA_STATUS = (val & 0xFE) | 0x01;
+    REG_DMA_STATUS = (val & ~DMA_STATUS_TRIGGER) | DMA_STATUS_TRIGGER;
 }
 
 /*

@@ -71,12 +71,16 @@
 //=============================================================================
 // Core USB registers (0x9000-0x901F)
 #define REG_USB_STATUS          XDATA_REG8(0x9000)
+#define   USB_STATUS_ACTIVE       0x01  // Bit 0: USB active/pending
+#define   USB_STATUS_INDICATOR    0x10  // Bit 4: USB status indicator
+#define   USB_STATUS_CONNECTED    0x80  // Bit 7: USB ready/connected
 #define REG_USB_CONTROL         XDATA_REG8(0x9001)
 #define REG_USB_CONFIG          XDATA_REG8(0x9002)
 #define REG_USB_EP0_STATUS      XDATA_REG8(0x9003)
 #define REG_USB_EP0_LEN_L       XDATA_REG8(0x9004)
 #define REG_USB_EP0_LEN_H       XDATA_REG8(0x9005)
 #define REG_USB_EP0_CONFIG      XDATA_REG8(0x9006)
+#define   USB_EP0_CONFIG_ENABLE   0x01  // Bit 0: EP0 config enable
 #define REG_USB_SCSI_BUF_LEN    XDATA_REG16(0x9007)
 #define REG_USB_SCSI_BUF_LEN_L  XDATA_REG8(0x9007)
 #define REG_USB_SCSI_BUF_LEN_H  XDATA_REG8(0x9008)
@@ -134,14 +138,21 @@
 
 // Power Management registers (0x92C0-0x92E0)
 #define REG_POWER_ENABLE        XDATA_REG8(0x92C0)
+#define   POWER_ENABLE_BIT        0x01  // Bit 0: Main power enable
+#define   POWER_ENABLE_MAIN       0x80  // Bit 7: Main power on
 #define REG_CLOCK_ENABLE        XDATA_REG8(0x92C1)
+#define   CLOCK_ENABLE_BIT        0x01  // Bit 0: Clock enable
+#define   CLOCK_ENABLE_BIT1       0x02  // Bit 1: Secondary clock
 #define REG_POWER_STATUS        XDATA_REG8(0x92C2)
+#define   POWER_STATUS_SUSPENDED  0x40  // Bit 6: Device suspended
 #define REG_POWER_CTRL_92C4     XDATA_REG8(0x92C4)
 #define REG_PHY_POWER           XDATA_REG8(0x92C5)
+#define   PHY_POWER_ENABLE        0x04  // Bit 2: PHY power enable
 #define REG_POWER_CTRL_92C6     XDATA_REG8(0x92C6)
 #define REG_POWER_CTRL_92C7     XDATA_REG8(0x92C7)
 #define REG_POWER_CTRL_92C8     XDATA_REG8(0x92C8)
 #define REG_POWER_DOMAIN        XDATA_REG8(0x92E0)
+#define   POWER_DOMAIN_BIT1       0x02  // Bit 1: Power domain control
 
 // Buffer config registers (0x9300-0x93FF)
 #define REG_BUF_CFG_9300        XDATA_REG8(0x9300)
@@ -208,6 +219,7 @@
 #define REG_PHY_LINK_CTRL_C208  XDATA_REG8(0xC208)
 #define REG_PHY_LINK_CONFIG_C20C XDATA_REG8(0xC20C)
 #define REG_PHY_CONFIG          XDATA_REG8(0xC233)
+#define   PHY_CONFIG_MODE_MASK    0x03  // Bits 0-1: PHY config mode
 #define REG_PHY_STATUS          XDATA_REG8(0xC284)
 
 //=============================================================================
@@ -216,8 +228,10 @@
 #define REG_NVME_CTRL           XDATA_REG8(0xC400)
 #define REG_NVME_STATUS         XDATA_REG8(0xC401)
 #define REG_NVME_CTRL_STATUS    XDATA_REG8(0xC412)
+#define   NVME_CTRL_STATUS_READY  0x02  // Bit 1: NVMe controller ready
 #define REG_NVME_CONFIG         XDATA_REG8(0xC413)
 #define REG_NVME_DATA_CTRL      XDATA_REG8(0xC414)
+#define   NVME_DATA_CTRL_MASK     0xC0  // Bits 6-7: Data control mode
 #define REG_NVME_DEV_STATUS     XDATA_REG8(0xC415)
 #define REG_NVME_CMD            XDATA_REG8(0xC420)
 #define REG_NVME_CMD_OPCODE     XDATA_REG8(0xC421)
@@ -230,6 +244,8 @@
 #define REG_NVME_QUEUE_CFG      XDATA_REG8(0xC428)
 #define REG_NVME_CMD_PARAM      XDATA_REG8(0xC429)
 #define REG_NVME_DOORBELL       XDATA_REG8(0xC42A)
+#define   NVME_DOORBELL_TRIGGER   0x01  // Bit 0: Doorbell trigger
+#define   NVME_DOORBELL_MODE      0x08  // Bit 3: Doorbell mode
 #define REG_NVME_CMD_FLAGS      XDATA_REG8(0xC42B)
 // Note: 0xC42C-0xC42D are USB MSC registers, not NVMe
 #define REG_USB_MSC_CTRL        XDATA_REG8(0xC42C)
@@ -261,9 +277,14 @@
 // PHY Extended Registers (0xC600-0xC6FF)
 //=============================================================================
 #define REG_PHY_EXT_2D          XDATA_REG8(0xC62D)
+#define   PHY_EXT_LANE_MASK       0x07  // Bits 0-2: Lane configuration
 #define REG_PHY_EXT_56          XDATA_REG8(0xC656)
+#define   PHY_EXT_SIGNAL_CFG      0x20  // Bit 5: Signal config
 #define REG_PHY_EXT_5B          XDATA_REG8(0xC65B)
+#define   PHY_EXT_ENABLE          0x08  // Bit 3: PHY extended enable
+#define   PHY_EXT_MODE            0x20  // Bit 5: PHY mode
 #define REG_PHY_EXT_B3          XDATA_REG8(0xC6B3)
+#define   PHY_EXT_LINK_READY      0x30  // Bits 4,5: Link ready status
 
 //=============================================================================
 // Interrupt Controller (0xC800-0xC80F)
@@ -274,6 +295,8 @@
 #define REG_INT_SYSTEM          XDATA_REG8(0xC806)
 #define REG_INT_CTRL_C809       XDATA_REG8(0xC809)
 #define REG_INT_PCIE_NVME       XDATA_REG8(0xC80A)
+#define   INT_PCIE_NVME_EVENTS    0x0F  // Bits 0-3: PCIe event flags
+#define   INT_PCIE_NVME_STATUS    0x40  // Bit 6: PCIe/NVMe status
 
 //=============================================================================
 // I2C Controller (0xC870-0xC87F)
@@ -311,12 +334,21 @@
 #define REG_DMA_XFER_CNT_HI     XDATA_REG8(0xC8B4)
 #define REG_DMA_XFER_CNT_LO     XDATA_REG8(0xC8B5)
 #define REG_DMA_CHAN_CTRL2      XDATA_REG8(0xC8B6)
+#define   DMA_CHAN_CTRL2_START    0x01  // Bit 0: Start/busy
+#define   DMA_CHAN_CTRL2_DIR      0x02  // Bit 1: Direction
+#define   DMA_CHAN_CTRL2_ENABLE   0x04  // Bit 2: Enable
+#define   DMA_CHAN_CTRL2_ACTIVE   0x80  // Bit 7: Active
 #define REG_DMA_CHAN_STATUS2    XDATA_REG8(0xC8B7)
 #define REG_DMA_TRIGGER         XDATA_REG8(0xC8B8)
+#define   DMA_TRIGGER_START       0x01  // Bit 0: Trigger transfer
 #define REG_DMA_CONFIG          XDATA_REG8(0xC8D4)
-#define REG_DMA_QUEUE_IDX       XDATA_REG8(0xC8D5)  // DMA queue index
+#define REG_DMA_QUEUE_IDX       XDATA_REG8(0xC8D5)
 #define REG_DMA_STATUS          XDATA_REG8(0xC8D6)
+#define   DMA_STATUS_TRIGGER      0x01  // Bit 0: Status trigger
+#define   DMA_STATUS_DONE         0x04  // Bit 2: Done flag
+#define   DMA_STATUS_ERROR        0x08  // Bit 3: Error flag
 #define REG_DMA_STATUS2         XDATA_REG8(0xC8D8)
+#define   DMA_STATUS2_TRIGGER     0x01  // Bit 0: Status 2 trigger
 #define REG_DMA_STATUS3         XDATA_REG8(0xC8D9)
 
 //=============================================================================
@@ -346,6 +378,7 @@
 #define REG_CPU_CTRL_CC30       XDATA_REG8(0xCC30)
 #define REG_CPU_EXEC_CTRL       XDATA_REG8(0xCC31)
 #define REG_CPU_EXEC_STATUS     XDATA_REG8(0xCC32)
+#define   CPU_EXEC_STATUS_ACTIVE  0x01  // Bit 0: CPU execution active
 #define REG_CPU_EXEC_STATUS_2   XDATA_REG8(0xCC33)
 #define REG_CPU_CTRL_CC3A       XDATA_REG8(0xCC3A)
 #define REG_CPU_CTRL_CC3B       XDATA_REG8(0xCC3B)
@@ -367,13 +400,19 @@
 #define REG_SCSI_DMA_PARAM2     XDATA_REG8(0xCE42)
 #define REG_SCSI_DMA_PARAM3     XDATA_REG8(0xCE43)
 #define REG_SCSI_DMA_COMPL      XDATA_REG8(0xCE5C)
+#define   SCSI_DMA_COMPL_MODE0    0x01  // Bit 0: Mode 0 complete
+#define   SCSI_DMA_COMPL_MODE10   0x02  // Bit 1: Mode 0x10 complete
 #define REG_XFER_CTRL_CE65      XDATA_REG8(0xCE65)
 #define REG_SCSI_DMA_TAG_COUNT  XDATA_REG8(0xCE66)
+#define   SCSI_DMA_TAG_MASK       0x1F  // Bits 0-4: Tag count (0-31)
 #define REG_SCSI_DMA_QUEUE_STAT XDATA_REG8(0xCE67)
+#define   SCSI_DMA_QUEUE_MASK     0x0F  // Bits 0-3: Queue status (0-15)
 #define REG_SCSI_DMA_STATUS     XDATA_REG16(0xCE6E)
 #define REG_XFER_STATUS_CE86    XDATA_REG8(0xCE86)
 #define REG_XFER_CTRL_CE88      XDATA_REG8(0xCE88)
 #define REG_XFER_READY          XDATA_REG8(0xCE89)
+#define   XFER_READY_BIT          0x01  // Bit 0: Transfer ready
+#define   XFER_READY_DONE         0x02  // Bit 1: Transfer done
 #define REG_XFER_MODE_CE95      XDATA_REG8(0xCE95)
 #define REG_SCSI_DMA_CMD_REG    XDATA_REG8(0xCE96)
 #define REG_SCSI_DMA_RESP_REG   XDATA_REG8(0xCE97)

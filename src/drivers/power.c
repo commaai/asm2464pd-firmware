@@ -95,7 +95,7 @@
 void power_set_suspended(void)
 {
     uint8_t val = REG_POWER_STATUS;
-    val = (val & 0xBF) | 0x40;  /* Set bit 6 */
+    val = (val & ~POWER_STATUS_SUSPENDED) | POWER_STATUS_SUSPENDED;
     REG_POWER_STATUS = val;
 }
 
@@ -119,7 +119,7 @@ void power_set_suspended(void)
 uint8_t power_get_status_bit6(void)
 {
     uint8_t val = REG_POWER_STATUS;
-    val &= 0x40;  /* Mask bit 6 */
+    val &= POWER_STATUS_SUSPENDED;
     return val;
 }
 
@@ -153,17 +153,17 @@ void power_enable_clocks(void)
 
     /* Enable main power (0x92C0 bit 0) */
     val = REG_POWER_ENABLE;
-    val = (val & 0xFE) | 0x01;
+    val = (val & ~POWER_ENABLE_BIT) | POWER_ENABLE_BIT;
     REG_POWER_ENABLE = val;
 
     /* Enable clock config (0x92C1 bit 0) */
     val = REG_CLOCK_ENABLE;
-    val = (val & 0xFE) | 0x01;
+    val = (val & ~CLOCK_ENABLE_BIT) | CLOCK_ENABLE_BIT;
     REG_CLOCK_ENABLE = val;
 
     /* Enable PHY power (0x92C5 bit 2) */
     val = REG_PHY_POWER;
-    val = (val & 0xFB) | 0x04;
+    val = (val & ~PHY_POWER_ENABLE) | PHY_POWER_ENABLE;
     REG_PHY_POWER = val;
 }
 
@@ -222,7 +222,7 @@ void power_config_init(void)
 void power_set_clock_bit1(void)
 {
     uint8_t val = REG_CLOCK_ENABLE;
-    val = (val & 0xFD) | 0x02;  /* Set bit 1 */
+    val = (val & ~CLOCK_ENABLE_BIT1) | CLOCK_ENABLE_BIT1;
     REG_CLOCK_ENABLE = val;
 }
 
@@ -307,7 +307,7 @@ void power_set_state(void)
 void power_clear_suspended(void)
 {
     uint8_t val = REG_POWER_STATUS;
-    val &= 0xBF;  /* Clear bit 6 */
+    val &= ~POWER_STATUS_SUSPENDED;
     REG_POWER_STATUS = val;
 }
 
@@ -337,17 +337,17 @@ void power_disable_clocks(void)
 
     /* Disable main power (0x92C0 bit 0) */
     val = REG_POWER_ENABLE;
-    val &= 0xFE;
+    val &= ~POWER_ENABLE_BIT;
     REG_POWER_ENABLE = val;
 
     /* Disable clock config (0x92C1 bit 0) */
     val = REG_CLOCK_ENABLE;
-    val &= 0xFE;
+    val &= ~CLOCK_ENABLE_BIT;
     REG_CLOCK_ENABLE = val;
 
     /* Disable PHY power (0x92C5 bit 2) */
     val = REG_PHY_POWER;
-    val &= 0xFB;
+    val &= ~PHY_POWER_ENABLE;
     REG_PHY_POWER = val;
 }
 
@@ -408,7 +408,7 @@ void usb_power_init(void)
 
     /* Set power control bit 7 (enable main power) */
     val = REG_POWER_ENABLE;
-    REG_POWER_ENABLE = (val & 0x7F) | 0x80;
+    REG_POWER_ENABLE = (val & ~POWER_ENABLE_MAIN) | POWER_ENABLE_MAIN;
 
     /* Configure USB PHY */
     REG_USB_PHY_CTRL_91D1 = 0x0F;

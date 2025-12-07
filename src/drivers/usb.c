@@ -166,6 +166,11 @@ extern void nvme_queue_helper(void);           /* 0x1196 */
 
 /* External from protocol.c */
 extern void core_handler_4ff2(uint8_t param);  /* 0x4ff2 */
+extern void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7);  /* 0x523c */
+extern void handler_3adb(uint8_t param);  /* 0x3adb */
+
+/* External from state_helpers.c */
+extern void handler_2608(void);  /* 0x2608 */
 
 /* Forward declaration - USB master handler (0x10e0)
  * Called at end of endpoint dispatch loop */
@@ -1348,7 +1353,7 @@ void usb_master_handler(void)
             G_SYS_STATUS_PRIMARY = 0x00;
             REG_CPU_LINK_CEF3 = 0x08;
             /* Call handler_2608 - state handler */
-            /* TODO: Add call to handler_2608 when implemented */
+            handler_2608();
         } else {
             /* Check 0xCEF2 bit 7 */
             status = REG_CPU_LINK_CEF2;
@@ -1356,7 +1361,7 @@ void usb_master_handler(void)
                 /* Write 0x80 to 0xCEF2 */
                 REG_CPU_LINK_CEF2 = 0x80;
                 /* Call 0x3ADB (handler_3adb) with R7=0 */
-                /* TODO: Add call to handler_3adb when implemented */
+                handler_3adb(0);
             }
         }
     }
@@ -2507,7 +2512,7 @@ uint8_t usb_func_1cf0(void)
 {
     /* Calls transfer setup helper with params:
      * R3=0 (some flag), R5=0x20 (size), R7=5 (mode/type) */
-    /* helper_523c(0, 0x20, 5);  TODO: link when implemented */
+    helper_523c(0, 0x20, 5);
     return 5;
 }
 
@@ -4153,7 +4158,7 @@ __xdata uint8_t *usb_calc_dptr_add_0f(uint8_t lo, uint8_t hi)
 void usb_set_reg_9006_bit0(void)
 {
     uint8_t val = REG_USB_EP0_CONFIG;
-    REG_USB_EP0_CONFIG = (val & 0xFE) | 0x01;
+    REG_USB_EP0_CONFIG = (val & ~USB_EP0_CONFIG_ENABLE) | USB_EP0_CONFIG_ENABLE;
 }
 
 /*
