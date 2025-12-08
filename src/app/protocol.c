@@ -52,6 +52,7 @@
 #include "../sfr.h"
 #include "../registers.h"
 #include "../globals.h"
+#include "../structs.h"
 
 /* Forward declarations */
 extern void dma_clear_status(void);
@@ -1619,5 +1620,400 @@ void helper_31ad(__xdata uint8_t *ptr)
     /* This is a simplified implementation - the original uses register
      * values (r6, r7) for computed addressing */
     G_BUF_ADDR_HI = val;  /* Store to buffer address globals */
+}
+
+/*
+ * helper_3147 - Copy USB status registers to D804-D807
+ * Address: 0x3147-0x3167 (33 bytes)
+ *
+ * Copies 4 bytes from 0x911F-0x9122 to 0xD804-0xD807.
+ * Used to transfer USB endpoint status to DMA buffer config.
+ *
+ * Original disassembly:
+ *   3147: mov dptr, #0x911f
+ *   314a: movx a, @dptr
+ *   314b: mov dptr, #0xd804
+ *   314e: movx @dptr, a
+ *   314f: mov dptr, #0x9120
+ *   3152: movx a, @dptr
+ *   3153: mov dptr, #0xd805
+ *   3156: movx @dptr, a
+ *   3157: mov dptr, #0x9121
+ *   315a: movx a, @dptr
+ *   315b: mov dptr, #0xd806
+ *   315e: movx @dptr, a
+ *   315f: mov dptr, #0x9122
+ *   3162: movx a, @dptr
+ *   3163: mov dptr, #0xd807
+ *   3166: movx @dptr, a
+ *   3167: ret
+ */
+void helper_3147(void)
+{
+    /* Copy USB status 0x911F-0x9122 to CSW tag 0xD804-0xD807 */
+    USB_CSW->tag0 = REG_USB_STATUS_1F;
+    USB_CSW->tag1 = REG_USB_STATUS_20;
+    USB_CSW->tag2 = REG_USB_STATUS_21;
+    USB_CSW->tag3 = REG_USB_STATUS_22;
+}
+
+/*
+ * helper_3168 - Calculate address from IDATA 0x38
+ * Address: 0x3168-0x3178 (17 bytes)
+ *
+ * Computes DPTR = 0x00C2 + IDATA[0x38], then clears value at DPTR.
+ * Then computes DPTR = 0x00E5 + IDATA[0x38].
+ *
+ * Original disassembly:
+ *   3168: mov a, #0xc2
+ *   316a: add a, 0x38        ; add IDATA[0x38]
+ *   316c: mov dpl, a
+ *   316e: clr a
+ *   316f: addc a, #0x00
+ *   3171: mov dph, a
+ *   3173: clr a
+ *   3174: movx @dptr, a      ; clear [0x00C2 + IDATA[0x38]]
+ *   3175: mov a, #0xe5
+ *   3177: add a, 0x38
+ *   3179: mov dpl, a
+ *   317b: clr a
+ *   317c: addc a, #0x00
+ *   317e: mov dph, a
+ *   3180: ret
+ */
+void helper_3168(void)
+{
+    uint8_t idx = *(__idata uint8_t *)0x38;
+    __xdata uint8_t *ptr;
+
+    /* Clear value at 0x00C2 + idx */
+    ptr = (__xdata uint8_t *)(0x00C2 + idx);
+    *ptr = 0;
+
+    /* DPTR left pointing to 0x00E5 + idx for caller */
+}
+
+/*
+ * helper_3181 - Read 2 bytes from USB status register
+ * Address: 0x3181-0x3188 (8 bytes)
+ *
+ * Reads two bytes from 0x910D-0x910E into R6 and A.
+ * Returns the pair of values.
+ *
+ * Original disassembly:
+ *   3181: mov dptr, #0x910d
+ *   3184: movx a, @dptr      ; R6 = [0x910D]
+ *   3185: mov r6, a
+ *   3186: inc dptr
+ *   3187: movx a, @dptr      ; A = [0x910E]
+ *   3188: ret
+ */
+uint16_t helper_3181(void)
+{
+    uint8_t lo, hi;
+
+    lo = *(__xdata uint8_t *)0x910D;
+    hi = *(__xdata uint8_t *)0x910E;
+
+    return ((uint16_t)hi << 8) | lo;
+}
+
+/*
+ * helper_31c3 - Calculate address 0x9096 + A
+ * Address: 0x31c3-0x31cd (11 bytes)
+ *
+ * Computes DPTR = 0x9096 + A (input param).
+ * Returns DPTR pointing to the computed address.
+ *
+ * Original disassembly:
+ *   31c3: add a, #0x96      ; A = A + 0x96
+ *   31c5: mov r3, a
+ *   31c6: clr a
+ *   31c7: addc a, #0x90     ; A = 0x90 + carry
+ *   31c9: mov dpl, r3
+ *   31cb: mov dph, a
+ *   31cd: ret
+ */
+__xdata uint8_t *helper_31c3(uint8_t idx)
+{
+    return (__xdata uint8_t *)(0x9096 + idx);
+}
+
+/*
+ * helper_31ce - Read, mask with 0x7F, OR with 0x80, and write back
+ * Address: 0x31ce-0x31d4 (7 bytes)
+ *
+ * Reads value at DPTR, clears bit 7, sets bit 7, writes back.
+ * Effectively sets bit 7 of the value at DPTR.
+ *
+ * Original disassembly:
+ *   31ce: movx a, @dptr
+ *   31cf: anl a, #0x7f      ; Clear bit 7
+ *   31d1: orl a, #0x80      ; Set bit 7
+ *   31d3: movx @dptr, a
+ *   31d4: ret
+ */
+void helper_31ce(__xdata uint8_t *ptr)
+{
+    uint8_t val = *ptr;
+    val = (val & 0x7F) | 0x80;  /* Clear bit 7, then set bit 7 */
+    *ptr = val;
+}
+
+/*
+ * helper_31d5 - Calculate queue address 0x0108 + idx
+ * Address: 0x31d5-0x31df (11 bytes)
+ *
+ * Computes DPTR = 0x0108 + R7 (index).
+ *
+ * Original disassembly:
+ *   31d5: mov a, #0x08
+ *   31d7: add a, r7
+ *   31d8: mov dpl, a
+ *   31da: clr a
+ *   31db: addc a, #0x01
+ *   31dd: mov dph, a
+ *   31df: ret
+ */
+__xdata uint8_t *helper_31d5_queue(uint8_t idx)
+{
+    return (__xdata uint8_t *)(0x0108 + idx);
+}
+
+/*
+ * helper_31e0 - Add 0x0C to index and compute address
+ * Address: 0x31e0-0x31e9 (10 bytes)
+ *
+ * Computes DPTR = 0x000C + A.
+ *
+ * Original disassembly:
+ *   31e0: add a, #0x0c
+ *   31e2: mov dpl, a
+ *   31e4: clr a
+ *   31e5: addc a, #0x00
+ *   31e7: mov dph, a
+ *   31e9: ret
+ */
+__xdata uint8_t *helper_31e0_addr(uint8_t idx)
+{
+    return (__xdata uint8_t *)(0x000C + idx);
+}
+
+/*
+ * helper_31ea - Table lookup with multiply by 10
+ * Address: 0x31ea-0x31f5 (12 bytes)
+ *
+ * Reads index from DPTR, multiplies by 10 (0x0A), adds 0x7F,
+ * computes new DPTR in 0x05xx range.
+ *
+ * Original disassembly:
+ *   31ea: movx a, @dptr      ; Read index from DPTR
+ *   31eb: mov b, #0x0a       ; B = 10
+ *   31ee: mul ab             ; A*B -> BA
+ *   31ef: add a, #0x7f       ; A = A + 0x7F
+ *   31f1: mov dpl, a
+ *   ... (continues with dph computation)
+ */
+uint8_t helper_31ea(__xdata uint8_t *ptr)
+{
+    uint8_t idx = *ptr;
+    uint16_t addr;
+
+    /* Table base 0x057F + (idx * 0x0A) */
+    addr = 0x057F + ((uint16_t)idx * 0x0A);
+
+    return *(__xdata uint8_t *)addr;
+}
+
+/*
+ * helper_36ab_impl - Transfer setup handler
+ * Address: 0x36ab-0x37c2 (~280 bytes)
+ *
+ * Configures SCSI/DMA registers for transfer operations.
+ * Checks flags at 0x053E and 0x0552, then initializes CE7x registers.
+ *
+ * This is the main transfer setup function that prepares the
+ * SCSI buffer and DMA engine for data transfers.
+ */
+void helper_36ab_impl(void)
+{
+    uint8_t val;
+
+    /* Check if either 0x053E or 0x0552 is non-zero */
+    if (*(__xdata uint8_t *)0x053E == 0 &&
+        *(__xdata uint8_t *)0x0552 == 0) {
+        /* Both zero - skip transfer setup */
+        return;
+    }
+
+    /* Initialize CE73-CE74: Set CE73=0x20, CE74=0x00 */
+    *(__xdata uint8_t *)0xCE73 = 0x20;
+    *(__xdata uint8_t *)0xCE74 = 0x00;
+
+    /* Initialize CE80-CE82: CE81=0xFF, CE80=0x7F, CE82=0x3F */
+    *(__xdata uint8_t *)0xCE81 = 0xFF;
+    *(__xdata uint8_t *)0xCE80 = 0x7F;
+    *(__xdata uint8_t *)0xCE82 = 0x3F;
+
+    /* Read 0x0547 and compute CE44 value */
+    val = *(__xdata uint8_t *)0x0547;
+    val = val - 0x09;  /* subb with carry clear */
+
+    /* Read CE44, mask upper nibble, OR with computed value */
+    {
+        uint8_t ce44_val = *(__xdata uint8_t *)0xCE44;
+        ce44_val = (ce44_val & 0xF0) | (val & 0x0F);
+        *(__xdata uint8_t *)0xCE44 = ce44_val;
+    }
+
+    /* Get value from 0x057A table and configure CE44 upper nibble */
+    val = helper_31ea((__xdata uint8_t *)0x057A);
+    {
+        uint8_t ce44_val = *(__xdata uint8_t *)0xCE44;
+        ce44_val = (ce44_val & 0x0F) | ((val << 4) & 0xF0);
+        *(__xdata uint8_t *)0xCE44 = ce44_val;
+    }
+
+    /* Update CE45 */
+    {
+        uint8_t ce45_val = *(__xdata uint8_t *)0xCE45;
+        val = *(__xdata uint8_t *)0x0547 - 0x09;
+        ce45_val = (ce45_val & 0xF0) | (val & 0x0F);
+        *(__xdata uint8_t *)0xCE45 = ce45_val;
+    }
+
+    /* Read from 0x0543 (4 bytes) and write to CE76 */
+    /* This uses the dword load helper 0x0d84 */
+    {
+        uint8_t b0 = *(__xdata uint8_t *)0x0543;
+        uint8_t b1 = *(__xdata uint8_t *)0x0544;
+        uint8_t b2 = *(__xdata uint8_t *)0x0545;
+        uint8_t b3 = *(__xdata uint8_t *)0x0546;
+
+        *(__xdata uint8_t *)0xCE76 = b0;
+        *(__xdata uint8_t *)0xCE77 = b1;
+        *(__xdata uint8_t *)0xCE78 = b2;
+        *(__xdata uint8_t *)0xCE79 = b3;
+    }
+
+    /* Read 0x053F-0x0542 and write to CE75 */
+    {
+        uint8_t b0 = *(__xdata uint8_t *)0x053F;
+        *(__xdata uint8_t *)0xCE75 = b0;
+    }
+
+    /* Read 0x053D and write to CE70 */
+    *(__xdata uint8_t *)0xCE70 = *(__xdata uint8_t *)0x053D;
+
+    /* Check 0x054F - if non-zero, call helper with CEF9 */
+    if (*(__xdata uint8_t *)0x054F != 0) {
+        /* Would call 0x3133 with dptr=0xCEF9 */
+        /* Simplified: just set CEF9 to some value */
+    }
+
+    /* Clear CE72 */
+    *(__xdata uint8_t *)0xCE72 = 0;
+
+    /* Clear bits in CE83 */
+    {
+        uint8_t ce83_val = *(__xdata uint8_t *)0xCE83;
+        ce83_val &= 0xEF;  /* Clear bit 4 */
+        *(__xdata uint8_t *)0xCE83 = ce83_val;
+
+        ce83_val = *(__xdata uint8_t *)0xCE83;
+        ce83_val &= 0xDF;  /* Clear bit 5 */
+        *(__xdata uint8_t *)0xCE83 = ce83_val;
+
+        ce83_val = *(__xdata uint8_t *)0xCE83;
+        ce83_val &= 0xBF;  /* Clear bit 6 */
+        *(__xdata uint8_t *)0xCE83 = ce83_val;
+    }
+
+    /* Continue with more register setup... */
+    /* Additional setup would continue here based on full disassembly */
+}
+
+/*
+ * FUN_CODE_23f7 - Complex state helper / Log entry processor
+ * Address: 0x23f7-0x27xx (~893 bytes)
+ *
+ * This is a major state machine handler that processes log entries
+ * and manages system state transitions. It's called from multiple
+ * places in the firmware to handle state changes.
+ *
+ * Parameters:
+ *   param: Index or state code (typically 6 or 9)
+ *
+ * Key operations:
+ *   - Stores param to 0x0AA2
+ *   - Calls various transfer and DMA helpers
+ *   - Manages state based on value at 0x0AA2/0x0AA3
+ *   - Handles different modes (1, 2, 5, 6, 9) differently
+ */
+void FUN_CODE_23f7(uint8_t param)
+{
+    uint8_t state_val;
+    uint8_t temp;
+
+    /* Store param to 0x0AA2 and call helper 0x1659 */
+    *(__xdata uint8_t *)0x0AA2 = param;
+
+    /* Read result and store to 0x0AA3, then process */
+    /* This calls dma_complex_transfer internally */
+
+    /* Read 0x0AA3 and OR with 0x80, write to 0xC8D7 */
+    state_val = *(__xdata uint8_t *)0x0AA3;
+    state_val |= 0x80;
+    *(__xdata uint8_t *)0xC8D7 = state_val;  /* DMA ctrl register */
+
+    /* Read 0x0AA2 and check state */
+    state_val = *(__xdata uint8_t *)0x0AA2;
+
+    /* Main state dispatch based on state_val */
+    if (state_val == 0x06) {
+        /* State 6: Check 0x0574 */
+        if (*(__xdata uint8_t *)0x0574 == 0) {
+            /* Call 0x15dc and process result */
+        }
+        /* Call 0x17a9 and 0x1d43 */
+        /* Then read 0x0574 again and continue... */
+
+    } else if (state_val == 0x05) {
+        /* State 5: Read 0x0464 and branch on value */
+        temp = G_SYS_STATUS_PRIMARY;
+        if (temp == 0x01) {
+            /* Setup with R5=0x92, R4=0x00, R6=0x80, R7=0x00 */
+        } else {
+            /* Setup with R5=0x82, R4=0x00 */
+        }
+        /* Call 0x14e5 and 0x17fd */
+
+    } else if (state_val == 0x01) {
+        /* State 1: Similar to state 5 with different params */
+        temp = G_SYS_STATUS_PRIMARY;
+        if (temp == 0x01) {
+            /* R5=0x92, R4=0x00 */
+        } else {
+            /* R5=0x82, R4=0x00 */
+        }
+        /* Call helpers and process */
+
+    } else if (state_val == 0x09) {
+        /* State 9: Check 0x0574 for sub-states */
+        temp = *(__xdata uint8_t *)0x0574;
+        if (temp == 0x01 || temp == 0x02 || temp == 0x07 || temp == 0x08) {
+            /* Read 0x0575 and continue with table lookup */
+        } else {
+            /* Return 0xFF (error) */
+            return;
+        }
+
+    } else if (state_val == 0x02) {
+        /* State 2: Similar processing */
+        /* ... */
+    }
+
+    /* Most paths end by jumping to common exit at 0x25fa or 0x25fd */
+    /* The function is very complex with many branches */
 }
 

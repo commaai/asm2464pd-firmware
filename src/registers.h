@@ -71,6 +71,7 @@
 //=============================================================================
 // Core USB registers (0x9000-0x901F)
 #define REG_USB_STATUS          XDATA_REG8(0x9000)
+#define REG_PCIE_LINK_STATUS    XDATA_REG8(0xB480)  // PCIe link status (bit 0 = link up)
 #define   USB_STATUS_ACTIVE       0x01  // Bit 0: USB active/pending
 #define   USB_STATUS_INDICATOR    0x10  // Bit 4: USB status indicator
 #define   USB_STATUS_CONNECTED    0x80  // Bit 7: USB ready/connected
@@ -95,6 +96,8 @@
 #define REG_USB_MSC_LENGTH      XDATA_REG8(0x901A)
 
 // USB endpoint registers (0x905E-0x90FF)
+#define REG_USB_EP_BUF_HI       XDATA_REG8(0x905B)  // USB endpoint buffer high byte
+#define REG_USB_EP_BUF_LO       XDATA_REG8(0x905C)  // USB endpoint buffer low byte
 #define REG_USB_EP_CTRL_905E    XDATA_REG8(0x905E)
 #define REG_INT_FLAGS_EX0       XDATA_REG8(0x9091)
 #define REG_USB_EP_CFG1         XDATA_REG8(0x9093)
@@ -235,6 +238,10 @@
 //=============================================================================
 // NVMe Interface Registers (0xC400-0xC5FF)
 //=============================================================================
+// NVMe DMA control (0xC4ED-0xC4EF)
+#define REG_NVME_DMA_CTRL_ED    XDATA_REG8(0xC4ED)  // NVMe DMA control
+#define REG_NVME_DMA_ADDR_LO    XDATA_REG8(0xC4EE)  // NVMe DMA address low
+#define REG_NVME_DMA_ADDR_HI    XDATA_REG8(0xC4EF)  // NVMe DMA address high
 #define REG_NVME_CTRL           XDATA_REG8(0xC400)
 #define REG_NVME_STATUS         XDATA_REG8(0xC401)
 #define REG_NVME_CTRL_STATUS    XDATA_REG8(0xC412)
@@ -364,6 +371,7 @@
 #define   DMA_STATUS_TRIGGER      0x01  // Bit 0: Status trigger
 #define   DMA_STATUS_DONE         0x04  // Bit 2: Done flag
 #define   DMA_STATUS_ERROR        0x08  // Bit 3: Error flag
+#define REG_DMA_CTRL            XDATA_REG8(0xC8D7)
 #define REG_DMA_STATUS2         XDATA_REG8(0xC8D8)
 #define   DMA_STATUS2_TRIGGER     0x01  // Bit 0: Status 2 trigger
 #define REG_DMA_STATUS3         XDATA_REG8(0xC8D9)
@@ -420,7 +428,22 @@
 #define REG_SCSI_DMA_PARAM1     XDATA_REG8(0xCE41)
 #define REG_SCSI_DMA_PARAM2     XDATA_REG8(0xCE42)
 #define REG_SCSI_DMA_PARAM3     XDATA_REG8(0xCE43)
+#define REG_SCSI_DMA_PARAM4     XDATA_REG8(0xCE44)
+#define REG_SCSI_DMA_PARAM5     XDATA_REG8(0xCE45)
 #define REG_SCSI_DMA_COMPL      XDATA_REG8(0xCE5C)
+#define REG_SCSI_TRANSFER_CTRL  XDATA_REG8(0xCE70)
+#define REG_SCSI_TRANSFER_MODE  XDATA_REG8(0xCE72)
+#define REG_SCSI_BUF_CTRL0      XDATA_REG8(0xCE73)
+#define REG_SCSI_BUF_CTRL1      XDATA_REG8(0xCE74)
+#define REG_SCSI_BUF_LEN_LO     XDATA_REG8(0xCE75)
+#define REG_SCSI_BUF_ADDR0      XDATA_REG8(0xCE76)
+#define REG_SCSI_BUF_ADDR1      XDATA_REG8(0xCE77)
+#define REG_SCSI_BUF_ADDR2      XDATA_REG8(0xCE78)
+#define REG_SCSI_BUF_ADDR3      XDATA_REG8(0xCE79)
+#define REG_SCSI_CMD_LIMIT_LO   XDATA_REG8(0xCE80)
+#define REG_SCSI_CMD_LIMIT_HI   XDATA_REG8(0xCE81)
+#define REG_SCSI_CMD_MODE       XDATA_REG8(0xCE82)
+#define REG_SCSI_CMD_FLAGS      XDATA_REG8(0xCE83)
 #define   SCSI_DMA_COMPL_MODE0    0x01  // Bit 0: Mode 0 complete
 #define   SCSI_DMA_COMPL_MODE10   0x02  // Bit 1: Mode 0x10 complete
 #define REG_XFER_CTRL_CE65      XDATA_REG8(0xCE65)
@@ -452,7 +475,27 @@
 #define REG_CPU_LINK_CEF3       XDATA_REG8(0xCEF3)
 #define   CPU_LINK_CEF3_ACTIVE    0x08  // Bit 3: Link active
 
-// Note: USB Endpoint Buffer at 0xD800 - see structs.h
+// USB Endpoint Buffer (0xD800-0xD80F)
+// These can be accessed as CSW or as control registers depending on context
+#define REG_USB_EP_BUF_CTRL     XDATA_REG8(0xD800)  // Buffer control/mode/sig0
+#define REG_USB_EP_BUF_SEL      XDATA_REG8(0xD801)  // Buffer select/sig1
+#define REG_USB_EP_BUF_DATA     XDATA_REG8(0xD802)  // Buffer data/sig2
+#define REG_USB_EP_BUF_PTR_LO   XDATA_REG8(0xD803)  // Pointer low/sig3
+#define REG_USB_EP_BUF_PTR_HI   XDATA_REG8(0xD804)  // Pointer high/tag0
+#define REG_USB_EP_BUF_LEN_LO   XDATA_REG8(0xD805)  // Length low/tag1
+#define REG_USB_EP_BUF_STATUS   XDATA_REG8(0xD806)  // Status/tag2
+#define REG_USB_EP_BUF_LEN_HI   XDATA_REG8(0xD807)  // Length high/tag3
+#define REG_USB_EP_RESIDUE0     XDATA_REG8(0xD808)  // Residue byte 0
+#define REG_USB_EP_RESIDUE1     XDATA_REG8(0xD809)  // Residue byte 1
+#define REG_USB_EP_RESIDUE2     XDATA_REG8(0xD80A)  // Residue byte 2
+#define REG_USB_EP_RESIDUE3     XDATA_REG8(0xD80B)  // Residue byte 3
+#define REG_USB_EP_CSW_STATUS   XDATA_REG8(0xD80C)  // CSW status
+#define REG_USB_EP_CTRL_0D      XDATA_REG8(0xD80D)  // Control 0D
+#define REG_USB_EP_CTRL_0E      XDATA_REG8(0xD80E)  // Control 0E
+#define REG_USB_EP_CTRL_0F      XDATA_REG8(0xD80F)  // Control 0F
+#define REG_USB_EP_CTRL_10      XDATA_REG8(0xD810)  // Control 10
+
+// Note: Full struct access at 0xD800 - see structs.h
 
 //=============================================================================
 // PHY Completion / Debug (0xE300-0xE3FF)

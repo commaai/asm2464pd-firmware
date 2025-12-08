@@ -83,6 +83,7 @@ __idata __at(0x72) extern uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_DMA_PARAM1            XDATA_VAR8(0x020D)  /* DMA parameter 1 */
 #define G_DMA_PARAM2            XDATA_VAR8(0x020E)  /* DMA parameter 2 */
 #define G_DMA_WORK_0216         XDATA_VAR8(0x0216)  /* DMA work variable 0x0216 */
+#define G_DMA_OFFSET            XDATA_VAR8(0x0217)  /* DMA offset storage */
 #define G_BUF_ADDR_HI           XDATA_VAR8(0x0218)  /* Buffer address high */
 #define G_BUF_ADDR_LO           XDATA_VAR8(0x0219)  /* Buffer address low */
 #define G_BUF_BASE_HI           XDATA_VAR8(0x021A)  /* Buffer base address high */
@@ -92,6 +93,9 @@ __idata __at(0x72) extern uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 //=============================================================================
 // System Status Work Area (0x0400-0x04FF)
 //=============================================================================
+#define G_LOG_COUNTER_044B      XDATA_VAR8(0x044B)  /* Log counter */
+#define G_LOG_ACTIVE_044C       XDATA_VAR8(0x044C)  /* Log active flag */
+#define G_LOG_INIT_044D         XDATA_VAR8(0x044D)  /* Log init flag */
 #define G_REG_WAIT_BIT          XDATA_VAR8(0x045E)  /* Register wait bit */
 #define G_SYS_STATUS_PRIMARY    XDATA_VAR8(0x0464)  /* Primary system status */
 #define G_EP_INDEX_ALT          G_SYS_STATUS_PRIMARY  /* Alias for endpoint index */
@@ -112,8 +116,21 @@ __idata __at(0x72) extern uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_EP_INIT_0517          XDATA_VAR8(0x0517)  /* Endpoint init state */
 #define G_NVME_PARAM_053A       XDATA_VAR8(0x053A)  /* NVMe parameter storage */
 #define G_NVME_STATE_053B       XDATA_VAR8(0x053B)  /* NVMe state flag */
+#define G_SCSI_CMD_TYPE         XDATA_VAR8(0x053D)  /* SCSI command type */
+#define G_SCSI_TRANSFER_FLAG    XDATA_VAR8(0x053E)  /* SCSI transfer flag */
+#define G_SCSI_BUF_LEN_0        XDATA_VAR8(0x053F)  /* SCSI buffer length byte 0 */
+#define G_SCSI_BUF_LEN_1        XDATA_VAR8(0x0540)  /* SCSI buffer length byte 1 */
+#define G_SCSI_BUF_LEN_2        XDATA_VAR8(0x0541)  /* SCSI buffer length byte 2 */
+#define G_SCSI_BUF_LEN_3        XDATA_VAR8(0x0542)  /* SCSI buffer length byte 3 */
+#define G_SCSI_LBA_0            XDATA_VAR8(0x0543)  /* SCSI LBA byte 0 */
+#define G_SCSI_LBA_1            XDATA_VAR8(0x0544)  /* SCSI LBA byte 1 */
+#define G_SCSI_LBA_2            XDATA_VAR8(0x0545)  /* SCSI LBA byte 2 */
+#define G_SCSI_LBA_3            XDATA_VAR8(0x0546)  /* SCSI LBA byte 3 */
+#define G_SCSI_DEVICE_IDX       XDATA_VAR8(0x0547)  /* SCSI device index */
 #define G_EP_CONFIG_BASE        XDATA_VAR8(0x054B)  /* EP config base */
 #define G_EP_CONFIG_ARRAY       XDATA_VAR8(0x054E)  /* EP config array */
+#define G_SCSI_MODE_FLAG        XDATA_VAR8(0x054F)  /* SCSI mode flag */
+#define G_SCSI_STATUS_FLAG      XDATA_VAR8(0x0552)  /* SCSI status flag */
 #define G_EP_QUEUE_CTRL         XDATA_VAR8(0x0564)  /* Endpoint queue control */
 #define G_EP_QUEUE_STATUS       XDATA_VAR8(0x0565)  /* Endpoint queue status */
 #define G_EP_QUEUE_PARAM        XDATA_VAR8(0x0566)  /* Endpoint queue parameter */
@@ -132,6 +149,7 @@ __idata __at(0x72) extern uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_PCIE_ADDR_1           XDATA_VAR8(0x05B0)  /* PCIe target address byte 1 */
 #define G_PCIE_ADDR_2           XDATA_VAR8(0x05B1)  /* PCIe target address byte 2 */
 #define G_PCIE_ADDR_3           XDATA_VAR8(0x05B2)  /* PCIe target address byte 3 */
+#define G_EP_LOOKUP_TABLE       XDATA_VAR8(0x057A)  /* EP lookup table index */
 #define G_EP_CONFIG_05F8        XDATA_VAR8(0x05F8)  /* EP config 0x05F8 */
 
 //=============================================================================
@@ -139,6 +157,7 @@ __idata __at(0x72) extern uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 //=============================================================================
 #define G_MAX_LOG_ENTRIES       XDATA_VAR8(0x06E5)  /* Max error log entries */
 #define G_STATE_FLAG_06E6       XDATA_VAR8(0x06E6)  /* Processing complete flag / error flag */
+#define G_WORK_06E8             XDATA_VAR8(0x06E8)  /* Work variable 0x06E8 */
 #define G_ERROR_CODE_06EA       XDATA_VAR8(0x06EA)  /* Error code */
 #define G_MISC_FLAG_06EC        XDATA_VAR8(0x06EC)  /* Miscellaneous flag */
 #define G_FLASH_CMD_FLAG        XDATA_VAR8(0x07B8)  /* Flash command flag */
@@ -181,6 +200,9 @@ __idata __at(0x72) extern uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_STATE_COUNTER_HI      XDATA_VAR8(0x0AA3)  /* State counter high */
 #define G_STATE_COUNTER_LO      XDATA_VAR8(0x0AA4)  /* State counter low */
 #define G_LOG_PROCESSED_INDEX   XDATA_VAR8(0x0AA1)  /* Current processed log index */
+#define G_STATE_PARAM_0AA2      XDATA_VAR8(0x0AA2)  /* State machine parameter */
+#define G_STATE_RESULT_0AA3     XDATA_VAR8(0x0AA3)  /* State machine result */
+#define G_STATE_WORK_0A84       XDATA_VAR8(0x0A84)  /* State work variable */
 #define G_FLASH_ERROR_0         XDATA_VAR8(0x0AA8)  /* Flash error flag 0 */
 #define G_FLASH_ERROR_1         XDATA_VAR8(0x0AA9)  /* Flash error flag 1 */
 #define G_FLASH_RESET_0AAA      XDATA_VAR8(0x0AAA)  /* Flash reset flag */

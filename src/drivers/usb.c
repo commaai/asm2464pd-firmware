@@ -2242,24 +2242,26 @@ void usb_set_dma_mode_params(uint8_t val)
 }
 
 /*
- * usb_func_1c55 - Read C415 status masked
+ * usb_get_nvme_dev_status_masked - Read C415 status masked
  * Address: 0x1c55-0x1c5c (8 bytes)
  *
  * Stores input in R7, reads REG_NVME_DEV_STATUS, masks bits 7-6, returns.
+ * Returns NVMe device status with only high bits.
  */
-uint8_t usb_func_1c55(uint8_t input)
+uint8_t usb_get_nvme_dev_status_masked(uint8_t input)
 {
     (void)input;
     return REG_NVME_DEV_STATUS & NVME_DEV_STATUS_MASK;
 }
 
 /*
- * usb_func_1c5d - Read from address + 0x05A8, store to 0x05A6
+ * usb_load_pcie_txn_count - Read from address + 0x05A8, store to 0x05A6
  * Address: 0x1c5d-0x1c6c (16 bytes)
  *
  * Reads DPTR, adds 0xA8, reads from 0x05XX, stores to G_PCIE_TXN_COUNT_LO.
+ * Loads PCIe transaction count from indexed location.
  */
-void usb_func_1c5d(__xdata uint8_t *ptr)
+void usb_load_pcie_txn_count(__xdata uint8_t *ptr)
 {
     uint8_t val = *ptr;
     uint16_t addr = 0x05A8 + val;
@@ -2268,10 +2270,12 @@ void usb_func_1c5d(__xdata uint8_t *ptr)
 }
 
 /*
- * usb_func_1c6d - Subtract R6:R7 from IDATA[0x16:0x17]
+ * usb_subtract_from_idata16 - Subtract R6:R7 from IDATA[0x16:0x17]
  * Address: 0x1c6d-0x1c76 (10 bytes)
+ *
+ * Subtracts 16-bit value from transfer count stored in IDATA[0x16:0x17].
  */
-void usb_func_1c6d(uint8_t hi, uint8_t lo)
+void usb_subtract_from_idata16(uint8_t hi, uint8_t lo)
 {
     __idata uint8_t *ptr = (__idata uint8_t *)0x16;
     uint8_t val_lo = ptr[1];
@@ -2300,12 +2304,13 @@ uint8_t usb_get_nvme_cmd_type(void)
 }
 
 /*
- * usb_func_1c88 - Set DPTR to 0x01XX
+ * usb_calc_addr_01xx - Set DPTR to 0x01XX
  * Address: 0x1c88-0x1c8f (8 bytes)
  *
  * Takes A, makes DPTR = 0x01XX where XX = A.
+ * Returns pointer into first page of XDATA.
  */
-__xdata uint8_t *usb_func_1c88(uint8_t lo)
+__xdata uint8_t *usb_calc_addr_01xx(uint8_t lo)
 {
     return (__xdata uint8_t *)(0x0100 | lo);
 }
@@ -2388,10 +2393,11 @@ void usb_inc_param_counter(void)
 }
 
 /*
- * usb_func_1cb7 - Calculate address 0x012B + A
+ * usb_calc_addr_012b_plus - Calculate address 0x012B + A
  * Address: 0x1cb7-0x1cc0 (10 bytes)
  *
  * Adds 0x2B to input A, returns DPTR = 0x01XX.
+ * Returns pointer into USB transfer parameters table.
  *
  * Original disassembly:
  *   1cb7: add a, #0x2b      ; A += 0x2B
@@ -2401,7 +2407,7 @@ void usb_inc_param_counter(void)
  *   1cbe: mov 0x83, a
  *   1cc0: ret
  */
-__xdata uint8_t *usb_func_1cb7(uint8_t offset)
+__xdata uint8_t *usb_calc_addr_012b_plus(uint8_t offset)
 {
     uint16_t addr = 0x0100 + offset + 0x2B;
     return (__xdata uint8_t *)addr;
@@ -2491,10 +2497,11 @@ void usb_add_nvme_param_20(void)
 }
 
 /*
- * usb_func_1ce4 - Calculate address 0x04B7 + IDATA[0x23]
+ * usb_calc_addr_04b7_plus - Calculate address 0x04B7 + IDATA[0x23]
  * Address: 0x1ce4-0x1cef (12 bytes)
  *
  * Adds 0xB7 to IDATA[0x23], returns DPTR = 0x04XX.
+ * Returns pointer into endpoint descriptor/config table.
  *
  * Original disassembly:
  *   1ce4: mov a, #0xb7
@@ -2505,7 +2512,7 @@ void usb_add_nvme_param_20(void)
  *   1ced: mov 0x83, a
  *   1cef: ret
  */
-__xdata uint8_t *usb_func_1ce4(void)
+__xdata uint8_t *usb_calc_addr_04b7_plus(void)
 {
     uint8_t offset = *(__idata uint8_t *)0x23;
     uint16_t addr = 0x0400 + 0xB7 + offset;
@@ -2578,11 +2585,12 @@ void usb_ep_config_int_mode(void)
 }
 
 /*
- * usb_func_1d12 - Code table lookup
+ * usb_lookup_xdata_via_code - Code table lookup
  * Address: 0x1d12-0x1d1c (11 bytes)
  *
  * Takes A, uses it as offset from DPTR into code table.
  * Returns XDATA read from calculated address.
+ * Used to look up XDATA addresses stored in code space tables.
  *
  * Original disassembly:
  *   1d12: mov r5, a         ; R5 = input
@@ -2594,7 +2602,7 @@ void usb_ep_config_int_mode(void)
  *   1d1b: movx a, @dptr     ; read XDATA
  *   1d1c: ret
  */
-uint8_t usb_func_1d12(__code uint8_t *code_ptr, uint8_t offset)
+uint8_t usb_lookup_xdata_via_code(__code uint8_t *code_ptr, uint8_t offset)
 {
     uint8_t hi = *code_ptr;
     uint16_t addr = ((uint16_t)hi << 8) | offset;
@@ -2943,13 +2951,14 @@ void usb_write_ep_ctrl_by_mode(uint8_t mode)
 }
 
 /*
- * usb_func_533d - Write R7 shifted to CE95, check CE65
+ * usb_set_xfer_mode_check_ctrl - Write R7 shifted to CE95, check CE65
  * Address: 0x533d-0x5358 (28 bytes)
  *
  * Shifts R7 right by 1, writes to 0xCE95, reads 0xCE65, compares to R6,
  * if equal writes R7 and R7+1 to 0xCE6E.
+ * Sets transfer mode and checks control register for readiness.
  */
-uint8_t usb_func_533d(uint8_t val, uint8_t compare)
+uint8_t usb_set_xfer_mode_check_ctrl(uint8_t val, uint8_t compare)
 {
     uint8_t shifted = val >> 1;
     uint8_t ce65_val;
@@ -2967,12 +2976,13 @@ uint8_t usb_func_533d(uint8_t val, uint8_t compare)
 }
 
 /*
- * usb_func_5359 - Read system status and calculate index
+ * usb_get_indexed_status - Read system status and calculate index
  * Address: 0x5359-0x5362 (10 bytes)
  *
  * Reads G_SYS_STATUS_PRIMARY, saves in R6, calls helper 0x16E9.
+ * Returns indexed system status for current transfer.
  */
-uint8_t usb_func_5359(void)
+uint8_t usb_get_indexed_status(void)
 {
     uint8_t status = G_SYS_STATUS_PRIMARY;
     /* Call helper_16e9 to get DPTR, read value */
@@ -2981,12 +2991,13 @@ uint8_t usb_func_5359(void)
 }
 
 /*
- * usb_func_53a0 - USB endpoint queue handler
+ * usb_ep_queue_process - USB endpoint queue handler
  * Address: 0x53a0-0x53bf (32 bytes)
  *
  * Handles USB endpoint queue operations.
+ * Processes pending items in the endpoint queue.
  */
-void usb_func_53a0(void)
+void usb_ep_queue_process(void)
 {
     /* Complex queue handler - stub */
 }
@@ -3105,13 +3116,14 @@ uint8_t usb_get_e716_status(void)
 }
 
 /*
- * usb_func_5426 - Call helper with timeout
+ * usb_wait_with_timeout - Call helper with timeout
  * Address: 0x5426-0x5433 (14 bytes)
  *
  * Calls helper 0x0426 with R7=0x14 (timeout count), then helper 0x173b
  * with DPTR=0xB220, then jumps to 0x0453.
+ * Waits for USB operation completion with timeout.
  */
-void usb_func_5426(void)
+void usb_wait_with_timeout(void)
 {
     /* Call timeout helper at 0x0426 with count 0x14 */
     /* Call helper at 0x173b with DPTR=0xB220 */
@@ -3157,12 +3169,13 @@ void usb_setup_transfer_mode5_24(void)
 }
 
 /*
- * usb_func_5455 - Call dual helpers
+ * usb_buffer_config_status - Call dual helpers
  * Address: 0x5455-0x545b (7 bytes)
  *
  * Calls helper 0x312a then helper 0x31ce.
+ * Configures buffer and updates status for USB transfer.
  */
-void usb_func_5455(void)
+void usb_buffer_config_status(void)
 {
     /* lcall 0x312a - buffer config helper */
     /* lcall 0x31ce - buffer status helper */
@@ -3186,12 +3199,13 @@ void usb_clear_power_init_flag(void)
 }
 
 /*
- * usb_func_5462 - Call 1cf0 helper
+ * usb_init_transfer_mode5 - Call 1cf0 helper
  * Address: 0x5462-0x5465 (4 bytes)
  *
  * Calls usb_setup_transfer_mode5 (OR idata bytes to ACC).
+ * Initializes USB transfer with mode 5 settings.
  */
-void usb_func_5462(void)
+void usb_init_transfer_mode5(void)
 {
     usb_setup_transfer_mode5();
 }
@@ -3266,13 +3280,14 @@ uint8_t usb_get_xdata_009f(void)
 /* usb_func_1bcb is defined earlier in this file at line ~2030 */
 
 /*
- * usb_func_1bd5 - Add 0x10 to address and transfer
+ * usb_add_16_to_addr - Add 0x10 to address and transfer
  * Address: 0x1bd5-0x1bdd (9 bytes)
  *
  * Adds 0x10 to A, saves to R1, clears A, adds with carry to R2,
  * then jumps to 0x0bc8.
+ * Calculates offset address for buffer transfer.
  */
-void usb_func_1bd5(uint8_t val, uint8_t hi)
+void usb_add_16_to_addr(uint8_t val, uint8_t hi)
 {
     /* Calculate address offset and call helper */
     uint8_t new_lo = val + 0x10;
@@ -3316,12 +3331,13 @@ uint8_t usb_get_config_90e0(void)
 }
 
 /*
- * usb_func_1bf1 - USB endpoint status check
+ * usb_check_ep_status_flags - USB endpoint status check
  * Address: 0x1bf1-0x1c00 (16 bytes)
  *
  * Reads USB endpoint status and processes flags.
+ * Checks endpoint status register for pending operations.
  */
-void usb_func_1bf1(void)
+void usb_check_ep_status_flags(void)
 {
     uint8_t status = REG_USB_EP_STATUS;
     (void)status;
@@ -3342,79 +3358,86 @@ void usb_clear_mode_bit(void)
 }
 
 /*
- * usb_func_1c0b - Write USB status with parameter
+ * usb_set_ep0_len - Write USB status with parameter
  * Address: 0x1c0b-0x1c1a (16 bytes)
  *
- * Writes parameter to USB status register, sets flags.
+ * Writes parameter to USB EP0 length register, sets flags.
+ * Sets endpoint 0 data length for control transfers.
  */
-void usb_func_1c0b(uint8_t param)
+void usb_set_ep0_len(uint8_t param)
 {
     REG_USB_EP0_LEN_L = param;
 }
 
 /*
- * usb_func_1c1b - USB buffer mode setup
+ * usb_set_buffer_mode - USB buffer mode setup
  * Address: 0x1c1b-0x1c30 (22 bytes)
  *
  * Configures USB buffer for specified mode.
+ * Sets buffer configuration for DMA transfer.
  */
-void usb_func_1c1b(uint8_t mode)
+void usb_set_buffer_mode(uint8_t mode)
 {
     (void)mode;
     /* Buffer mode configuration */
 }
 
 /*
- * usb_func_1c31 - USB endpoint data transfer
+ * usb_ep_data_transfer - USB endpoint data transfer
  * Address: 0x1c31-0x1c45 (21 bytes)
  *
  * Handles USB endpoint data transfer operations.
+ * Initiates data transfer on active endpoint.
  */
-void usb_func_1c31(void)
+void usb_ep_data_transfer(void)
 {
     /* Endpoint data transfer handling */
 }
 
 /*
- * usb_func_1c46 - USB status register update
+ * usb_update_status_regs - USB status register update
  * Address: 0x1c46-0x1c5a (21 bytes)
  *
  * Updates USB status registers based on state.
+ * Syncs internal state with hardware status registers.
  */
-void usb_func_1c46(void)
+void usb_update_status_regs(void)
 {
     /* Status register update */
 }
 
 /*
- * usb_func_1c5b - USB config read and mask
+ * usb_get_config_masked - USB config read and mask
  * Address: 0x1c5b-0x1c70 (22 bytes)
  *
  * Reads USB configuration, applies mask, returns result.
+ * Returns USB configuration register value with mask applied.
  */
-uint8_t usb_func_1c5b(void)
+uint8_t usb_get_config_masked(void)
 {
     return REG_USB_CONFIG & USB_CONFIG_MASK;
 }
 
 /*
- * usb_func_1c71 - USB transfer completion check
+ * usb_check_transfer_complete - USB transfer completion check
  * Address: 0x1c71-0x1c85 (21 bytes)
  *
  * Checks if USB transfer is complete.
+ * Returns 1 if transfer complete, 0 if still pending.
  */
-uint8_t usb_func_1c71(void)
+uint8_t usb_check_transfer_complete(void)
 {
     return (REG_USB_STATUS & USB_STATUS_INDICATOR) ? 1 : 0;
 }
 
 /*
- * usb_func_1c86 - USB endpoint reset
+ * usb_reset_endpoint - USB endpoint reset
  * Address: 0x1c86-0x1c9e (25 bytes)
  *
  * Resets USB endpoint to initial state.
+ * Clears endpoint status and reinitializes for next transfer.
  */
-void usb_func_1c86(void)
+void usb_reset_endpoint(void)
 {
     /* Endpoint reset sequence */
 }
@@ -3862,6 +3885,43 @@ void usb_reg_write_9093(void)
 {
     REG_USB_EP_CFG1 = 0x02;
     REG_USB_EP_CFG2 = 0x10;
+}
+
+/*
+ * usb_func_1c5d - Read indexed value from 0x05xx and store to 0x05A6
+ * Address: 0x1c5d-0x1c6c (16 bytes)
+ *
+ * Reads index from ptr, computes address 0x05A8 + index, reads value
+ * from that address, and stores to G_PCIE_TXN_COUNT_LO (0x05A6).
+ *
+ * Used to set PCIe transaction count based on system status.
+ *
+ * Original disassembly:
+ *   1c5d: movx a, @dptr        ; A = *ptr (index)
+ *   1c5e: add a, #0xa8         ; A = A + 0xA8
+ *   1c60: mov dpl, a
+ *   1c62: clr a
+ *   1c63: addc a, #0x05        ; DPH = 0x05 + carry
+ *   1c65: mov dph, a           ; DPTR = 0x05xx
+ *   1c67: movx a, @dptr        ; A = [0x05A8 + index]
+ *   1c68: mov dptr, #0x05a6
+ *   1c6b: movx @dptr, a        ; [0x05A6] = A
+ *   1c6c: ret
+ */
+void usb_func_1c5d(__xdata uint8_t *ptr)
+{
+    uint8_t idx = *ptr;
+    uint16_t addr;
+    uint8_t val;
+
+    /* Compute address 0x05A8 + idx (with possible overflow to 0x06xx) */
+    addr = 0x05A8 + idx;
+
+    /* Read value from computed address */
+    val = *(__xdata uint8_t *)addr;
+
+    /* Store to G_PCIE_TXN_COUNT_LO */
+    G_PCIE_TXN_COUNT_LO = val;
 }
 
 /*
