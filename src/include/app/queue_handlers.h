@@ -7,7 +7,7 @@
 #ifndef __QUEUE_HANDLERS_H__
 #define __QUEUE_HANDLERS_H__
 
-#include "../types.h"
+#include "types.h"
 
 /*===========================================================================
  * Power State Helper Functions (0xaa00-0xaa35)

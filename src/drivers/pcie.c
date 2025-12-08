@@ -149,10 +149,10 @@
  * ============================================================================
  */
 
-#include "../types.h"
-#include "../sfr.h"
-#include "../registers.h"
-#include "../globals.h"
+#include "types.h"
+#include "sfr.h"
+#include "registers.h"
+#include "globals.h"
 
 /* External functions from utils.c */
 extern void idata_store_dword(__idata uint8_t *ptr, uint32_t val);

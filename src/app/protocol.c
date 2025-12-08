@@ -48,11 +48,11 @@
  * ============================================================================
  */
 
-#include "../types.h"
-#include "../sfr.h"
-#include "../registers.h"
-#include "../globals.h"
-#include "../structs.h"
+#include "types.h"
+#include "sfr.h"
+#include "registers.h"
+#include "globals.h"
+#include "structs.h"
 
 /* Forward declarations */
 extern void dma_clear_status(void);

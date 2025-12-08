@@ -51,10 +51,10 @@
  * ============================================================================
  */
 
-#include "../types.h"
-#include "../sfr.h"
-#include "../registers.h"
-#include "../globals.h"
+#include "types.h"
+#include "sfr.h"
+#include "registers.h"
+#include "globals.h"
 
 /* External helper functions from stubs.c */
 extern uint8_t helper_1646(void);
