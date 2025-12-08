@@ -684,11 +684,20 @@ void flash_func_0bc8(void)
  */
 void reg_wait_bit_clear(uint16_t addr, uint8_t mask, uint8_t flags, uint8_t timeout)
 {
-    (void)addr;
-    (void)mask;
-    (void)flags;
-    (void)timeout;
-    /* TODO: Implement register polling with timeout */
+    /*
+     * Poll the target register until all bits in `mask` clear or the
+     * timeout counter expires. The original firmware uses R7 as a loop
+     * counter; here we mirror that behaviour by decrementing `timeout`
+     * after each failed check. The `flags` parameter is reserved for
+     * future mode tweaks; no alternate modes are known in the current
+     * reverse engineering pass, so it is ignored for now.
+     */
+    do {
+        uint8_t val = *(__xdata uint8_t *)addr;
+        if ((val & mask) == 0) {
+            return;
+        }
+    } while (timeout-- != 0);
 }
 
 /*

@@ -923,6 +923,7 @@ void init_sys_flags_07f0(void)
 
 /* Forward declaration for loop helper */
 extern void delay_loop_adb0(void);
+extern void timer_wait(uint8_t timeout_lo, uint8_t timeout_hi, uint8_t mode);
 
 /*
  * delay_short_e89d - Short delay with IDATA setup
@@ -956,9 +957,14 @@ void delay_short_e89d(void)
  */
 void delay_wait_e80a(uint16_t delay, uint8_t flag)
 {
-    (void)delay;
-    (void)flag;
-    /* TODO: Implement timer-based delay */
+    /*
+     * This is a thin wrapper around timer_wait (0xE80A) using the
+     * calling convention from the original firmware where the low/high
+     * delay bytes are passed in R4/R5 and mode flags in R7.  The timer
+     * helper itself lives in timer.c; we simply forward the parameters
+     * so callers that reference the legacy symbol behave identically.
+     */
+    timer_wait((uint8_t)(delay & 0xFF), (uint8_t)(delay >> 8), flag);
 }
 
 /*
