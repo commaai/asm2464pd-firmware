@@ -3223,12 +3223,3 @@ void ext_mem_access_0bc8(uint8_t bank, uint8_t addr_hi, uint8_t addr_lo)
 /* helper_e677 - Address: 0xe677 - PCIe channel init helper */
 void helper_e677(void) { /* Stub */ }
 
-
-
-/* 
- * helper_173b - Helper stub 
- * Address: 0x173b 
- * 
- * Stub added to resolve linker error. 
- */
-void helper_173b(void) {}
