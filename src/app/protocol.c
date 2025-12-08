@@ -1654,9 +1654,9 @@ void helper_04da(uint8_t param)
 
     /* Check bit 0 of param */
     if (param & 0x01) {
-        val = REG_POWER_CTRL_92C4;
+        val = REG_POWER_MISC_CTRL;
         val &= 0xFE;  /* Clear bit 0 */
-        REG_POWER_CTRL_92C4 = val;
+        REG_POWER_MISC_CTRL = val;
     }
 
     /* Check bit 1 of param */
@@ -1752,10 +1752,10 @@ void helper_31ad(__xdata uint8_t *ptr)
 void helper_3147(void)
 {
     /* Copy USB status 0x911F-0x9122 to CSW tag 0xD804-0xD807 */
-    USB_CSW->tag0 = REG_USB_STATUS_1F;
-    USB_CSW->tag1 = REG_USB_STATUS_20;
-    USB_CSW->tag2 = REG_USB_STATUS_21;
-    USB_CSW->tag3 = REG_USB_STATUS_22;
+    USB_CSW->tag0 = REG_CBW_TAG_0;
+    USB_CSW->tag1 = REG_CBW_TAG_1;
+    USB_CSW->tag2 = REG_CBW_TAG_2;
+    USB_CSW->tag3 = REG_CBW_TAG_3;
 }
 
 /*
@@ -1813,8 +1813,8 @@ uint16_t helper_3181(void)
 {
     uint8_t lo, hi;
 
-    lo = REG_USB_STATUS_0D;
-    hi = REG_USB_STATUS_0E;
+    lo = REG_USB_STAT_EXT_L;
+    hi = REG_USB_STAT_EXT_H;
 
     return ((uint16_t)hi << 8) | lo;
 }

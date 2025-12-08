@@ -1088,9 +1088,9 @@ void helper_e3b7(uint8_t param)
     REG_TIMER1_CSR = 0x04;
     REG_TIMER1_CSR = 0x02;
 
-    /* If bit 0 set: clear bit 0 of REG_POWER_CTRL_92C4 */
+    /* If bit 0 set: clear bit 0 of REG_POWER_MISC_CTRL */
     if (param & 0x01) {
-        REG_POWER_CTRL_92C4 = REG_POWER_CTRL_92C4 & 0xFE;
+        REG_POWER_MISC_CTRL = REG_POWER_MISC_CTRL & 0xFE;
     }
 
     /* If bit 1 set: set bit 0 of REG_TUNNEL_LINK_CTRL and call log processor */

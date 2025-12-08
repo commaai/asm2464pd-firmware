@@ -81,7 +81,7 @@
 #define REG_USB_EP0_LEN_L       XDATA_REG8(0x9004)
 #define REG_USB_EP0_LEN_H       XDATA_REG8(0x9005)
 #define REG_USB_EP0_CONFIG      XDATA_REG8(0x9006)
-#define REG_USB_STATUS2         REG_USB_EP0_CONFIG  /* Alias for set_usb_status_bit0 */
+// REG_USB_STATUS2 removed (alias)
 #define   USB_EP0_CONFIG_ENABLE   0x01  // Bit 0: EP0 config enable
 #define REG_USB_SCSI_BUF_LEN    XDATA_REG16(0x9007)
 #define REG_USB_SCSI_BUF_LEN_L  XDATA_REG8(0x9007)
@@ -92,14 +92,14 @@
 #define REG_USB_FIFO_STATUS     XDATA_REG8(0x9012)  /* USB FIFO/status register */
 #define   USB_FIFO_STATUS_READY   0x01  // Bit 0: USB ready/active
 #define REG_USB_FIFO_H          XDATA_REG8(0x9013)
-#define REG_USB_MODE_9018       XDATA_REG8(0x9018)
+#define REG_USB_XCVR_MODE       XDATA_REG8(0x9018)
 #define REG_USB_MODE_VAL_9019   XDATA_REG8(0x9019)
 #define REG_USB_MSC_LENGTH      XDATA_REG8(0x901A)
 
 // USB endpoint registers (0x905E-0x90FF)
 #define REG_USB_EP_BUF_HI       XDATA_REG8(0x905B)  // USB endpoint buffer high byte
 #define REG_USB_EP_BUF_LO       XDATA_REG8(0x905C)  // USB endpoint buffer low byte
-#define REG_USB_EP_CTRL_905E    XDATA_REG8(0x905E)
+#define REG_USB_EP_MGMT         XDATA_REG8(0x905E)
 #define REG_USB_EP_CTRL_905F    XDATA_REG8(0x905F)  /* USB endpoint control 2 */
 #define REG_USB_INT_MASK_9090   XDATA_REG8(0x9090)  /* USB interrupt mask */
 #define REG_INT_FLAGS_EX0       XDATA_REG8(0x9091)
@@ -120,8 +120,8 @@
 #define   USB_LINK_STATUS_MASK    0x03  // Bits 0-1: Link status
 #define REG_USB_PERIPH_STATUS   XDATA_REG8(0x9101)
 #define REG_USB_PHY_STATUS_9105 XDATA_REG8(0x9105)  /* USB PHY status check (0xFF = active) */
-#define REG_USB_STATUS_0D       XDATA_REG8(0x910D)
-#define REG_USB_STATUS_0E       XDATA_REG8(0x910E)
+#define REG_USB_STAT_EXT_L      XDATA_REG8(0x910D)
+#define REG_USB_STAT_EXT_H      XDATA_REG8(0x910E)
 #define REG_USB_EP_STATUS       XDATA_REG8(0x9118)
 #define REG_USB_CBW_LEN_HI      XDATA_REG8(0x9119)  /* CBW length high byte */
 #define REG_USB_CBW_LEN_LO      XDATA_REG8(0x911A)  /* CBW length low byte */
@@ -129,15 +129,10 @@
 #define REG_USB_CBW_SIG1        XDATA_REG8(0x911C)  /* CBW sig byte 1 / 'S' */
 #define REG_USB_CBW_SIG2        XDATA_REG8(0x911D)  /* CBW sig byte 2 / 'B' */
 #define REG_USB_CBW_SIG3        XDATA_REG8(0x911E)  /* CBW sig byte 3 / 'C' */
-#define REG_USB_STATUS_1F       XDATA_REG8(0x911F)
-// Note: 0x9120-0x9123 dual use: USB status AND CBW tag storage
-#define REG_USB_STATUS_20       XDATA_REG8(0x9120)
-#define REG_USB_STATUS_21       XDATA_REG8(0x9121)
-#define REG_USB_STATUS_22       XDATA_REG8(0x9122)
-#define REG_CBW_TAG_0           XDATA_REG8(0x9120)  // Dual-use
-#define REG_CBW_TAG_1           XDATA_REG8(0x9121)  // Dual-use
-#define REG_CBW_TAG_2           XDATA_REG8(0x9122)  // Dual-use
-#define REG_CBW_TAG_3           XDATA_REG8(0x9123)
+#define REG_CBW_TAG_0           XDATA_REG8(0x911F)
+#define REG_CBW_TAG_1           XDATA_REG8(0x9120)
+#define REG_CBW_TAG_2           XDATA_REG8(0x9121)
+#define REG_CBW_TAG_3           XDATA_REG8(0x9122)
 #define REG_USB_CBW_XFER_LEN_0  XDATA_REG8(0x9123)  /* CBW transfer length byte 0 (LSB) */
 #define REG_USB_CBW_XFER_LEN_1  XDATA_REG8(0x9124)  /* CBW transfer length byte 1 */
 #define REG_USB_CBW_XFER_LEN_2  XDATA_REG8(0x9125)  /* CBW transfer length byte 2 */
@@ -168,7 +163,7 @@
 #define   CLOCK_ENABLE_BIT1       0x02  // Bit 1: Secondary clock
 #define REG_POWER_STATUS        XDATA_REG8(0x92C2)
 #define   POWER_STATUS_SUSPENDED  0x40  // Bit 6: Device suspended
-#define REG_POWER_CTRL_92C4     XDATA_REG8(0x92C4)
+#define REG_POWER_MISC_CTRL     XDATA_REG8(0x92C4)
 #define REG_PHY_POWER           XDATA_REG8(0x92C5)
 #define   PHY_POWER_ENABLE        0x04  // Bit 2: PHY power enable
 #define REG_POWER_CTRL_92C6     XDATA_REG8(0x92C6)
@@ -196,7 +191,7 @@
 #define REG_PCIE_TLP_CTRL       XDATA_REG8(0xB213)
 #define REG_PCIE_TLP_LENGTH     XDATA_REG8(0xB216)
 #define REG_PCIE_BYTE_EN        XDATA_REG8(0xB217)
-#define REG_PCIE_B217           REG_PCIE_BYTE_EN    /* Alias */
+// REG_PCIE_B217 removed (alias)
 #define REG_PCIE_ADDR_0         XDATA_REG8(0xB218)
 #define REG_PCIE_ADDR_1         XDATA_REG8(0xB219)
 #define REG_PCIE_ADDR_2         XDATA_REG8(0xB21A)
@@ -217,7 +212,7 @@
 #define   PCIE_STATUS_ERROR       0x01  // Bit 0: Error flag
 #define   PCIE_STATUS_COMPLETE    0x02  // Bit 1: Completion status
 #define   PCIE_STATUS_BUSY        0x04  // Bit 2: Busy flag
-#define REG_PCIE_TLP_CTRL_B298  XDATA_REG8(0xB298)  // TLP control (bit 4 = tunnel enable)
+#define REG_PCIE_TUNNEL_CFG     XDATA_REG8(0xB298)  // TLP control (bit 4 = tunnel enable)
 #define   PCIE_TLP_CTRL_TUNNEL    0x10  // Bit 4: Tunnel enable
 
 // PCIe Tunnel Control (0xB401-0xB404)
@@ -411,9 +406,7 @@
 // Interrupt Controller (0xC800-0xC80F)
 //=============================================================================
 #define REG_INT_STATUS_C800     XDATA_REG8(0xC800)  /* Interrupt status register */
-#define REG_USB_INT_STATUS_C800 REG_INT_STATUS_C800 /* Alias for scsi_dma_init */
 #define REG_INT_ENABLE          XDATA_REG8(0xC801)  /* Interrupt enable register */
-#define REG_INT_CTRL_C801       REG_INT_ENABLE      /* Alias for scsi_dma_init */
 #define   INT_ENABLE_GLOBAL       0x01  // Bit 0: Global interrupt enable
 #define   INT_ENABLE_USB          0x02  // Bit 1: USB interrupt enable
 #define   INT_ENABLE_PCIE         0x04  // Bit 2: PCIe interrupt enable

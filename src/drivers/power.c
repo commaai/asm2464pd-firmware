@@ -760,8 +760,8 @@ void usb_power_init(void)
     REG_USB_MODE = 1;
 
     /* Clear EP control bit 0 */
-    val = REG_USB_EP_CTRL_905E;
-    REG_USB_EP_CTRL_905E = val & 0xFE;
+    val = REG_USB_EP_MGMT;
+    REG_USB_EP_MGMT = val & 0xFE;
 
     /* Trigger USB MSC operation and clear status bit */
     REG_USB_MSC_CTRL = 1;

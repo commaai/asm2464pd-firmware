@@ -927,7 +927,7 @@ void usb_mode_config_d07f(uint8_t param)
     }
 
     /* d0c1: Write mode to 0x9018 */
-    REG_USB_MODE_9018 = mode_val;
+    REG_USB_XCVR_MODE = mode_val;
 
     /* d0cd: Write data to 0x9010 */
     REG_USB_DATA_L = data_val;
@@ -1896,7 +1896,8 @@ __xdata uint8_t *get_usb_index_ptr_15a0(void)
  */
 void set_usb_status_bit0_1be1(void)
 {
-    REG_USB_STATUS2 |= 0x01;
+    /* d0b9: Set bit 0 of 0x9006 (REG_USB_EP0_CONFIG) */
+    REG_USB_EP0_CONFIG |= 0x01;
 }
 
 /*

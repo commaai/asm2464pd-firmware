@@ -381,11 +381,11 @@ void pcie_tunnel_setup(void)
     tmp &= 0xFE;
     REG_TUNNEL_LINK_STATE = tmp;
 
-    /* Set bit 4 of REG_PCIE_TLP_CTRL_B298 (0xB298) */
-    tmp = REG_PCIE_TLP_CTRL_B298;
+    /* Set bit 4 of REG_PCIE_TUNNEL_CFG (0xB298) */
+    tmp = REG_PCIE_TUNNEL_CFG;
     tmp &= 0xEF;  /* Clear bit 4 first */
     tmp |= 0x10;  /* Then set bit 4 */
-    REG_PCIE_TLP_CTRL_B298 = tmp;
+    REG_PCIE_TUNNEL_CFG = tmp;
 
     /* Final bank-switched writes:
      * Write 0x70 to 0x6043

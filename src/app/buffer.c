@@ -175,10 +175,10 @@ void buf_write_idata_params(void)
  */
 void buf_config_from_status(void)
 {
-    USB_BUF_CTRL->ptr_high = REG_USB_STATUS_1F;
-    USB_BUF_CTRL->length_low = REG_USB_STATUS_20;
-    USB_BUF_CTRL->status = REG_USB_STATUS_21;
-    USB_BUF_CTRL->length_high = REG_USB_STATUS_22;
+    USB_BUF_CTRL->ptr_high = REG_CBW_TAG_0;
+    USB_BUF_CTRL->length_low = REG_CBW_TAG_1;
+    USB_BUF_CTRL->status = REG_CBW_TAG_2;
+    USB_BUF_CTRL->length_high = REG_CBW_TAG_3;
 }
 
 /*

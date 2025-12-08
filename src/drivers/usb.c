@@ -863,10 +863,10 @@ void usb_set_transfer_active_flag(void)
  */
 void usb_copy_status_to_buffer(void)
 {
-    USB_BUF_CTRL->ptr_high = REG_USB_STATUS_1F;
-    USB_BUF_CTRL->length_low = REG_USB_STATUS_20;
-    USB_BUF_CTRL->status = REG_USB_STATUS_21;
-    USB_BUF_CTRL->length_high = REG_USB_STATUS_22;
+    USB_BUF_CTRL->ptr_high = REG_CBW_TAG_0;
+    USB_BUF_CTRL->length_low = REG_CBW_TAG_1;
+    USB_BUF_CTRL->status = REG_CBW_TAG_2;
+    USB_BUF_CTRL->length_high = REG_CBW_TAG_3;
 }
 
 /*
@@ -925,8 +925,8 @@ __xdata uint8_t *usb_clear_idata_indexed(void)
  */
 uint16_t usb_read_status_pair(void)
 {
-    uint8_t hi = REG_USB_STATUS_0D;
-    uint8_t lo = REG_USB_STATUS_0E;
+    uint8_t hi = REG_USB_STAT_EXT_L;
+    uint8_t lo = REG_USB_STAT_EXT_H;
     return ((uint16_t)hi << 8) | lo;
 }
 
