@@ -287,6 +287,20 @@ void helper_16e9(uint8_t param) { (void)param; }
 void helper_16eb(uint8_t param) { (void)param; }
 
 /*
+ * helper_173b - DMA/queue pointer helper used by SCSI path
+ * Address: 0x173b (entry point only)
+ *
+ * The original firmware tail-calls into a small routine that prepares
+ * DPTR before issuing a DMA-related request. The exact side effects are
+ * still unknown, but we stub it out so the firmware links and higher
+ * level logic can continue to be reverse engineered.
+ */
+void helper_173b(void)
+{
+    /* TODO: Implement once behavior at 0x173b is understood. */
+}
+
+/*
  * FUN_CODE_1b07 - Read from SCSI control array
  * Address: 0x1b07-0x1b13 (13 bytes)
  *

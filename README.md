@@ -12,12 +12,26 @@ Open-source C firmware for the ASM2464PD USB4/Thunderbolt to NVMe bridge control
 
 ## Building
 
-Requires SDCC (Small Device C Compiler).
+### Prerequisites
+
+* [SDCC](https://sdcc.sourceforge.net/) (Small Device C Compiler)
+* GNU Make
+* Python 3 (for the wrapper step)
+
+On Debian/Ubuntu the toolchain can be installed with:
 
 ```bash
-make              # Build firmware.bin
+sudo apt-get update
+sudo apt-get install -y sdcc make python3
+```
+
+### Build steps
+
+```bash
+make              # Build build/firmware.bin
 make wrapped      # Build with ASM2464 header (checksum + CRC)
 make compare      # Compare against original fw.bin
+make clean        # Remove build artifacts
 ```
 
 ## Memory Map
