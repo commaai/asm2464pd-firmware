@@ -8,10 +8,10 @@
  * reverse-engineered from the original firmware.
  */
 
-#include "../types.h"
-#include "../sfr.h"
-#include "../registers.h"
-#include "../globals.h"
+#include "types.h"
+#include "sfr.h"
+#include "registers.h"
+#include "globals.h"
 
 /* External function declarations */
 extern void phy_link_training(void);  /* 0xD702 - in phy.c */

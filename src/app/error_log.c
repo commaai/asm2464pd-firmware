@@ -34,10 +34,10 @@
  *
  */
 
-#include "../types.h"
-#include "../sfr.h"
-#include "../registers.h"
-#include "../globals.h"
+#include "types.h"
+#include "sfr.h"
+#include "registers.h"
+#include "globals.h"
 
 /* IDATA locations used by error logging */
 #define IDATA_LOG_INDEX     0x51    /* Current log entry index */

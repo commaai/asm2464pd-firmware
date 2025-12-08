@@ -13,7 +13,7 @@ OBJCOPY = sdobjcopy
 # Compiler flags
 CFLAGS = -mmcs51 --model-large --opt-code-size
 CFLAGS += --std-c99
-CFLAGS += -I$(SRC_DIR)
+CFLAGS += -I$(SRC_DIR) -I$(SRC_DIR)/include
 CFLAGS += --no-xinit-opt
 
 # Memory model settings for ASM2464PD

@@ -7,11 +7,11 @@
  * Address range: 0x4013-0x5765 (various functions)
  */
 
-#include "../types.h"
-#include "../sfr.h"
-#include "../registers.h"
-#include "../globals.h"
-#include "../structs.h"
+#include "types.h"
+#include "sfr.h"
+#include "registers.h"
+#include "globals.h"
+#include "structs.h"
 
 /* External functions */
 extern uint8_t usb_read_transfer_params_hi(void);

@@ -10,10 +10,10 @@
  * memory at addresses 0x12xx using helper functions 0x0bc8/0x0be6.
  */
 
-#include "../types.h"
-#include "../sfr.h"
-#include "../registers.h"
-#include "../globals.h"
+#include "types.h"
+#include "sfr.h"
+#include "registers.h"
+#include "globals.h"
 
 /*===========================================================================
  * PCIe Extended Register Access Helpers

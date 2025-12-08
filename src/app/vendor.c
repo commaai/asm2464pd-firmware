@@ -67,11 +67,11 @@
  * ============================================================================
  */
 
-#include "../types.h"
-#include "../sfr.h"
-#include "../registers.h"
-#include "../globals.h"
-#include "../structs.h"
+#include "types.h"
+#include "sfr.h"
+#include "registers.h"
+#include "globals.h"
+#include "structs.h"
 
 /* USB control buffer where CBW is received */
 #define USB_CBW_BUFFER      ((__xdata uint8_t *)USB_CTRL_BUF_BASE)  /* 0x9E00 */
