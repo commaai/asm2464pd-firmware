@@ -1857,7 +1857,7 @@ uint8_t usb_dec_indexed_counter(void)
  */
 /* Note: usb_func_1b14 is now in state_helpers.c with correct signature for protocol.c */
 
-void usb_func_1b14_addr(uint8_t addr_lo, uint8_t addr_hi)
+void usb_xdata_copy_with_offset(uint8_t addr_lo, uint8_t addr_hi)
 {
     /* This function propagates address calculations between helpers.
      * Due to register-based calling convention in 8051, this is
@@ -1867,10 +1867,11 @@ void usb_func_1b14_addr(uint8_t addr_lo, uint8_t addr_hi)
 }
 
 /*
- * usb_func_1b2b - Calculate address 0x0108 + IDATA[0x0D]
+ * usb_calc_ep_queue_ptr - Calculate address 0x0108 + IDATA[0x0D]
  * Address: 0x1b2b-0x1b37 (13 bytes)
  *
  * Reads IDATA[0x0D], adds to 0x08, returns DPTR pointing to 0x01XX.
+ * This calculates a pointer into the endpoint queue structure.
  *
  * Original disassembly:
  *   1b2b: mov r0, #0x0d
@@ -1882,7 +1883,7 @@ void usb_func_1b14_addr(uint8_t addr_lo, uint8_t addr_hi)
  *   1b35: mov 0x83, a
  *   1b37: ret
  */
-__xdata uint8_t *usb_func_1b2b(void)
+__xdata uint8_t *usb_calc_ep_queue_ptr(void)
 {
     uint8_t offset = *(__idata uint8_t *)0x0D;
     uint16_t addr = 0x0108 + offset;
@@ -1890,10 +1891,11 @@ __xdata uint8_t *usb_func_1b2b(void)
 }
 
 /*
- * usb_func_1b38 - Mask input and calculate address 0x014E + IDATA[0x3E]
+ * usb_calc_idx_counter_ptr - Mask input and calculate address 0x014E + IDATA[0x3E]
  * Address: 0x1b38-0x1b46 (15 bytes)
  *
  * Masks input to 5 bits, calculates 0x014E + IDATA[0x3E], returns DPTR.
+ * Returns pointer into USB index counter table.
  *
  * Original disassembly:
  *   1b38: anl a, #0x1f          ; A &= 0x1F
@@ -1906,7 +1908,7 @@ __xdata uint8_t *usb_func_1b2b(void)
  *   1b44: mov 0x83, a
  *   1b46: ret
  */
-__xdata uint8_t *usb_func_1b38(uint8_t val)
+__xdata uint8_t *usb_calc_idx_counter_ptr(uint8_t val)
 {
     uint8_t masked = val & 0x1F;
     uint8_t offset = *(__idata uint8_t *)0x3E;
@@ -2052,10 +2054,12 @@ void usb_copy_idata_09_to_6b(void)
 }
 
 /*
- * usb_func_1b88 - Calculate address 0x009F + IDATA[0x3E] and read
+ * usb_read_ep_status_indexed - Calculate address 0x009F + IDATA[0x3E] and read
  * Address: 0x1b88-0x1b95 (14 bytes)
+ *
+ * Reads endpoint status from indexed location in 0x009F table.
  */
-uint8_t usb_func_1b88(uint8_t input)
+uint8_t usb_read_ep_status_indexed(uint8_t input)
 {
     uint8_t offset = *(__idata uint8_t *)0x3E;
     uint16_t addr = 0x009F + offset;
@@ -2064,13 +2068,14 @@ uint8_t usb_func_1b88(uint8_t input)
 }
 
 /*
- * usb_func_1b96 - EP config lookup with multiply
+ * usb_get_ep_config_by_status - EP config lookup with multiply
  * Address: 0x1b96-0x1ba4 (15 bytes)
  *
  * Reads G_SYS_STATUS_SECONDARY (0x0465), multiplies by 0x14 (20),
  * adds to base 0x054E, reads byte from result.
+ * Returns endpoint configuration based on system status index.
  */
-uint8_t usb_func_1b96(void)
+uint8_t usb_get_ep_config_by_status(void)
 {
     uint8_t status = G_SYS_STATUS_SECONDARY;
     uint16_t addr = 0x054E + ((uint16_t)status * 0x14);
@@ -2078,10 +2083,12 @@ uint8_t usb_func_1b96(void)
 }
 
 /*
- * usb_func_1ba5 - Read 16-bit value from G_BUF_ADDR (0x0218/0x0219)
+ * usb_get_buf_addr - Read 16-bit value from G_BUF_ADDR (0x0218/0x0219)
  * Address: 0x1ba5-0x1bad (9 bytes)
+ *
+ * Returns the 16-bit buffer address stored in G_BUF_ADDR_HI:G_BUF_ADDR_LO.
  */
-uint16_t usb_func_1ba5(void)
+uint16_t usb_get_buf_addr(void)
 {
     uint8_t hi = G_BUF_ADDR_HI;
     uint8_t lo = G_BUF_ADDR_LO;
@@ -2089,20 +2096,24 @@ uint16_t usb_func_1ba5(void)
 }
 
 /*
- * usb_func_1bae - Extract bits from IDATA[0x12] (shift right 5)
+ * usb_get_idata12_high_bits - Extract bits from IDATA[0x12] (shift right 5)
  * Address: 0x1bae-0x1bc0 (19 bytes)
+ *
+ * Extracts the high 3 bits from IDATA[0x12], returns value 0-7.
  */
-uint8_t usb_func_1bae(void)
+uint8_t usb_get_idata12_high_bits(void)
 {
     uint8_t val = *(__idata uint8_t *)0x12;
     return (val >> 5) & 0x07;
 }
 
 /*
- * usb_func_1bc1 - Add offset 0x0F to address in A:R2
+ * usb_calc_addr_plus_0f - Add offset 0x0F to address in A:R2
  * Address: 0x1bc1-0x1bca (10 bytes)
+ *
+ * Takes 16-bit address and adds 0x0F offset, returns resulting pointer.
  */
-__xdata uint8_t *usb_func_1bc1(uint8_t addr_lo, uint8_t addr_hi)
+__xdata uint8_t *usb_calc_addr_plus_0f(uint8_t addr_lo, uint8_t addr_hi)
 {
     uint16_t addr = ((uint16_t)addr_hi << 8) | addr_lo;
     addr += 0x0F;
@@ -2135,10 +2146,12 @@ void usb_set_ep0_config_bit0(void)
 }
 
 /*
- * usb_func_1be8 - Calculate address 0x0456 + G_SYS_STATUS_PRIMARY
+ * usb_calc_status_table_ptr - Calculate address 0x0456 + G_SYS_STATUS_PRIMARY
  * Address: 0x1be8-0x1bf5 (14 bytes)
+ *
+ * Returns pointer into system status table based on G_SYS_STATUS_PRIMARY.
  */
-__xdata uint8_t *usb_func_1be8(void)
+__xdata uint8_t *usb_calc_status_table_ptr(void)
 {
     uint8_t status = G_SYS_STATUS_PRIMARY;
     uint16_t addr = 0x0456 + status;
@@ -2161,10 +2174,12 @@ void usb_calc_buf_offset(uint8_t index)
 }
 
 /*
- * usb_func_1c0f - Calculate address 0x000C + IDATA[0x3C]
+ * usb_calc_work_area_ptr - Calculate address 0x000C + IDATA[0x3C]
  * Address: 0x1c0f-0x1c1a (12 bytes)
+ *
+ * Returns pointer into work area based on IDATA[0x3C] index.
  */
-__xdata uint8_t *usb_func_1c0f(void)
+__xdata uint8_t *usb_calc_work_area_ptr(void)
 {
     uint8_t offset = *(__idata uint8_t *)0x3C;
     uint16_t addr = 0x000C + offset;
@@ -2183,12 +2198,13 @@ uint8_t usb_check_scsi_ctrl_nonzero(void)
 }
 
 /*
- * usb_func_1c2a - Lookup in table 0x5CAD
+ * usb_lookup_code_table_5cad - Lookup in table 0x5CAD
  * Address: 0x1c2a-0x1c39 (16 bytes)
  *
  * Multiplies IDATA[0x3C] by 2, adds to 0x5CAD, reads code table.
+ * Returns value from USB descriptor/endpoint configuration table.
  */
-uint8_t usb_func_1c2a(uint8_t input)
+uint8_t usb_lookup_code_table_5cad(uint8_t input)
 {
     uint8_t idx = *(__idata uint8_t *)0x3C;
     uint16_t addr = 0x5CAD + ((uint16_t)idx * 2);
@@ -2198,12 +2214,13 @@ uint8_t usb_func_1c2a(uint8_t input)
 }
 
 /*
- * usb_func_1c3a - Add values and mask, store result
+ * usb_calc_dma_work_offset - Add values and mask, store result
  * Address: 0x1c3a-0x1c49 (16 bytes)
  *
  * Reads DPTR, adds to 0x0216, masks to 5 bits, stores to 0x01B4.
+ * Calculates DMA work offset for transfer operations.
  */
-void usb_func_1c3a(__xdata uint8_t *ptr)
+void usb_calc_dma_work_offset(__xdata uint8_t *ptr)
 {
     uint8_t val = *ptr;
     uint8_t base = G_DMA_WORK_0216;
