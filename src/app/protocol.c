@@ -1005,7 +1005,7 @@ void helper_16f3(void)
 
 /* Forward declarations for helper_3f4a dependencies */
 extern void usb_func_1c5d(__xdata uint8_t *ptr);  /* 0x1c5d */
-extern void usb_func_1c4a(uint8_t val);           /* 0x1c4a */
+extern void usb_set_dma_mode_params(uint8_t val); /* 0x1c4a */
 extern uint8_t nvme_get_pcie_count_config(void);  /* 0x1c90 */
 extern uint8_t helper_466b(void);                 /* 0x466b - check state */
 extern uint8_t helper_043f(void);                 /* 0x043f - check callback */
@@ -1049,8 +1049,8 @@ uint8_t helper_3f4a(void)
     /* 0x3f59: Clear 0x07E5 */
     *(__xdata uint8_t *)0x07E5 = 0;
 
-    /* 0x3f5e: Call usb_func_1c4a(0) */
-    usb_func_1c4a(0);
+    /* 0x3f5e: Call usb_set_dma_mode_params(0) */
+    usb_set_dma_mode_params(0);
 
     /* 0x3f61: Check 0x0002 */
     if (*(__xdata uint8_t *)0x0002 != 0) {

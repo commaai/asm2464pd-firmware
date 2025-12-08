@@ -1357,6 +1357,84 @@ uint16_t transfer_calc_work55_offset(void)
     return addr;
 }
 
+/*
+ * dma_setup_usb_rx - Setup DMA to receive data from USB host
+ * Address: TODO - reverse engineer from original firmware
+ *
+ * Configures DMA engine to receive 'len' bytes from USB host
+ * into the flash buffer (0x7000).
+ *
+ * Parameters:
+ *   len: Number of bytes to receive
+ */
+void dma_setup_usb_rx(uint16_t len)
+{
+    uint8_t val;
+
+    /* Configure DMA for USB to buffer transfer */
+    dma_config_channel(0, 0);
+
+    /* Set transfer length */
+    REG_DMA_XFER_CNT_LO = (uint8_t)(len & 0xFF);
+    REG_DMA_XFER_CNT_HI = (uint8_t)((len >> 8) & 0xFF);
+
+    /* Set direction: USB -> Buffer (RX) */
+    val = REG_DMA_CHAN_CTRL2;
+    val &= ~0x02;  /* Clear direction bit for RX */
+    REG_DMA_CHAN_CTRL2 = val;
+
+    /* Trigger DMA */
+    REG_DMA_TRIGGER = DMA_TRIGGER_START;
+}
+
+/*
+ * dma_setup_usb_tx - Setup DMA to send data to USB host
+ * Address: TODO - reverse engineer from original firmware
+ *
+ * Configures DMA engine to send 'len' bytes to USB host
+ * from the flash/SCSI buffer.
+ *
+ * Parameters:
+ *   len: Number of bytes to send
+ */
+void dma_setup_usb_tx(uint16_t len)
+{
+    uint8_t val;
+
+    /* Configure DMA for buffer to USB transfer */
+    dma_config_channel(0, 0);
+
+    /* Set transfer length */
+    REG_DMA_XFER_CNT_LO = (uint8_t)(len & 0xFF);
+    REG_DMA_XFER_CNT_HI = (uint8_t)((len >> 8) & 0xFF);
+
+    /* Set direction: Buffer -> USB (TX) */
+    val = REG_DMA_CHAN_CTRL2;
+    val |= 0x02;  /* Set direction bit for TX */
+    REG_DMA_CHAN_CTRL2 = val;
+
+    /* Trigger DMA */
+    REG_DMA_TRIGGER = DMA_TRIGGER_START;
+}
+
+/*
+ * dma_wait_complete - Wait for DMA transfer to complete
+ * Address: TODO - reverse engineer from original firmware
+ *
+ * Blocks until current DMA transfer is complete.
+ * Polls the DMA trigger register until busy bit clears.
+ */
+void dma_wait_complete(void)
+{
+    /* Poll until DMA transfer completes (bit 0 clears) */
+    while (REG_DMA_TRIGGER & DMA_TRIGGER_START) {
+        /* Busy wait */
+    }
+
+    /* Clear active flag */
+    REG_DMA_CHAN_CTRL2 &= ~DMA_CHAN_CTRL2_ACTIVE;
+}
+
 /* NOTE: Function at 0x16AE-0x16B6 is implemented above as dma_write_to_scsi_ce6e */
 
 /*

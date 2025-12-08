@@ -427,3 +427,200 @@ void scsi_synchronize_cache(void)
 {
     /* Issue NVMe Flush command */
 }
+
+/*
+ * scsi_write_16 - Handle WRITE (16) command
+ * Address: various
+ *
+ * SCSI opcode 0x8A: Write data to device with 64-bit LBA.
+ * Translates to NVMe Write command.
+ *
+ * CDB format (from usb.py):
+ *   Byte 0: 0x8A (opcode)
+ *   Byte 1: Reserved (0)
+ *   Bytes 2-9: LBA (big-endian, 64-bit)
+ *   Bytes 10-13: Transfer length in sectors (big-endian, 32-bit)
+ *   Bytes 14-15: Reserved
+ *
+ * Python usage:
+ *   struct.pack('>BBQIBB', 0x8A, 0, lba, sectors, 0, 0)
+ */
+void scsi_write_16(void)
+{
+    __xdata uint8_t *cdb;
+    uint32_t lba_high;
+    uint32_t lba_low;
+    uint32_t sector_count;
+
+    /* Get CDB pointer from USB buffer */
+    cdb = (__xdata uint8_t *)(USB_CTRL_BUF_BASE + 15);
+
+    /* Parse LBA (64-bit, big-endian) */
+    /* Bytes 2-5: LBA high 32 bits */
+    lba_high = ((uint32_t)cdb[2] << 24) |
+               ((uint32_t)cdb[3] << 16) |
+               ((uint32_t)cdb[4] << 8) |
+               ((uint32_t)cdb[5]);
+
+    /* Bytes 6-9: LBA low 32 bits */
+    lba_low = ((uint32_t)cdb[6] << 24) |
+              ((uint32_t)cdb[7] << 16) |
+              ((uint32_t)cdb[8] << 8) |
+              ((uint32_t)cdb[9]);
+
+    /* Parse sector count (32-bit, big-endian) */
+    sector_count = ((uint32_t)cdb[10] << 24) |
+                   ((uint32_t)cdb[11] << 16) |
+                   ((uint32_t)cdb[12] << 8) |
+                   ((uint32_t)cdb[13]);
+
+    /* For NVMe, we typically only use 32-bit LBA
+     * Store in command globals for NVMe translation */
+    G_CMD_LBA_0 = (uint8_t)(lba_low & 0xFF);
+    G_CMD_LBA_1 = (uint8_t)((lba_low >> 8) & 0xFF);
+    G_CMD_LBA_2 = (uint8_t)((lba_low >> 16) & 0xFF);
+    G_CMD_LBA_3 = (uint8_t)((lba_low >> 24) & 0xFF);
+
+    /* Suppress unused variable warnings */
+    (void)lba_high;
+    (void)sector_count;
+
+    /* TODO: Complete NVMe write translation
+     * 1. Setup NVMe Write command in submission queue
+     * 2. Receive data from USB host via DMA
+     * 3. Ring doorbell to submit command
+     * 4. Wait for completion
+     * 5. Send CSW with status
+     */
+}
+
+/*
+ * scsi_read_16 - Handle READ (16) command
+ * Address: various
+ *
+ * SCSI opcode 0x88: Read data from device with 64-bit LBA.
+ * Similar to WRITE(16) but in opposite direction.
+ */
+void scsi_read_16(void)
+{
+    __xdata uint8_t *cdb;
+    uint32_t lba_high;
+    uint32_t lba_low;
+    uint32_t sector_count;
+
+    /* Get CDB pointer from USB buffer */
+    cdb = (__xdata uint8_t *)(USB_CTRL_BUF_BASE + 15);
+
+    /* Parse LBA (64-bit, big-endian) */
+    lba_high = ((uint32_t)cdb[2] << 24) |
+               ((uint32_t)cdb[3] << 16) |
+               ((uint32_t)cdb[4] << 8) |
+               ((uint32_t)cdb[5]);
+
+    lba_low = ((uint32_t)cdb[6] << 24) |
+              ((uint32_t)cdb[7] << 16) |
+              ((uint32_t)cdb[8] << 8) |
+              ((uint32_t)cdb[9]);
+
+    /* Parse sector count (32-bit, big-endian) */
+    sector_count = ((uint32_t)cdb[10] << 24) |
+                   ((uint32_t)cdb[11] << 16) |
+                   ((uint32_t)cdb[12] << 8) |
+                   ((uint32_t)cdb[13]);
+
+    /* Store LBA for NVMe translation */
+    G_CMD_LBA_0 = (uint8_t)(lba_low & 0xFF);
+    G_CMD_LBA_1 = (uint8_t)((lba_low >> 8) & 0xFF);
+    G_CMD_LBA_2 = (uint8_t)((lba_low >> 16) & 0xFF);
+    G_CMD_LBA_3 = (uint8_t)((lba_low >> 24) & 0xFF);
+
+    /* Suppress unused variable warnings */
+    (void)lba_high;
+    (void)sector_count;
+
+    /* TODO: Complete NVMe read translation */
+}
+
+/*
+ * scsi_command_dispatch - Main SCSI command dispatcher
+ *
+ * Routes incoming SCSI commands to appropriate handlers.
+ * Vendor commands (0xE0-0xE8) are handled by vendor.c.
+ *
+ * Returns: 0 on success, 1 on failure
+ */
+uint8_t scsi_command_dispatch(void)
+{
+    __xdata uint8_t *cbw;
+    uint8_t opcode;
+    uint8_t status = 0;
+
+    /* Get CBW from USB control buffer */
+    cbw = (__xdata uint8_t *)USB_CTRL_BUF_BASE;
+
+    /* Validate CBW signature 'USBC' */
+    if (cbw[0] != 0x55 || cbw[1] != 0x53 ||
+        cbw[2] != 0x42 || cbw[3] != 0x43) {
+        return 1;  /* Invalid CBW */
+    }
+
+    /* Get SCSI opcode (first byte of CDB at offset 15) */
+    opcode = cbw[15];
+
+    /* Check for vendor commands first */
+    if (opcode >= 0xE0 && opcode <= 0xE8) {
+        /* Handled by vendor_cmd_dispatch() in vendor.c */
+        extern uint8_t vendor_cmd_dispatch(void);
+        return vendor_cmd_dispatch();
+    }
+
+    /* Standard SCSI commands */
+    switch (opcode) {
+        case 0x00:  /* TEST UNIT READY */
+            scsi_test_unit_ready();
+            break;
+
+        case 0x03:  /* REQUEST SENSE */
+            scsi_request_sense();
+            break;
+
+        case 0x12:  /* INQUIRY */
+            scsi_inquiry();
+            break;
+
+        case 0x1A:  /* MODE SENSE (6) */
+            scsi_mode_sense_6();
+            break;
+
+        case 0x25:  /* READ CAPACITY (10) */
+            scsi_read_capacity_10();
+            break;
+
+        case 0x28:  /* READ (10) */
+            scsi_read_10();
+            break;
+
+        case 0x2A:  /* WRITE (10) */
+            scsi_write_10();
+            break;
+
+        case 0x35:  /* SYNCHRONIZE CACHE (10) */
+            scsi_synchronize_cache();
+            break;
+
+        case 0x88:  /* READ (16) */
+            scsi_read_16();
+            break;
+
+        case 0x8A:  /* WRITE (16) */
+            scsi_write_16();
+            break;
+
+        default:
+            /* Unsupported command */
+            status = 1;
+            break;
+    }
+
+    return status;
+}

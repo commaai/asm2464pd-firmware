@@ -697,3 +697,108 @@ void flash_set_buffer_byte(uint16_t offset, uint8_t val)
     XDATA8(FLASH_BUFFER_BASE + offset) = val;
 }
 
+/*
+ * flash_write_enable - Enable flash write operations
+ * Address: TODO - reverse engineer from original firmware
+ *
+ * Sends write enable (WREN) command to SPI flash.
+ * Must be called before any write/erase operation.
+ */
+void flash_write_enable(void)
+{
+    /* Enable mode bit for write operations */
+    uint8_t val = REG_FLASH_MODE;
+    val |= 0x20;  /* Set bit 5 (write enable) */
+    REG_FLASH_MODE = val;
+
+    /* Send WREN command (0x06) to flash */
+    flash_set_mode_enable();
+    REG_FLASH_CMD = 0x06;  /* WREN command */
+    REG_FLASH_DATA_LEN = 0;
+    REG_FLASH_DATA_LEN_HI = 0;
+    flash_start_transaction();
+}
+
+/*
+ * flash_write_page - Write data from buffer to flash
+ * Address: TODO - reverse engineer from original firmware
+ *
+ * Writes len bytes from flash buffer (0x7000) to flash at addr.
+ * Flash write enable must be called first.
+ *
+ * Parameters:
+ *   addr: 24-bit flash address
+ *   len: Number of bytes to write (max 256 for page program)
+ */
+void flash_write_page(uint32_t addr, uint8_t len)
+{
+    /* Set up flash address globals */
+    G_FLASH_ADDR_0 = (uint8_t)(addr & 0xFF);
+    G_FLASH_ADDR_1 = (uint8_t)((addr >> 8) & 0xFF);
+    G_FLASH_ADDR_2 = (uint8_t)((addr >> 16) & 0xFF);
+    G_FLASH_ADDR_3 = 0;
+
+    /* Set length */
+    G_FLASH_LEN_LO = len;
+    G_FLASH_LEN_HI = 0;
+
+    /* Run page program transaction (command 0x02) */
+    flash_run_transaction(0x02);
+}
+
+/*
+ * flash_read - Read data from flash to buffer
+ * Address: TODO - reverse engineer from original firmware
+ *
+ * Reads len bytes from flash at addr to flash buffer (0x7000).
+ *
+ * Parameters:
+ *   addr: 24-bit flash address
+ *   len: Number of bytes to read
+ */
+void flash_read(uint32_t addr, uint8_t len)
+{
+    /* Set up flash address globals */
+    G_FLASH_ADDR_0 = (uint8_t)(addr & 0xFF);
+    G_FLASH_ADDR_1 = (uint8_t)((addr >> 8) & 0xFF);
+    G_FLASH_ADDR_2 = (uint8_t)((addr >> 16) & 0xFF);
+    G_FLASH_ADDR_3 = 0;
+
+    /* Set length */
+    G_FLASH_LEN_LO = len;
+    G_FLASH_LEN_HI = 0;
+
+    /* Run read transaction (command 0x03) */
+    flash_run_transaction(0x03);
+}
+
+/*
+ * flash_erase_sector - Erase a 4KB flash sector
+ * Address: TODO - reverse engineer from original firmware
+ *
+ * Erases the 4KB sector containing addr.
+ * Flash write enable must be called first.
+ *
+ * Parameters:
+ *   addr: 24-bit flash address (any address within sector)
+ */
+void flash_erase_sector(uint32_t addr)
+{
+    /* Enable write first */
+    flash_write_enable();
+
+    /* Set up flash address globals (sector aligned) */
+    addr &= 0xFFFFF000;  /* Align to 4KB boundary */
+    G_FLASH_ADDR_0 = (uint8_t)(addr & 0xFF);
+    G_FLASH_ADDR_1 = (uint8_t)((addr >> 8) & 0xFF);
+    G_FLASH_ADDR_2 = (uint8_t)((addr >> 16) & 0xFF);
+    G_FLASH_ADDR_3 = 0;
+
+    /* No data length for erase */
+    G_FLASH_LEN_LO = 0;
+    G_FLASH_LEN_HI = 0;
+
+    /* Run sector erase transaction (command 0x20) */
+    flash_run_transaction(0x20);
+}
+
