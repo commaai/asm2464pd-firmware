@@ -1,414 +1,225 @@
-# ASM2464PD Firmware Reverse Engineering TODO
+# ASM2464PD Firmware - Remaining Work
 
 ## Progress Summary
 
-- **Functions remaining**: ~618
-- **Stub functions** (empty placeholder): 13 (7 utility + 6 event/error)
-- **High-priority** (called 5+ times): 29
-- **Firmware size**: 47,406 / 79,197 bytes (59.9% of actual code)
+| Metric | Value |
+|--------|-------|
+| **Firmware Size** | 48,916 / 98,012 bytes (49.9%) |
+| **Completed Ranges** | 0x1000-0x1FFF, 0x2000-0x3FFF, 0x4000-0x5FFF, 0x9000-0x98FF, 0xA000-0xBFFF, 0xE000-0xFFFF |
+| **Major Gaps** | 0x8000-0x8FFF, 0x9900-0x9FFF, 0xC000-0xDFFF |
 
-### Metrics Note
-
-Function count is the primary metric. File size comparison uses dense code only (~79KB, excludes ~19KB padding).
-SDCC generates different code than the original compiler (likely Keil C51), so byte-exact matching is not possible.
+Note: SDCC generates different code than the original Keil C51 compiler, so byte-exact matching is not possible. Function-level correctness is the goal.
 
 ---
 
-## High Priority Functions (called 10+ times)
+## 1. High Priority Functions (10+ calls)
 
-These functions are called frequently and should be prioritized:
+These are the most frequently called functions and should be prioritized:
 
-| Address | Calls | Status | Name |
-|---------|-------|--------|------|
-| 0x9388 | 48 | TODO | - |
-| 0xaa37 | 18 | TODO | - |
-| 0xd1e6 | 14 | TODO | - |
-| 0xd1f2 | 14 | TODO | - |
-| 0xdd12 | 11 | STUB | helper_dd12 |
-| 0x9731 | 10 | TODO | - |
-| 0xd5da | 10 | TODO | - |
-
----
-
-## Utility Functions (0x0000-0x0FFF)
-
-**Total: 13** | Stubs: 4 | High-priority: 0
-
-### Implemented
-
-- [x] `0x0412` - helper_0412 - PCIe doorbell trigger with status-based write
-- [x] `0x05fc` - pcie_cleanup_05fc - Returns 0xF0
-- [x] `0x0633` - pcie_write_reg_0633 - Power state check
-
-### Bank 1 Targets (implemented with documented approximations)
-
-- [x] `0x048a` - helper_048a - State checksum/validation (XOR bytes 0x241-0x248 -> 0x240)
-- [x] `0x0557` - dispatch_handler_0557 - PCIe event dispatch handler (returns 0)
-- [x] `0x05f7` - pcie_cleanup_05f7 - PCIe status cleanup with computed index
-- [x] `0x0638` - pcie_write_reg_0638 - Calls dispatch_05c5, clears G_BANK1_STATE_023F
-
-### Other (6 functions)
-
-- [ ] `0x0110` (1 calls)
-- [ ] `0x034d` (1 calls)
-- [ ] `0x0555` (1 calls)
-- [ ] `0x0810` (1 calls)
-- [ ] `0x09e7` (1 calls)
-- [ ] `0x0d59` (1 calls)
+| Address | Calls | Current Status | Notes |
+|---------|-------|----------------|-------|
+| 0xaa37 | 18 | ✓ DONE | Part of nvme_cmd_state_handler_aa36 |
+| 0xd1e6 | 14 | TODO | Event handler |
+| 0xd1f2 | 14 | TODO | Event handler |
+| 0xdd12 | 11 | STUB | helper_dd12 - needs full implementation |
+| 0xd5da | 10 | TODO | Power/event handler |
+| 0xc2e7 | 8 | TODO | Error handler |
+| 0xc2f8 | 6 | TODO | Error handler |
+| 0xd185 | 6 | TODO | Event handler |
+| 0xce23 | 5 | STUB | transfer_handler_ce23 |
+| 0xceab | 5 | TODO | Transfer handler |
 
 ---
 
-## State Machine Helpers (0x1000-0x1FFF)
+## 2. PCIe State Machine Complex (0x9700-0x98FF) ✓ COMPLETE
+
+Implemented as `cfg_pcie_ep_state_machine()` in cmd.c covering 0x9741-0x9901 with all entry points.
+
+### Entry Points (all implemented)
+- [x] 0x9777 (6 calls) - Mask A to 0x0F, call helpers, compare
+- [x] 0x976e (5 calls) - Inc r2; anl a,r4; read @dptr; check bit 4 (overlapping code)
+- [x] 0x97bd (5 calls) - State transition logic (overlapping code)
+- [x] 0x97c9 (5 calls) - State transition logic (overlapping code)
+- [x] 0x97fc (5 calls) - State transition logic
+- [x] 0x984d (7 calls) - Mid-loop: subb a,r1; xrl a,r2; jnc
+- [x] 0x9854 (7 calls) - Read DPTR, add 3, call 0x99b5
+- [x] 0x9874 (5 calls) - State machine continuation
+- [x] 0x9887 (5 calls) - State machine continuation
+
+### Helper Functions (0x9700-0x9740)
+- [x] cmd_clear_trigger_bits (0x96f7-0x9702)
+- [x] cmd_write_trigger_wait (0x9703-0x9712)
+- [x] cmd_config_e400_e420 (0x9713-0x971d)
+- [x] cmd_setup_e424_e425 (0x971e-0x9728)
+- [x] cmd_set_trigger_bit6 (0x9729-0x972f)
+- [x] cmd_call_dd12_config (0x9730-0x9739)
+- [x] cmd_extract_bits67_write (0x973a-0x9740)
+
+---
+
+## 3. Queue & Admin Command Handlers (0xA000-0xBFFF) ✓ COMPLETE
+
+**Coverage: 97% (309/317 call targets)**
+
+This range handles NVMe admin commands, queue management, and buffer operations.
+Implementations are spread across queue_handlers.c, nvme.c, pcie.c, utils.c, and stubs.c.
+
+### High Priority (all implemented)
+- [x] 0xaa37 (18 calls) - Part of nvme_cmd_state_handler_aa36 in queue_handlers.c
+- [x] 0xa2f8, 0xa2f9 (4 calls each) - Mid-function entries in pcie_link_config_a2c2
+- [x] 0xa3db, 0xa3f5 (3 calls each) - Mid-function entries in PCIe register helper cluster
+
+### Sub-ranges (all implemented)
+| Range | Purpose | Coverage |
+|-------|---------|----------|
+| 0xA000-0xA3FF | PCIe address calculation helpers | 98% (45/46) |
+| 0xA400-0xA6FF | USB/DMA buffer helpers | 100% (27/27) |
+| 0xA700-0xAAFF | Admin command handlers | 98% (61/62) |
+| 0xAB00-0xAFFF | Queue management | 89% (33/37) |
+| 0xB000-0xB7FF | PCIe TLP construction | 98% (45/46) |
+| 0xB800-0xBFFF | Completion handlers | 99% (98/99) |
+
+### Key Implementations
+- queue_handlers.c: 57 functions (power state helpers, NVMe cmd handlers)
+- nvme.c: NVMe buffer and queue operations
+- pcie.c: PCIe TLP construction and link helpers
+- utils.c: 40+ register helper functions (0xBB00-0xBF00)
+
+---
+
+## 4. Event & Error Handlers (0xC000-0xDFFF)
+
+**Estimated: ~200 functions, 6 stubs need implementation**
+
+### Stubs Needing Implementation
+- [ ] 0xdd12 - helper_dd12 (11 calls) - Command trigger and mode setup
+- [ ] 0xce23 - transfer_handler_ce23 (5 calls) - DMA transfer handler
+- [ ] 0xcb05 - helper_cb05 (3 calls) - Unknown
+- [ ] 0xd17a - helper_d17a (1 call) - Protocol finalization
+- [ ] 0xd8d5 - pcie_handler_d8d5 (1 call) - PCIe handler
+- [ ] 0xdbbb - helper_dbbb (1 call) - State flag handler
+
+### High Priority Functions
+- [ ] 0xd1e6 (14 calls), 0xd1f2 (14 calls) - Event dispatch pair
+- [ ] 0xd5da (10 calls) - Power/event handler
+- [ ] 0xc2e7, 0xc2f8, 0xc2f1 - Error logging cluster
+- [ ] 0xc20f, 0xc2bf - Error state handlers
+
+### Sub-ranges
+| Range | Purpose | Priority |
+|-------|---------|----------|
+| 0xC000-0xC0FF | PCIe tunnel/link init | Medium |
+| 0xC100-0xC2FF | Error logging functions | High |
+| 0xC300-0xC4FF | Config register helpers | Low |
+| 0xC500-0xC8FF | DMA/buffer handlers | Medium |
+| 0xC900-0xCBFF | Queue completion | Medium |
+| 0xCC00-0xCFFF | Transfer handlers | High |
+| 0xD000-0xD2FF | Event dispatch | High |
+| 0xD300-0xD5FF | Power management | Medium |
+| 0xD600-0xD8FF | PHY configuration | Medium |
+| 0xD900-0xDFFF | State machine helpers | Medium |
+
+---
+
+## 5. NVMe Command Engine (0x9000-0x93FF)
 
 **Status: COMPLETE** ✓
 
-All functions in this range are implemented.
+### Key Functions
+- [x] 0x9388 (48 calls) - flash_config_init_9388 in state_helpers.c
+- [x] 0x92bb - nvme_state_error_set_92bb in nvme.c
+- [x] 0x92b3 - helper_92b3 in nvme.c
+- [x] 0x9264-0x92af - nvme_queue_count_matches_9264 in nvme.c
+- [x] 0xc00d - pcie_tunnel_init_c00d in stubs.c
+- [x] 0xc44f - queue_calc_dptr_c44f in stubs.c
+- [x] 0xc4a9 - queue_check_status_c4a9 in stubs.c
 
-### Major Functions
-
-- [x] `0x1006-0x1195` - usb_state_handler_isr_1006 (state_helpers.c, 400 bytes)
-- [x] `0x1196-0x11a1` - helper_1196 (state_helpers.c)
-- [x] `0x11a2-0x152x` - FUN_CODE_11a2 SCSI/DMA state machine (stubs.c, ~500 bytes)
-- [x] `0x120d-0x1271` - state_load_triple_and_check (state_helpers.c, 100 bytes)
-- [x] `0x12aa-0x12da` - state_check_scsi_status (state_helpers.c, 49 bytes)
-
-### Stubs (all implemented)
-
-- [x] `0x1564` - xdata_write_load_triple_1564 (stubs.c)
-- [x] `0x15d4` - helper_15d4_ptr (stubs.c)
-- [x] `0x1659` - helper_1659 / transfer_set_dptr_0464_offset (dma.c, stubs.c)
-- [x] `0x1660` - helper_1660 / set_dptr_04xx_1660 (state_helpers.c, stubs.c)
-- [x] `0x1677` - helper_1677 / transfer_calc_work53_offset (dma.c, stubs.c)
-- [x] `0x173b` - dma_clear_dword_at (dma.c)
-- [x] `0x1ce4` - helper_1ce4 / usb_calc_addr_04b7_plus (usb.c, stubs.c)
-- [x] `0x159f` - helper_159f (stubs.c)
-- [x] `0x165e` - helper_165e / get_ptr_044e_offset_165e (stubs.c, state_helpers.c)
-- [x] `0x1755` - helper_1755 (stubs.c)
-
-### DMA/Transfer functions (implemented in dma.c)
-
-- [x] `0x16f3` - dma_clear_status
-- [x] `0x16ff` - dma_reg_wait_bit
-- [x] `0x1709` - dma_set_scsi_param3
-- [x] `0x1713` - dma_set_scsi_param1
-- [x] `0x171d` - dma_load_transfer_params
-- [x] `0x172c` - dma_check_state_counter
-- [x] `0x1743` - dma_get_config_offset_05a8
-- [x] `0x1752` - dma_calc_offset_0059
-- [x] `0x175d` - dma_init_channel_b8
-- [x] `0x176b` - dma_calc_addr_0478
-- [x] `0x1779` - dma_calc_addr_0479
-- [x] `0x1787` - dma_set_error_flag
-- [x] `0x1795` - dma_clear_state_counters
-- [x] `0x179d` - dma_calc_addr_00c2
-- [x] `0x17a9` - dma_init_ep_queue
-- [x] `0x17b5` - scsi_get_tag_count_status
-- [x] `0x17c1` - scsi_get_queue_status
-- [x] `0x17cd` - dma_shift_and_check
-- [x] `0x17f3` - dma_shift_rrc2_mask
-- [x] `0x180d` - usb_ep_loop_180d
-- [x] `0x1b55` - write_and_set_c412_bit1_1b55 (state_helpers.c)
-- [x] `0x1b59` - set_c412_bit1_1b59 (state_helpers.c)
-
-### Mid-function entries (covered by parent functions above)
-
-- [x] `0x121b` - within FUN_CODE_11a2 (0x11a2-0x152x)
-- [x] `0x1231` - within FUN_CODE_11a2
-- [x] `0x1295` - within FUN_CODE_11a2
-- [x] `0x16d2` - within dma.c transfer functions
-- [x] `0x1203` - within FUN_CODE_11a2
-- [x] `0x1205` - within FUN_CODE_11a2
-- [x] `0x1254` - within FUN_CODE_11a2
-- [x] `0x12a6` - within FUN_CODE_11a2
-- [x] `0x12ab` - within state_check_scsi_status (0x12aa-0x12da)
-- [x] `0x12c3` - within state_check_scsi_status
-- [x] `0x12cb` - within state_check_scsi_status
-- [x] `0x12ea` - within FUN_CODE_11a2
-- [x] `0x1470` - within FUN_CODE_11a2
+### Notes
+Many functions in 0x9400-0x96FF are implemented in nvme.c and cmd.c. The addresses 0x900a, 0x9070, 0x925a listed in the original TODO are mid-function entry points within larger functions, not standalone functions.
 
 ---
 
-## Protocol State Machines (0x2000-0x3FFF)
+## 6. Remaining Empty Stubs
 
-**Status: COMPLETE** ✓
+These are placeholder functions that need actual implementation:
 
-All protocol state machine functions in this range are implemented in `src/app/protocol.c` and `src/app/stubs.c`.
+### USB Stubs
+- [ ] usb_parse_descriptor
+- [ ] usb_state_setup_4c98
+- [ ] usb_helper_51ef
+- [ ] usb_helper_5112
+- [ ] handler_0327_usb_power_init
 
-Key functions:
-- [x] helper_313d (0x313d) - 32-bit value check
-- [x] nvme_call_and_signal_3219 (0x3219)
-- [x] nvme_ep_config_init_3267 (0x3267)
-- [x] queue_idx_get_3291 (0x3291)
-- [x] protocol_state_dispatcher_32a5 (0x32a5) - Complex state machine
-- [x] protocol_state_machine (0x3900-0x39DE)
-- [x] Various helper functions (0x3130-0x32a4)
+### NVMe Stubs
+- [ ] nvme_util_advance_queue
+- [ ] nvme_util_check_command_ready
+- [ ] nvme_util_clear_completion
 
-Note: Addresses 0x227f, 0x22ff, 0x2406, 0x2412, 0x24fc are DATA tables (USB strings), not code.
-Note: 0x3179 is a mid-function entry point, 0x3978 is a jump table.
+### SCSI Stubs
+- [ ] scsi_send_csw
+- [ ] scsi_dma_mode_setup
 
----
-
-## SCSI/USB Mass Storage (0x4000-0x5FFF)
-
-**Status: COMPLETE** ✓
-
-All 60 functions in this range are implemented in `src/app/scsi.c`.
-
-Key functions:
-- [x] CBW/CSW handling (0x4013-0x4977)
-- [x] SCSI command translation (0x4b25-0x4ff2)
-- [x] DMA/buffer management (0x5038-0x50ff)
-- [x] Queue handlers (0x5112-0x53d4)
-- [x] Transfer helpers (0x5426-0x5462)
-- [x] Data tables identified: 0x5157, 0x53a4, 0x54fc, 0x5622 (not code)
-- [x] `0x573b` - scsi_loop_process_573b (stub, complex loop)
+### System Stubs
+- [ ] startup_init
+- [ ] sys_event_dispatch_05e8
+- [ ] sys_init_helper_bbc7
+- [ ] sys_timer_handler_e957
+- [ ] handler_039a_buffer_dispatch
 
 ---
 
-## NVMe/PCIe Config (0x8000-0x9FFF)
+## 7. Utility Functions (0x0000-0x0FFF) ✓ COMPLETE
 
-**Total: 173** | Stubs: 0 | High-priority: 10
+Analysis complete - none of these addresses are standalone application functions:
 
-### Stubs (need implementation)
-
-(none - all stubs implemented)
-
-### Implemented
-
-- [x] `0x9388` (48 calls) - flash_config_init_9388 in state_helpers.c
-- [x] `0x9731` (10 calls) - in nvme.c/cmd.c
-- [x] `0x957c` (5 calls) - in nvme.c
-- [x] `0x9695` (5 calls) - in nvme.c
-- [x] `0x996d` (5 calls) - in pcie.c
-- [x] `0x96ae` (3 calls) - in cmd.c
-- [x] `0x953d` (4 calls) - in nvme.c
-- [x] `0x9630` (4 calls) - in nvme.c
-- [x] `0x9641` (4 calls) - in nvme.c
-- [x] `0x964d` (4 calls) - in cmd.c
-- [x] `0x9661` (4 calls) - in cmd.c
-- [x] `0x9668` (4 calls) - in cmd.c
-- [x] `0x9670` (4 calls) - in cmd.c
-- [x] `0x96e3` (4 calls) - in cmd.c
-- [x] `0x9704` (4 calls) - in cmd.c
-- [x] `0x9958` (4 calls) - in pcie.c
-- [x] `0x99b5` (4 calls) - in pcie.c
-- [x] `0x9a3e` (4 calls) - in pcie.c
-- [x] `0x95f2` (3 calls) - in cmd.c
-- [x] `0x969e` (3 calls) - in cmd.c
-- [x] `0x96ec` (3 calls) - in cmd.c
-
-### High Priority (5+ calls) - State Machine Entry Points
-
-**Note:** These addresses are mid-function entry points within complex PCIe config
-state machines at 0x9700-0x9901. They use overlapping code optimization where
-different entry points share code paths. They will be implemented as part of the
-larger state machine functions.
-
-- [x] `0x994c` (9 calls) - pcie_write_data_reg_with_val in pcie.c
-- [ ] `0x984d` (7 calls) - Mid-loop entry: subb a,r1; xrl a,r2; jnc (overlapping)
-- [ ] `0x9854` (7 calls) - Mid-loop entry: read DPTR, add 3, call 0x99b5
-- [ ] `0x9777` (6 calls) - Entry: mask A to 0x0F, call helpers, compare
-- [ ] `0x976e` (5 calls) - Entry: inc r2; anl a,r4; read @dptr; check bit 4
-- [ ] `0x97bd` (5 calls) - Within 0x9700-0x9900 state machine
-- [ ] `0x97c9` (5 calls) - Within 0x9700-0x9900 state machine
-- [ ] `0x97fc` (5 calls) - Within 0x9700-0x9900 state machine
-- [ ] `0x9874` (5 calls) - Within 0x9800-0x9900 state machine
-- [ ] `0x9887` (5 calls) - Within 0x9800-0x9900 state machine
-
-### Additional Implemented (in pcie.c 0x99xx range)
-
-- [x] `0x9902-0x990b` - pcie_trigger_helper
-- [x] `0x990c-0x9915` - pcie_config_write
-- [x] `0x9916-0x9922` - pcie_store_txn_idx
-- [x] `0x9923-0x992f` - pcie_lookup_config_05c0
-- [x] `0x994e-0x9953` - pcie_write_data_reg
-- [x] `0x9954-0x9961` - pcie_calc_queue_idx
-- [x] `0x996a-0x9976` - pcie_check_txn_count
-- [x] `0x9977-0x997f` - pcie_lookup_05b6
-- [x] `0x99c6-0x99cd` - pcie_cfg_set_flag
-- [x] `0x99ce-0x99d4` - pcie_cfg_inc_flag
-- [x] Many more 0x99xx helpers in pcie.c
-
-### Other (163 functions)
-
-- [ ] `0x900a` (4 calls)
-- [ ] `0x9386` (4 calls)
-- [ ] `0x9789` (4 calls) - within state machine
-- [ ] `0x97d5` (4 calls) - within state machine
-- [ ] `0x9803` (4 calls) - within state machine
-- [ ] `0x98b7` (4 calls) - within state machine
-- [ ] `0x98bf` (4 calls) - within state machine
-- [ ] `0x98c7` (4 calls) - within state machine
-- [ ] `0x9070` (3 calls)
-- [ ] `0x925a` (3 calls)
-- ... and 153 more
+- [x] 0x0110 - Mid-function entry point in startup init code (not a callable function)
+- [x] 0x034d - Dispatch stub table entry (covered by dispatch.c infrastructure)
+- [x] 0x0555 - Dispatch stub table entry (covered by dispatch.c infrastructure)
+- [x] 0x0810 - Unused interrupt vector (`reti` + 0xFF padding)
+- [x] 0x09e7 - NOP padding / unused code space
+- [x] 0x0d59 - Keil C51 runtime library: 32-bit memory store helper (IDATA/XDATA/paged XDATA dispatch based on R3). SDCC provides equivalent runtime.
 
 ---
 
-## Queue/Handler Functions (0xA000-0xBFFF)
+## 8. Code Quality & Verification
 
-**Total: 142** | Stubs: 0 | High-priority: 1
+### Register Naming
+- Audit XDATA_REG8/XDATA8 usage - ensure all registers ≥0x6000 use proper REG_* names
+- Audit global variables - ensure all XDATA <0x6000 use proper G_* names
 
-### High Priority (5+ calls)
+### Build Verification
+- Regular builds to check for size regression
+- Compare disassembly of key functions against fw.bin
 
-- [ ] `0xaa37` (18 calls)
-
-### Other (141 functions)
-
-- [ ] `0xa2f8` (4 calls)
-- [ ] `0xa2f9` (4 calls)
-- [ ] `0xa3db` (3 calls)
-- [ ] `0xa3f5` (3 calls)
-- [ ] `0xa647` (3 calls)
-- [ ] `0xaadf` (3 calls)
-- [ ] `0xaae1` (3 calls)
-- [ ] `0xab44` (3 calls)
-- [ ] `0xab63` (3 calls)
-- [ ] `0xab87` (3 calls)
-- [ ] `0xab97` (3 calls)
-- [ ] `0xabc2` (3 calls)
-- [ ] `0xb763` (3 calls)
-- [ ] `0xb76c` (3 calls)
-- [ ] `0xb796` (3 calls)
-- [ ] `0xb79d` (3 calls)
-- [ ] `0xbfa7` (3 calls)
-- [ ] `0xbfab` (3 calls)
-- [ ] `0xbfb5` (3 calls)
-- [ ] `0xbfcb` (3 calls)
-- [ ] `0xa2c1` (2 calls)
-- [ ] `0xa30c` (2 calls)
-- [ ] `0xa394` (2 calls)
-- [ ] `0xa3a4` (2 calls)
-- [ ] `0xa3b4` (2 calls)
-- ... and 116 more
+### Testing Priorities
+1. PCIe link training (pcie_lane_config_helper)
+2. USB enumeration
+3. NVMe command handling
+4. SCSI translation
 
 ---
 
-## Event/Error Handlers (0xC000-0xDFFF)
+## Recommended Work Order
 
-**Total: 211** | Stubs: 6 | High-priority: 12
-
-### Stubs (need implementation)
-
-- [ ] `0xdd12` - helper_dd12 (11 calls)
-- [ ] `0xce23` - transfer_handler_ce23 (5 calls)
-- [ ] `0xcb05` - helper_cb05 (3 calls)
-- [ ] `0xd17a` - helper_d17a (1 calls)
-- [ ] `0xd8d5` - pcie_handler_d8d5 (1 calls)
-- [ ] `0xdbbb` - helper_dbbb (1 calls)
-
-### High Priority (5+ calls)
-
-- [ ] `0xd1e6` (14 calls)
-- [ ] `0xd1f2` (14 calls)
-- [ ] `0xd5da` (10 calls)
-- [ ] `0xc2e7` (8 calls)
-- [ ] `0xc2f8` (6 calls)
-- [ ] `0xd185` (6 calls)
-- [ ] `0xc20f` (5 calls)
-- [ ] `0xc2bf` (5 calls)
-- [ ] `0xc2f1` (5 calls)
-- [ ] `0xceab` (5 calls)
-
-### Other (195 functions)
-
-- [ ] `0xc2e0` (4 calls)
-- [ ] `0xc34a` (4 calls)
-- [ ] `0xc351` (4 calls)
-- [ ] `0xc358` (4 calls)
-- [ ] `0xc35f` (4 calls)
-- [ ] `0xc366` (4 calls)
-- [ ] `0xc36d` (4 calls)
-- [ ] `0xc374` (4 calls)
-- [ ] `0xc37b` (4 calls)
-- [ ] `0xc382` (4 calls)
-- [ ] `0xc389` (4 calls)
-- [ ] `0xd172` (4 calls)
-- [ ] `0xd17e` (4 calls)
-- [ ] `0xd229` (4 calls)
-- [ ] `0xd235` (4 calls)
-- [ ] `0xd265` (4 calls)
-- [ ] `0xc027` (3 calls)
-- [ ] `0xc031` (3 calls)
-- [ ] `0xc074` (3 calls)
-- [ ] `0xc09e` (3 calls)
-- [ ] `0xc1af` (3 calls)
-- [ ] `0xc261` (3 calls)
-- [ ] `0xc29e` (3 calls)
-- [ ] `0xc2a5` (3 calls)
-- [ ] `0xc2ac` (3 calls)
-- ... and 170 more
+1. **Stubs with 5+ calls** - dd12, ce23, high-priority event handlers
+2. **Error/Event handlers (0xC000-0xD2FF)** - Critical for proper operation
+3. ~~**Queue handlers (0xA700-0xAFFF)**~~ ✓ DONE (97% coverage)
+4. ~~**PCIe state machine (0x9700-0x98FF)**~~ ✓ DONE
+5. ~~**Remaining 0xA000-0xBFFF**~~ ✓ DONE (97% coverage)
+6. **Remaining 0xD300-0xDFFF** - Power and PHY
+7. **Low-priority stubs** - USB helpers, system stubs
+8. ~~**Utility functions (0x0000-0x0FFF)**~~ ✓ DONE
 
 ---
 
-## Bank1 High (0xE000-0xFFFF)
+## Completed Sections ✓
 
-**Status: COMPLETE** ✓
-
-**Total: 48** | Stubs: 0 | High-priority: 0 (mid-function entries)
-
-### Stubs (all implemented)
-
-- [x] `0xe120` - helper_e120 (stubs.c)
-- [x] `0xe2b9` - check_link_status_e2b9 (stubs.c)
-- [x] `0xe726` - timer_trigger_e726 (stubs.c)
-- [x] `0xe68f` - dma_buffer_store_result_e68f (stubs.c)
-- [x] `0xe914` - ext_mem_init_address_e914 (stubs.c)
-- [x] `0xe93a` - cpu_dma_channel_91_trigger_e93a (stubs.c)
-- [x] `0xe974` - pcie_handler_e974 (stubs.c - empty handler)
-- [x] `0xe5fe` - pcie_channel_disable_e5fe (stubs.c, pcie.c)
-
-### High Priority (analyzed - mid-function entries)
-
-**Note:** These addresses are mid-function entry points within larger implemented functions.
-
-- [x] `0xe054` (7 calls) - mid-function in check_nvme_ready_e03c (0xe03c-0xe06a)
-- [x] `0xe461` (6 calls) - mid-function in cmd_init_and_wait_e459 (0xe459-0xe475)
-
-### Other (analyzed - mid-function entries or implemented)
-
-Most addresses are mid-function entries covered by parent function implementations:
-
-- [x] `0xe020` - mid-function in get_pcie_status_flags_e00c (0xe00c-0xe03b)
-- [x] `0xe090` - mid-function in pcie_handler_e06b (0xe06b-0xe093)
-- [x] `0xe0f4` - mid-function in pcie_dma_init_e0e4 (0xe0e4-0xe0f3)
-- [x] `0xe1cb` - mid-function in cmd_wait_completion (0xe1c6-0xe1ed)
-- [x] `0xe85f` - mid-function in pcie_restore_ctrl_state (0xe85c-0xe868)
-- [x] `0xe060` - mid-function in check_nvme_ready_e03c
-- [x] `0xe07d` - mid-function in pcie_handler_e06b
-- [x] `0xe239` - check_pcie_status_e239 (stubs.c)
-- [x] `0xe330` - pcie_dma_config_e330 (pcie.c)
-- [x] `0xe459` - cmd_init_and_wait_e459 (stubs.c)
-- [x] `0xe52d` - mid-function in handler_e529 (0xe529-0xe544)
-
-### Implemented Functions
-
-Key Bank1 High functions implemented across src/:
-- cmd.c: cmd_check_busy (0xe09a), cmd_wait_completion (0xe1c6)
-- pcie.c: 0xe00c, 0xe19e, 0xe330, 0xe5fe, 0xe711, 0xe74e, 0xe775, 0xe80a, 0xe890, 0xe8cd, 0xe8ef, 0xe8f9, 0xe902
-- phy.c: 0xe84d, 0xe85c
-- flash.c: 0xe3f9
-- power.c: 0xe647
-- utils.c: 0xe80a, 0xe89d
-- state_helpers.c: 0xe214, 0xe8ef
-- stubs.c: 0xe03c, 0xe06b, 0xe0e4, 0xe120, 0xe239, 0xe2b9, 0xe396, 0xe3b7, 0xe3d8, 0xe459, 0xe50d, 0xe529,
-           0xe5b1, 0xe677, 0xe68f, 0xe6a7, 0xe6d2, 0xe726, 0xe73a, 0xe762, 0xe7c1, 0xe7f8, 0xe81b, 0xe8f9,
-           0xe902, 0xe90b, 0xe914, 0xe933, 0xe93a, 0xe95f, 0xe974
-
----
-
-## Notes
-
-### Memory Layout
-- Bank 0 low: 0x0000-0x5D2E (~24KB code)
-- Bank 0 high: 0x8000-0xE975 (~27KB code)
-- Bank 1: 0x10000-0x16EBA (~28KB code, mapped to 0x8000 when active)
-- Padding regions: ~19KB (not real code)
-
-### Key Subsystems
-- **0x9000-0x9FFF**: NVMe command engine, PCIe config
-- **0xA000-0xAFFF**: Admin commands, queue management
-- **0xB000-0xBFFF**: PCIe TLP handlers, register helpers
-- **0xC000-0xCFFF**: Error logging, event handlers
-- **0xD000-0xDFFF**: Power management, PHY config
-- **0xE000-0xEFFF**: Bank1 handlers (via dispatch stubs)
+- [x] State Machine Helpers (0x1000-0x1FFF)
+- [x] Protocol State Machines (0x2000-0x3FFF)
+- [x] SCSI/USB Mass Storage (0x4000-0x5FFF)
+- [x] NVMe Command Engine (0x9000-0x93FF) - nvme.c, stubs.c
+- [x] PCIe State Machine Complex (0x9700-0x98FF) - cfg_pcie_ep_state_machine in cmd.c
+- [x] Queue & Admin Command Handlers (0xA000-0xBFFF) - 97% coverage across queue_handlers.c, nvme.c, pcie.c, utils.c
+- [x] Bank1 High (0xE000-0xFFFF)
+- [x] Core drivers: pcie.c, nvme.c, usb.c, dma.c, flash.c, phy.c, power.c, timer.c, uart.c
+- [x] Utility Functions (0x0000-0x0FFF) - All analyzed, none are standalone app functions

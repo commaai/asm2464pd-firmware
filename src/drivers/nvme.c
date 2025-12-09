@@ -3319,3 +3319,165 @@ void nvme_pcie_handler_b8b9(void)
         FUN_CODE_df79();
     }
 }
+
+/*===========================================================================
+ * NVMe Command Engine Functions (0x9000-0x93FF)
+ *===========================================================================*/
+
+/* Forward declarations */
+extern void pcie_tunnel_init_c00d(void);
+extern uint8_t check_link_with_delay_e6a7(void);
+extern uint8_t queue_check_status_c4a9(void);
+extern __xdata uint8_t * queue_calc_dptr_c44f(void);
+
+/*
+ * nvme_state_error_set_92bb - Set error state and call PCIe tunnel init
+ * Address: 0x92bb-0x92c4 (10 bytes)
+ *
+ * Sets G_STATE_FLAG_06E6 = 1 to indicate error state,
+ * then calls PCIe tunnel initialization to recover.
+ *
+ * Original disassembly:
+ *   92bb: mov dptr, #0x06e6
+ *   92be: mov a, #0x01
+ *   92c0: movx @dptr, a      ; G_STATE_FLAG_06E6 = 1
+ *   92c1: lcall 0xc00d       ; pcie_tunnel_init_c00d
+ *   92c4: ret
+ */
+void nvme_state_error_set_92bb(void)
+{
+    G_STATE_FLAG_06E6 = 1;
+    pcie_tunnel_init_c00d();
+}
+
+/*
+ * helper_92b3 - Call helper and store result to IDATA[0x24]
+ * Address: 0x92b3-0x92ba (8 bytes)
+ *
+ * Calls helper_e6a7 which returns a value in R7,
+ * stores that value to IDATA[0x24], and returns it.
+ *
+ * Original disassembly:
+ *   92b3: lcall 0xe6a7
+ *   92b6: mov 0x24, r7       ; IDATA[0x24] = R7
+ *   92b8: mov a, 0x24        ; return value
+ *   92ba: ret
+ */
+uint8_t helper_92b3(void)
+{
+    uint8_t result = check_link_with_delay_e6a7();
+    *((__idata uint8_t *)0x24) = result;
+    return result;
+}
+
+/*
+ * nvme_queue_count_matches_9264 - Count queue entries matching criteria
+ * Address: 0x9264-0x92af (76 bytes)
+ *
+ * Entry 0x9264: Clears counters, then falls through to 0x9267
+ * Entry 0x9267: Takes initial count in A (IDATA[0x21])
+ *
+ * Loops calling queue_check_status_c4a9:
+ *   - If carry clear, exit loop
+ *   - Calls queue_calc_dptr_c44f, reads value
+ *   - If value == 0x0F, increment IDATA[0x22]
+ *   - If value == 0x01, increment IDATA[0x22]
+ *   - Always increment IDATA[0x21]
+ *   - Loop back
+ *
+ * After loop:
+ *   - If IDATA[0x22] == R7 (param), set G_STATE_RESULT_06E8 = 0, return 1
+ *   - Otherwise check XDATA[0x0002]:
+ *     - If 0x12: check G_COUNTER_0B39 >= 0x14, if so set 0x044C = 1, return 1
+ *     - If 0x00: set 0x044C = 1, return 1
+ *     - Otherwise return 0
+ *
+ * Original disassembly:
+ *   9264: clr a
+ *   9265: mov 0x22, a        ; counter2 = 0
+ *   9267: mov 0x21, a        ; counter1 = 0
+ *   9269: lcall 0xc4a9       ; queue_check_status_c4a9
+ *   926c: jnc 0x9281         ; if no carry, exit loop
+ *   926e: lcall 0xc44f       ; queue_calc_dptr_c44f
+ *   9271: movx a, @dptr
+ *   9272: mov r6, a
+ *   9273: xrl a, #0x0f       ; check if == 0x0F
+ *   9275: jz 0x927b          ; if 0x0F, inc counter2
+ *   9277: mov a, r6
+ *   9278: cjne a, #0x01, 0x927d  ; if != 0x01, skip inc counter2
+ *   927b: inc 0x22           ; counter2++
+ *   927d: inc 0x21           ; counter1++
+ *   927f: sjmp 0x9269        ; loop
+ *   9281: mov a, 0x22        ; get counter2
+ *   9283: cjne a, 0x07, 0x928e  ; if != R7 (param), branch
+ *   9286: clr a
+ *   9287: mov dptr, #0x06e8
+ *   928a: movx @dptr, a      ; G_STATE_RESULT_06E8 = 0
+ *   928b: mov r7, #0x01
+ *   928d: ret                ; return 1
+ *   928e: mov dptr, #0x0002
+ *   9291: movx a, @dptr      ; read XDATA[0x0002]
+ *   9292: add a, #0xee       ; check if == 0x12 (0x12 + 0xee = 0x100, sets Z)
+ *   9294: jz 0x92a8          ; if 0x12, branch to set flag
+ *   9296: add a, #0x12       ; restore, check if == 0x00
+ *   9298: jnz 0x92b0         ; if not 0, return 0
+ *   929a: mov dptr, #0x0b39  ; G_COUNTER_0B39
+ *   929d: movx a, @dptr
+ *   929e: setb c
+ *   929f: subb a, #0x14      ; check if >= 0x14
+ *   92a1: jc 0x92b0          ; if < 0x14, return 0
+ *   92a3: mov dptr, #0x044c
+ *   92a6: sjmp 0x92ab
+ *   92a8: mov dptr, #0x044c
+ *   92ab: mov a, #0x01
+ *   92ad: movx @dptr, a      ; 0x044C = 1
+ *   92ae: mov r7, a
+ *   92af: ret                ; return 1
+ *   92b0: mov r7, #0x00
+ *   92b2: ret                ; return 0
+ */
+uint8_t nvme_queue_count_matches_9264(uint8_t expected_count)
+{
+    __idata uint8_t *counter1 = (__idata uint8_t *)0x21;
+    __idata uint8_t *counter2 = (__idata uint8_t *)0x22;
+    __xdata uint8_t *ptr;
+    uint8_t val;
+    uint8_t cmd;
+
+    /* Clear counters */
+    *counter2 = 0;
+    *counter1 = 0;
+
+    /* Loop checking queue entries */
+    while (queue_check_status_c4a9()) {
+        ptr = queue_calc_dptr_c44f();
+        val = *ptr;
+
+        if (val == 0x0F || val == 0x01) {
+            (*counter2)++;
+        }
+        (*counter1)++;
+    }
+
+    /* Check if counter2 matches expected */
+    if (*counter2 == expected_count) {
+        G_WORK_06E8 = 0;
+        return 1;
+    }
+
+    /* Check command type at XDATA[0x0002] */
+    cmd = *(__xdata uint8_t *)0x0002;
+    if (cmd == 0x12) {
+        /* Command 0x12: set flag and return 1 */
+        *(__xdata uint8_t *)0x044C = 1;
+        return 1;
+    } else if (cmd == 0x00) {
+        /* Command 0x00: check counter threshold */
+        if (G_STATE_0B39 >= 0x14) {
+            *(__xdata uint8_t *)0x044C = 1;
+            return 1;
+        }
+    }
+
+    return 0;
+}

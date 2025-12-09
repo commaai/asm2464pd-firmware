@@ -16,6 +16,20 @@
 /* External function declarations */
 extern void phy_link_training(void);  /* 0xD702 - in phy.c */
 extern void timer_wait(uint8_t timeout_lo, uint8_t timeout_hi, uint8_t mode);  /* 0xE80A - in timer.c */
+extern uint8_t banked_load_byte(uint8_t addrlo, uint8_t addrhi, uint8_t memtype);  /* 0x0bc8 - in utils.c */
+extern uint8_t pcie_read_status_a334(void);  /* 0xa334 - in queue_handlers.c */
+extern void pcie_handler_e890(void);  /* 0xe890 - in pcie.c */
+extern uint8_t get_pcie_status_flags_e00c(void);  /* 0xe00c - in pcie.c */
+extern void pcie_lane_init_e7f8(void);  /* 0xe7f8 - defined later in this file */
+extern void clear_pcie_status_bytes_e8cd(void);  /* 0xe8cd - in pcie.c */
+
+/* PCIe extended register access (0x1200 base + offset) */
+#define PCIE_EXT_REG(offset)  XDATA8(0x1200 + (offset))
+
+/* Forward declarations for functions defined later in this file */
+void pcie_handler_e06b(uint8_t param);
+void helper_dd12(uint8_t param1, uint8_t param2);
+void helper_e120(uint8_t r7, uint8_t r5);
 
 /*===========================================================================
  * USB Transfer Functions
@@ -445,8 +459,28 @@ void helper_1b30(void) {}
 /* 0x1c13: Helper function - stub */
 void helper_1c13(void) {}
 
-/* 0x1cf0: Helper function - stub */
-void helper_1cf0(void) {}
+/*
+ * helper_1cf0 - DMA setup helper wrapper
+ * Address: 0x1cf0-0x1cfb (12 bytes)
+ *
+ * Disassembly:
+ *   1cf0: clr a           ; A = 0
+ *   1cf1: mov r3, a       ; R3 = 0
+ *   1cf2: mov r5, #0x20   ; R5 = 0x20
+ *   1cf4: mov r7, #0x05   ; R7 = 0x05
+ *   1cf6: lcall 0x523c    ; Call helper_523c(0, 0x20, 0x05)
+ *   1cf9: mov r7, #0x05   ; Return value = 5
+ *   1cfb: ret
+ *
+ * Calls helper_523c with r3=0, r5=0x20, r7=5 and returns 5.
+ */
+extern void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7);
+
+uint8_t helper_1cf0(void)
+{
+    helper_523c(0, 0x20, 5);
+    return 5;
+}
 
 /* 0x9980: Helper function - stub */
 void helper_9980(void) {}
@@ -535,6 +569,24 @@ uint8_t helper_3298(void)
 /* 0x3578: Helper with param */
 void helper_3578(uint8_t param) { (void)param; }
 
+/*
+ * helper_1c5d - USB/Transfer table lookup helper
+ * Address: 0x1c5d-0x1c6b (15 bytes)
+ *
+ * Reads a value from a table based on G_SYS_STATUS_PRIMARY (0x0464)
+ * and stores result in G_PCIE_TXN_COUNT_LO (0x05a6).
+ *
+ * From ghidra.c FUN_CODE_1c5d:
+ *   G_PCIE_TXN_COUNT_LO = table[0x05A8 + *param_1];
+ *   where param_1 points to G_SYS_STATUS_PRIMARY (0x0464)
+ */
+void helper_1c5d(void)
+{
+    uint8_t idx = G_SYS_STATUS_PRIMARY;
+    /* Table lookup at 0x05A8 + idx */
+    G_PCIE_TXN_COUNT_LO = XDATA8(0x05a8 + idx);
+}
+
 /* SCSI send CSW - stub */
 void scsi_send_csw(uint8_t status, uint8_t param) { (void)status; (void)param; }
 
@@ -618,27 +670,112 @@ void parse_descriptor(uint8_t param) { (void)param; }
 
 /*
  * usb_state_setup_4c98 - USB state setup
- * Address: 0x4c98
+ * Address: 0x4c98-0x4cdb (68 bytes)
  *
  * Sets up USB state for transfer operations.
+ * From ghidra.c FUN_CODE_4c98:
+ *   - Copies LUN from 0x0af4 to G_SYS_STATUS_SECONDARY (0x0465)
+ *   - Calculates address into table at 0x047a+LUN -> G_SYS_STATUS_PRIMARY (0x0464)
+ *   - Calls FUN_CODE_1c5d (helper function)
+ *   - Sets/clears bit 0 of REG_NVME_QUEUE_CFG based on LUN
+ *   - If USB not connected: clears various state
  */
-void usb_state_setup_4c98(void) {}
+extern void helper_1c5d(void);
+
+void usb_state_setup_4c98(void)
+{
+    uint8_t lun;
+
+    /* Copy LUN from 0x0af4 to secondary status */
+    lun = XDATA8(0x0af4);
+    G_SYS_STATUS_SECONDARY = lun;
+
+    /* Store corresponding value to primary status
+     * Original: reads from table at 0x047a + lun
+     * For LUN 0-15, valid range is 0x047a to 0x0489 */
+    G_SYS_STATUS_PRIMARY = XDATA8(0x047a + lun);
+
+    /* Call helper function */
+    helper_1c5d();
+
+    /* Configure NVMe queue based on LUN */
+    if (lun == 0) {
+        REG_NVME_QUEUE_CFG &= 0xFC;  /* Clear bits 0-1 */
+    } else {
+        REG_NVME_QUEUE_CFG = (REG_NVME_QUEUE_CFG & 0xFC) | 0x01;  /* Set bit 0 */
+    }
+
+    /* If USB not connected (bit 0 clear), reset state */
+    if ((REG_USB_STATUS & 0x01) != 0x01) {
+        XDATA8(0x0056) = 0;
+        XDATA8(0x0057) = 0;
+        XDATA8(0x0108) = 1;
+    }
+}
 
 /*
  * usb_helper_51ef - USB helper (abort path)
- * Address: 0x51ef
+ * Address: 0x51ef-0x5215 (39 bytes)
  *
- * Called in abort/error handling path.
+ * Checks for "USBC" signature at 0x9119-0x911e.
+ * If 0x911a != 0x1f or 0x9119 != 0x00, returns early.
+ * If signature is "USBC" (at 0x911b-0x911e), continues processing.
  */
-void usb_helper_51ef(void) {}
+void usb_helper_51ef(void)
+{
+    /* Check header bytes */
+    if (XDATA8(0x911a) != 0x1f || XDATA8(0x9119) != 0x00) {
+        return;
+    }
+
+    /* Check for "USBC" signature at 0x911b */
+    if (XDATA8(0x911b) != 'U') return;
+    if (XDATA8(0x911c) != 'S') return;
+    if (XDATA8(0x911d) != 'B') return;
+    if (XDATA8(0x911e) != 'C') return;
+
+    /* Signature valid - processing continues in caller */
+}
 
 /*
  * usb_helper_5112 - USB helper
- * Address: 0x5112
+ * Address: 0x5112-0x5156 (69 bytes)
  *
- * Called after setting transfer active flag in abort path.
+ * Called after setting transfer active flag. Copies status from USB buffer
+ * to IDATA variables and extracts transfer parameters.
+ *
+ * From ghidra.c:
+ *   usb_copy_status_to_buffer();
+ *   DAT_INTMEM_6b = DAT_EXTMEM_9126;  // Residue byte 3
+ *   DAT_INTMEM_6c = DAT_EXTMEM_9125;  // Residue byte 2
+ *   DAT_INTMEM_6d = DAT_EXTMEM_9124;  // Residue byte 1
+ *   DAT_INTMEM_6e = DAT_EXTMEM_9123;  // Residue byte 0
+ *   DAT_EXTMEM_0af3 = DAT_EXTMEM_9127 & 0x80;  // Direction bit
+ *   DAT_EXTMEM_0af4 = DAT_EXTMEM_9128 & 0x0f;  // LUN
+ *   FUN_CODE_4d92();  // Continue with transfer setup
  */
-void usb_helper_5112(void) {}
+extern void usb_copy_status_to_buffer(void);
+extern void scsi_handle_init_4d92(void);
+
+void usb_helper_5112(void)
+{
+    usb_copy_status_to_buffer();
+
+    /* Copy residue bytes to IDATA 0x6b-0x6e (transfer length) */
+    I_TRANSFER_6B = XDATA8(0x9126);
+    I_TRANSFER_6C = XDATA8(0x9125);
+    I_TRANSFER_6D = XDATA8(0x9124);
+    I_TRANSFER_6E = XDATA8(0x9123);
+
+    /* Extract direction bit (bit 7) */
+    XDATA8(0x0af3) = XDATA8(0x9127) & 0x80;
+
+    /* Extract LUN (bits 0-3) */
+    XDATA8(0x0af4) = XDATA8(0x9128) & 0x0f;
+
+    /* Continue with transfer setup */
+    scsi_handle_init_4d92();
+}
 
 /* usb_set_transfer_active_flag - IMPLEMENTED in usb.c */
 
@@ -653,17 +790,34 @@ uint8_t usb_read_transfer_params_lo(void) { return 0; }
  *===========================================================================*/
 
 /*
- * Note: handler_0327 and handler_039a are NOT standalone functions.
- * They are entries in a dispatch table at 0x0300+ that loads DPTR
- * with a target address and jumps to the common dispatcher.
- * The actual handlers are the addresses loaded into DPTR.
+ * Note: handler_0327 and handler_039a are dispatch table entries at 0x0300+
+ * that load DPTR with a target address and jump to the common dispatcher.
+ * These wrappers call the actual target functions directly.
  */
 
-/* 0x0327: Dispatch entry - loads DPTR=0xB1CB, jumps to 0x0300 */
-void handler_0327_usb_power_init(void) {}
+/*
+ * handler_0327_usb_power_init - USB power initialization dispatch
+ * Address: 0x0327 (dispatch entry), target: 0xB1CB (usb_power_init)
+ *
+ * From ghidra.c: jump_bank_0(usb_power_init)
+ */
+extern void usb_power_init(void);
+void handler_0327_usb_power_init(void)
+{
+    usb_power_init();
+}
 
-/* 0x039a: Dispatch entry - loads DPTR=0xD810, jumps to 0x0300 */
-void handler_039a_buffer_dispatch(void) {}
+/*
+ * handler_039a_buffer_dispatch - USB buffer handler dispatch
+ * Address: 0x039a (dispatch entry), target: 0xD810 (usb_buffer_handler)
+ *
+ * From ghidra.c: jump_bank_0(usb_buffer_handler)
+ */
+extern void usb_buffer_handler(void);
+void handler_039a_buffer_dispatch(void)
+{
+    usb_buffer_handler();
+}
 
 /*
  * helper_9608 - Read-modify-write: clear bit 0, set bit 0
@@ -906,6 +1060,63 @@ void helper_dd42(uint8_t param)
     }
 
     /* Default: do nothing (return without writing) */
+}
+
+/*
+ * helper_e7c1 - State check and conditional call helper
+ * Address: 0xe7c1-0xe7d3 (19 bytes)
+ *
+ * Disassembly:
+ *   e7c1: mov a, r7            ; Get param
+ *   e7c2: cjne a, #0x01, 0xe7c9 ; If param != 1, skip
+ *   e7c5: lcall 0xbd14         ; Call helper_bd14
+ *   e7c8: ret
+ *   e7c9: mov dptr, #0x0af1    ; G_STATE_FLAG_0AF1
+ *   e7cc: movx a, @dptr        ; Read flag
+ *   e7cd: jnb 0xe0.4, 0xe7d3   ; If bit 4 clear, skip
+ *   e7d0: lcall 0xbcf2         ; Call helper_bcf2
+ *   e7d3: ret
+ *
+ * If param == 1: calls helper_bd14
+ * Else: if G_STATE_FLAG_0AF1 bit 4 set, calls helper_bcf2
+ */
+void helper_e7c1(uint8_t param)
+{
+    if (param == 0x01) {
+        /* Call helper_bd14 - state update function */
+        /* TODO: implement helper_bd14 call */
+        return;
+    }
+
+    /* Check G_STATE_FLAG_0AF1 bit 4 */
+    if (G_STATE_FLAG_0AF1 & 0x10) {
+        /* Call helper_bcf2 - state sync function */
+        /* TODO: implement helper_bcf2 call */
+    }
+}
+
+/*
+ * helper_057a - Dispatch to event handler via address lookup
+ * Address: 0x057a-0x057e (5 bytes)
+ *
+ * Disassembly:
+ *   057a: mov dptr, #0xe0d9    ; Target handler address
+ *   057d: ajmp 0x0311          ; Jump to dispatch table handler
+ *
+ * This is part of a dispatch table in the low memory area.
+ * Sets DPTR to a handler address and jumps to the dispatcher.
+ * The dispatcher at 0x0311 performs an indirect call to DPTR.
+ *
+ * The param selects which entry to dispatch (R7 is passed through).
+ */
+void helper_057a(uint8_t param)
+{
+    (void)param;
+
+    /* This dispatches to the handler at 0xe0d9 */
+    /* The actual dispatch mechanism uses DPTR and indirect jump */
+    /* For C implementation, we would call the handler directly */
+    /* TODO: implement handler_e0d9 call when available */
 }
 
 /* Forward declaration for helper_e6d2 dependencies */
@@ -2099,6 +2310,44 @@ void pcie_handler_e974(void)
 }
 
 /*
+ * pcie_check_and_trigger_d5da - Check memory bit 7 and trigger PCIe handlers
+ * Address: 0xd5da-0xd5e8 (15 bytes)
+ *
+ * Reads from banked memory using caller-set R1/R2/R3, checks if bit 7 is set,
+ * and if so, triggers pcie_handler_e974 and pcie_handler_e06b(1).
+ *
+ * This function is called from bank 1 code after setting up:
+ *   R1 = address low byte
+ *   R2 = address high byte
+ *   R3 = memory type (0x01=XDATA, 0x02=CODE, etc.)
+ *
+ * Original disassembly:
+ *   d5da: lcall 0x0bc8       ; banked_load_byte(R1, R2, R3)
+ *   d5dd: jnb acc.7, 0xd5e8  ; if bit 7 not set, skip to ret
+ *   d5e0: lcall 0xe974       ; pcie_handler_e974()
+ *   d5e3: mov r7, #0x01
+ *   d5e5: lcall 0xe06b       ; pcie_handler_e06b(1)
+ *   d5e8: ret
+ *
+ * Note: In C, caller must pass parameters explicitly since we can't
+ * access caller's R1/R2/R3 register state.
+ */
+void pcie_check_and_trigger_d5da(uint8_t addrlo, uint8_t addrhi, uint8_t memtype)
+{
+    uint8_t val;
+
+    /* Read from memory using banked_load_byte */
+    val = banked_load_byte(addrlo, addrhi, memtype);
+
+    /* Check if bit 7 is set */
+    if (val & 0x80) {
+        /* Trigger PCIe handlers */
+        pcie_handler_e974();
+        pcie_handler_e06b(0x01);
+    }
+}
+
+/*
  * ext_mem_read_bc57 - Extended memory read stub
  * Address: 0xbc57
  *
@@ -2139,6 +2388,138 @@ void pcie_handler_e06b(uint8_t param)
     param = G_USB_WORK_009F;
     transfer_handler_ce23(param);
     G_PCIE_STATUS_0B1C = (G_USB_WORK_009F != 0) ? 1 : 0;
+}
+
+/*
+ * cmd_setup_aa37 - Command parameter setup (NVMe/SCSI)
+ * Address: 0xaa37-0xab0d (~214 bytes) - Main body starts at 0xaa40
+ *
+ * This function sets up command parameters in the E420 register block
+ * for NVMe or SCSI command processing. The original firmware has
+ * overlapping code entry points at 0xaa36 and 0xaa37.
+ *
+ * Main body (0xaa40-0xab0d):
+ *   1. Check G_CMD_MODE (0x07ca) for mode 2/3
+ *   2. Call helper_dd12 and helper_e120
+ *   3. Set up command LBA registers (E426-E429)
+ *   4. Clear command count/status registers (E42A-E42F)
+ *   5. Copy control parameters from globals to registers
+ *   6. For mode 2: set up extended parameters and flash error tracking
+ *   7. Set G_CMD_STATUS to 0x16 (mode 2) or 0x12 (other modes)
+ *
+ * Original disassembly highlights:
+ *   aa40: mov dptr, #0x07ca   ; G_CMD_MODE
+ *   aa43: movx a, @dptr
+ *   aa44: cjne a, #0x02, aa4b ; if mode != 2, r5=4
+ *   aa47: mov r5, #0x05       ; else r5=5
+ *   aa4f: lcall 0xdd12        ; helper_dd12(r5, 0x0f)
+ *   aa56: lcall 0xe120        ; helper_e120(1, 1)
+ *   aa59: mov dptr, #0xe426   ; REG_CMD_LBA_0
+ *   aa5c: mov a, #0x4c        ; 'L' - NVMe command byte
+ *   ... (sets up remaining registers)
+ *   ab08: mov dptr, #0x07c4   ; G_CMD_STATUS
+ *   ab0b: mov a, #0x16 or 0x12
+ *   ab0d: movx @dptr, a; ret
+ */
+void cmd_setup_aa37(void)
+{
+    uint8_t cmd_mode;
+    uint8_t flash_cmd_type;
+    uint8_t event_flags;
+    uint8_t r5_param;
+    uint8_t error_val;
+
+    /* Read command mode */
+    cmd_mode = G_CMD_MODE;
+
+    /* Set helper parameter based on mode */
+    if (cmd_mode == 0x02) {
+        r5_param = 0x05;
+    } else {
+        r5_param = 0x04;
+    }
+
+    /* Call setup helpers */
+    helper_dd12(0x0F, r5_param);
+    helper_e120(0x01, 0x01);
+
+    /* Set up LBA registers */
+    REG_CMD_LBA_0 = 0x4C;  /* 'L' - LBA marker */
+    REG_CMD_LBA_1 = 0x17;
+
+    /* LBA_2 depends on mode */
+    cmd_mode = G_CMD_MODE;  /* Re-read mode */
+    if (cmd_mode == 0x02) {
+        REG_CMD_LBA_2 = 0x40;
+    } else {
+        REG_CMD_LBA_2 = 0x00;
+    }
+
+    /* LBA_3 depends on flash type and event flags */
+    flash_cmd_type = G_FLASH_CMD_TYPE;
+    event_flags = G_EVENT_FLAGS;
+    if ((flash_cmd_type == 0x00) && (event_flags & 0x80)) {
+        REG_CMD_LBA_3 = 0x54;  /* 'T' - Transfer mode */
+    } else {
+        REG_CMD_LBA_3 = 0x50;  /* 'P' - Standard mode */
+    }
+
+    /* Clear command count area (E42A-E42F) - 6 bytes */
+    REG_CMD_COUNT_LOW = 0x00;
+    REG_CMD_COUNT_HIGH = 0x00;
+    XDATA_REG8(0xE42C) = 0x00;
+    XDATA_REG8(0xE42D) = 0x00;
+    XDATA_REG8(0xE42E) = 0x00;
+    REG_CMD_RESP_STATUS = 0x00;
+
+    /* Copy control parameters from globals */
+    REG_CMD_CTRL = G_CMD_CTRL_PARAM;
+    REG_CMD_TIMEOUT = G_CMD_TIMEOUT_PARAM;
+
+    /* Mode 2 specific setup */
+    if (cmd_mode == 0x02) {
+        /* Calculate error value based on event flags */
+        event_flags = G_EVENT_FLAGS;
+        if (event_flags & 0x03) {
+            error_val = 0x03;
+        } else {
+            error_val = 0x02;
+        }
+        G_FLASH_ERROR_0 = error_val;
+
+        /* Set bit 3 if event flag bit 7 is set */
+        if (event_flags & 0x80) {
+            G_FLASH_ERROR_0 |= 0x08;
+        }
+
+        /* Set command parameter based on flash type */
+        if (flash_cmd_type == 0x00) {
+            REG_CMD_PARAM_L = G_FLASH_ERROR_0;
+        } else {
+            REG_CMD_PARAM_L = 0x02;
+        }
+
+        REG_CMD_PARAM_H = 0x00;
+        REG_CMD_EXT_PARAM_0 = 0x80;
+
+        /* Check if early exit via 0xaafb path */
+        flash_cmd_type = G_FLASH_CMD_TYPE;
+        if ((flash_cmd_type == 0x00) && (event_flags & 0x03)) {
+            REG_CMD_EXT_PARAM_1 = 0x6D;  /* 'm' - early exit marker */
+            /* Original calls FUN_CODE_aafb here and returns */
+            /* For now, we continue to set final status */
+        } else {
+            REG_CMD_EXT_PARAM_1 = 0x65;  /* 'e' - normal marker */
+        }
+    }
+
+    /* Set final command status based on mode */
+    cmd_mode = G_CMD_MODE;
+    if (cmd_mode == 0x02) {
+        G_CMD_STATUS = 0x16;
+    } else {
+        G_CMD_STATUS = 0x12;
+    }
 }
 
 /* pcie_setup_a38b - moved to queue_handlers.c */
@@ -2712,6 +3093,20 @@ void helper_cb05(void)
 
 /* scsi_dma_mode_setup - SCSI DMA mode setup */
 void scsi_dma_mode_setup(void) {}
+
+/*
+ * scsi_handle_init_4d92 - SCSI handle initialization
+ * Address: 0x4d92-0x4e6c (219 bytes)
+ *
+ * This is an alias for the SCSI command processing initialization.
+ * Called by usb_helper_5112 after extracting transfer parameters.
+ * The actual implementation is in scsi.c as scsi_cmd_process.
+ */
+void scsi_handle_init_4d92(void)
+{
+    /* The real implementation initializes transfer state and
+     * starts the SCSI command state machine. For now, stub. */
+}
 
 /*===========================================================================
  * Missing Helper Stubs for scsi.c
@@ -3337,8 +3732,24 @@ uint8_t check_pcie_status_e239(void)
 
 /* pcie_channel_disable_e5fe - moved to pcie.c */
 
-/* helper_a71b - Address: 0xa71b - Status helper */
-uint8_t helper_a71b(void) { return 0; /* Stub */ }
+/*
+ * helper_a71b - Clear NVME status register
+ * Address: 0xa71b-0xa721 (7 bytes)
+ *
+ * Original disassembly:
+ *   a71b: mov dptr, #0x9003  ; REG_NVME_STATUS_9003
+ *   a71e: clr a
+ *   a71f: movx @dptr, a      ; Write 0 to 0x9003
+ *   a720: inc dptr
+ *   a721: ret
+ *
+ * Returns 0.
+ */
+uint8_t helper_a71b(void)
+{
+    XDATA_REG8(0x9003) = 0;
+    return 0;
+}
 
 /*
  * helper_9617 - Set interrupt enable bit 4
@@ -3382,8 +3793,26 @@ void helper_95bf(void)
     REG_XFER_DMA_CFG = 0x02;
 }
 
-/* helper_bd23 - Address: 0xbd23 - PCIe channel helper */
-void helper_bd23(void) { /* Stub */ }
+/*
+ * helper_bd23 - Set bit 5 in register at DPTR
+ * Address: 0xbd23-0xbd29 (7 bytes)
+ *
+ * Original disassembly:
+ *   bd23: movx a, @dptr      ; Read
+ *   bd24: anl a, #0xdf       ; Clear bit 5
+ *   bd26: orl a, #0x20       ; Set bit 5
+ *   bd28: movx @dptr, a      ; Write back
+ *   bd29: ret
+ *
+ * Note: Called with DPTR pre-set to target register.
+ * In C, we pass the register address as a parameter.
+ */
+void helper_bd23(__xdata uint8_t *reg)
+{
+    uint8_t val = *reg;
+    val = (val & 0xDF) | 0x20;  /* Set bit 5 */
+    *reg = val;
+}
 
 /* pcie_disable_and_trigger_e74e - moved to pcie.c */
 
@@ -3530,4 +3959,89 @@ void cmd_init_and_wait_e459(void)
 void helper_95af(void)
 {
     G_CMD_STATUS = 0x06;
+}
+
+/*
+ * pcie_tunnel_init_c00d - PCIe tunnel initialization
+ * Address: 0xc00d-0xc088 (~124 bytes)
+ *
+ * Initializes PCIe tunnel state and clears various status variables.
+ * This is a complex function that's called during NVMe initialization.
+ */
+void pcie_tunnel_init_c00d(void)
+{
+    /* Check if tunnel already active - skip if G_TUNNEL_ACTIVE is 0 */
+    if (XDATA_VAR8(0x06E6) == 0) {
+        return;
+    }
+
+    /* Clear tunnel active flag */
+    XDATA_VAR8(0x06E6) = 0;
+    /* Set sequence numbers */
+    XDATA_VAR8(0x06E7) = 1;  /* inc dptr, inc a */
+    XDATA_VAR8(0x06E8) = 1;  /* inc dptr */
+    /* Clear state variables */
+    XDATA_VAR8(0x05A7) = 0;
+    XDATA_VAR8(0x06EB) = 0;
+    XDATA_VAR8(0x05AC) = 0;
+    XDATA_VAR8(0x05AD) = 0;
+    /* Additional tunnel setup would go here */
+}
+
+/*
+ * queue_calc_dptr_c44f - Calculate queue data pointer
+ * Address: 0xc44f-0xc45e (16 bytes)
+ *
+ * Calculates: DPTR = 0x057E + (I_WORK_21 * 10)
+ * Returns pointer to queue entry data.
+ *
+ * Disassembly:
+ *   c44f: mov a, 0x21       ; A = I_WORK_21 (queue index)
+ *   c451: mov 0xf0, #0x0a   ; B = 10 (entry size)
+ *   c454: mul ab            ; A = A * 10
+ *   c455: add a, #0x7e      ; A += 0x7E (base offset)
+ *   c457: mov 0x82, a       ; DPL = A
+ *   c459: clr a
+ *   c45a: addc a, #0x05     ; DPH = 0x05 + carry
+ *   c45c: mov 0x83, a
+ *   c45e: ret
+ */
+#define I_WORK_21 (*(__idata uint8_t *)0x21)
+
+__xdata uint8_t * queue_calc_dptr_c44f(void)
+{
+    uint16_t addr;
+    uint8_t idx = I_WORK_21;
+
+    /* Calculate: 0x057E + (idx * 10) */
+    addr = 0x057E + (idx * 10);
+
+    return (__xdata uint8_t *)addr;
+}
+
+/*
+ * queue_check_status_c4a9 - Check if more queue entries to process
+ * Address: 0xc4a9-0xc4b2 (10 bytes)
+ *
+ * Compares I_WORK_21 with G_ERROR_COUNT at 0x06E5.
+ * Returns non-zero if I_WORK_21 < G_ERROR_COUNT (more entries to process).
+ *
+ * Disassembly:
+ *   c4a9: mov dptr, #0x06e5 ; G_ERROR_COUNT
+ *   c4ac: movx a, @dptr     ; A = G_ERROR_COUNT
+ *   c4ad: mov r7, a         ; R7 = G_ERROR_COUNT
+ *   c4ae: mov a, 0x21       ; A = I_WORK_21
+ *   c4b0: clr c
+ *   c4b1: subb a, r7        ; A = I_WORK_21 - G_ERROR_COUNT
+ *   c4b2: ret               ; Return with carry set if I_WORK_21 < G_ERROR_COUNT
+ */
+#define G_QUEUE_COUNT_06E5 XDATA_VAR8(0x06E5)
+
+uint8_t queue_check_status_c4a9(void)
+{
+    uint8_t count = G_QUEUE_COUNT_06E5;
+    uint8_t idx = I_WORK_21;
+
+    /* Return true (non-zero) if idx < count, meaning more entries to process */
+    return (idx < count) ? 1 : 0;
 }

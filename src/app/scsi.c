@@ -2406,7 +2406,7 @@ uint8_t scsi_usbc_signature_check_51f9(__xdata uint8_t *ptr)
  */
 void scsi_reg_write_5398(uint8_t val)
 {
-    XDATA8(0xC001) = val;
+    REG_UART_THR = val;
 }
 
 /*

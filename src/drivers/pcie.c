@@ -3167,7 +3167,7 @@ uint8_t pcie_init_write_e902(void)
 extern void helper_e677(void);
 extern void helper_9617(void);
 extern void helper_95bf(void);
-extern void helper_bd23(void);
+extern void helper_bd23(__xdata uint8_t *reg);
 extern void helper_e50d(void);
 extern uint8_t helper_a2ff(void);
 extern void helper_0be6(void);
@@ -3368,8 +3368,8 @@ void pcie_channel_disable_e5fe(void)
     val = XDATA_REG8(0xC6BD);
     XDATA_REG8(0xC6BD) = val & 0xFE;
 
-    /* Call helper with dptr=0xC801 */
-    helper_bd23();
+    /* Call helper with dptr=0xC801 - sets bit 5 */
+    helper_bd23((__xdata uint8_t *)0xC801);
 
     /* Write 4 to 0xCC33 */
     XDATA_REG8(0xCC33) = 0x04;

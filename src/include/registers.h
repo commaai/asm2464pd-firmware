@@ -50,6 +50,12 @@
 #define USB_SCSI_BUF_BASE       0x8000
 #define USB_SCSI_BUF_SIZE       0x1000
 
+// USB/SCSI buffer control registers (0x8008-0x800D)
+#define REG_USB_BUF_CTRL_8008   XDATA_REG8(0x8008)  /* USB buffer control (power check: ==0x01) */
+#define REG_USB_BUF_CTRL_8009   XDATA_REG8(0x8009)  /* USB buffer control (power check: ==0x08) */
+#define REG_USB_BUF_CTRL_800A   XDATA_REG8(0x800A)  /* USB buffer control (power check: ==0x02) */
+#define REG_USB_BUF_STATUS_800D XDATA_REG8(0x800D)  /* USB buffer status (mask 0x7F != 0 check) */
+
 #define USB_CTRL_BUF_BASE       0x9E00
 #define USB_CTRL_BUF_SIZE       0x0200
 
@@ -198,11 +204,22 @@
 #define REG_PCIE_ADDR_3         XDATA_REG8(0xB21B)
 #define REG_PCIE_ADDR_HIGH      XDATA_REG8(0xB21C)
 #define REG_PCIE_DATA           XDATA_REG8(0xB220)
+#define REG_PCIE_EXT_STATUS     XDATA_REG8(0xB223)   // PCIe extended status (bit 0 = ready)
 #define REG_PCIE_TLP_CPL_HEADER XDATA_REG32(0xB224)
 #define REG_PCIE_LINK_STATUS    XDATA_REG16(0xB22A)
 #define REG_PCIE_CPL_STATUS     XDATA_REG8(0xB22B)
 #define REG_PCIE_CPL_DATA       XDATA_REG8(0xB22C)
 #define REG_PCIE_CPL_DATA_ALT   XDATA_REG8(0xB22D)
+
+// PCIe Extended Link Registers (0xB235-0xB23F)
+#define REG_PCIE_LINK_CFG       XDATA_REG8(0xB235)   // Link configuration (bits 6-7 kept on reset)
+#define REG_PCIE_LINK_STATUS_EXT XDATA_REG8(0xB237)  // Extended link status (bit 7 = active)
+#define REG_PCIE_LINK_TRIGGER   XDATA_REG8(0xB238)   // Link trigger (bit 0 = busy)
+#define REG_PCIE_EXT_CFG_0      XDATA_REG8(0xB23C)   // Extended config 0
+#define REG_PCIE_EXT_CFG_1      XDATA_REG8(0xB23D)   // Extended config 1
+#define REG_PCIE_EXT_CFG_2      XDATA_REG8(0xB23E)   // Extended config 2
+#define REG_PCIE_EXT_CFG_3      XDATA_REG8(0xB23F)   // Extended config 3
+
 #define REG_PCIE_NVME_DOORBELL  XDATA_REG32(0xB250)
 #define REG_PCIE_DOORBELL_CMD   XDATA_REG8(0xB251)   // Byte 1 of doorbell - command byte
 #define REG_PCIE_TRIGGER        XDATA_REG8(0xB254)
@@ -357,6 +374,8 @@
 #define REG_NVME_CMD_CDW10      XDATA_REG8(0xC435)
 #define REG_NVME_INIT_CTRL      XDATA_REG8(0xC438)  // NVMe init control (set to 0xFF)
 #define REG_NVME_CMD_CDW11      XDATA_REG8(0xC439)
+#define REG_NVME_INT_MASK_A     XDATA_REG8(0xC43A)  /* NVMe/Interrupt mask A (init: 0xFF) */
+#define REG_NVME_INT_MASK_B     XDATA_REG8(0xC43B)  /* NVMe/Interrupt mask B (init: 0xFF) */
 #define REG_NVME_QUEUE_PTR      XDATA_REG8(0xC43D)
 #define REG_NVME_QUEUE_DEPTH    XDATA_REG8(0xC43E)
 #define REG_NVME_PHASE          XDATA_REG8(0xC43F)
@@ -402,6 +421,7 @@
 #define   PHY_EXT_MODE            0x20  // Bit 5: PHY mode
 #define REG_PHY_EXT_B3          XDATA_REG8(0xC6B3)
 #define   PHY_EXT_LINK_READY      0x30  // Bits 4,5: Link ready status
+#define REG_PHY_LINK_CTRL_BD    XDATA_REG8(0xC6BD)  /* PHY link control (bit 0 = enable) */
 #define REG_PHY_CFG_C6A8        XDATA_REG8(0xC6A8)  /* PHY config (bit 0 = enable) */
 
 //=============================================================================
@@ -440,6 +460,17 @@
 #define REG_I2C_SRC             XDATA_REG32(0xC878)
 #define REG_I2C_DST             XDATA_REG32(0xC87C)
 #define REG_I2C_CSR_ALT         XDATA_REG8(0xC87F)
+
+//=============================================================================
+// Alternate Flash Controller (0xC880-0xC886)
+//=============================================================================
+#define REG_FLASH_CMD_ALT       XDATA_REG8(0xC880)  /* Alternate flash command */
+#define REG_FLASH_CSR_ALT       XDATA_REG8(0xC881)  /* Alternate flash CSR */
+#define REG_FLASH_ADDR_LO_ALT   XDATA_REG8(0xC882)  /* Alternate flash addr low */
+#define REG_FLASH_ADDR_MD_ALT   XDATA_REG8(0xC883)  /* Alternate flash addr mid */
+#define REG_FLASH_ADDR_HI_ALT   XDATA_REG8(0xC884)  /* Alternate flash addr high */
+#define REG_FLASH_DATA_LEN_ALT  XDATA_REG8(0xC885)  /* Alternate flash data len */
+#define REG_FLASH_DATA_HI_ALT   XDATA_REG8(0xC886)  /* Alternate flash data len hi */
 
 //=============================================================================
 // SPI Flash Controller (0xC89F-0xC8AE)
@@ -492,6 +523,7 @@
 #define REG_CPU_MODE_NEXT       XDATA_REG8(0xCA06)
 #define REG_CPU_CTRL_CA60       XDATA_REG8(0xCA60)  /* CPU control CA60 */
 #define REG_USB_CTRL_CA60       REG_CPU_CTRL_CA60   /* Alias for scsi_dma_init */
+#define REG_CPU_CTRL_CA81       XDATA_REG8(0xCA81)  /* CPU control CA81 - PCIe init */
 
 //=============================================================================
 // Timer Registers (0xCC10-0xCC24)
@@ -524,6 +556,7 @@
 #define   CPU_EXEC_STATUS_ACTIVE  0x01  // Bit 0: CPU execution active
 #define REG_CPU_EXEC_STATUS_2   XDATA_REG8(0xCC33)  /* CPU execution status 2 */
 #define   CPU_EXEC_STATUS_2_INT   0x04  // Bit 2: Interrupt pending
+#define REG_CPU_EXEC_CTRL_2     XDATA_REG8(0xCC34)  /* CPU execution control 2 */
 #define REG_CPU_EXEC_STATUS_3   XDATA_REG8(0xCC35)  /* CPU execution status 3 */
 #define REG_DMA_QUEUE_CTRL_CC35 REG_CPU_EXEC_STATUS_3 /* Alias for scsi_dma_init */
 // Timer enable/disable control registers
@@ -538,10 +571,20 @@
 #define REG_CPU_CTRL_CC3D       XDATA_REG8(0xCC3D)
 #define REG_CPU_CTRL_CC3E       XDATA_REG8(0xCC3E)
 #define REG_CPU_CTRL_CC3F       XDATA_REG8(0xCC3F)
-// CPU interrupt control register
+
+// Timer 4 Registers (0xCC5C-0xCC5F)
+#define REG_TIMER4_DIV          XDATA_REG8(0xCC5C)  /* Timer 4 divisor */
+#define REG_TIMER4_CSR          XDATA_REG8(0xCC5D)  /* Timer 4 control/status */
+#define REG_TIMER4_THRESHOLD_LO XDATA_REG8(0xCC5E)  /* Timer 4 threshold low */
+#define REG_TIMER4_THRESHOLD_HI XDATA_REG8(0xCC5F)  /* Timer 4 threshold high */
+
+// CPU control registers (0xCC80-0xCC83)
+#define REG_CPU_CTRL_CC80       XDATA_REG8(0xCC80)  /* CPU control 0xCC80 */
 #define REG_CPU_INT_CTRL        XDATA_REG8(0xCC81)
 #define   CPU_INT_CTRL_ACK       0x02  // Bit 1: Acknowledge interrupt
 #define   CPU_INT_CTRL_TRIGGER   0x04  // Bit 2: Trigger interrupt
+#define REG_CPU_CTRL_CC82       XDATA_REG8(0xCC82)  /* CPU control 0xCC82 */
+#define REG_CPU_CTRL_CC83       XDATA_REG8(0xCC83)  /* CPU control 0xCC83 */
 
 // Transfer DMA controller - for internal memory block transfers
 #define REG_XFER_DMA_CTRL       XDATA_REG8(0xCC88)  /* Transfer DMA control */
@@ -564,10 +607,17 @@
 #define REG_XFER2_DMA_CTRL      XDATA_REG8(0xCCD8)  /* Transfer 2 DMA control */
 #define REG_XFER2_DMA_STATUS    XDATA_REG8(0xCCD9)  /* Transfer 2 DMA status */
 #define   XFER2_DMA_STATUS_ACK   0x02  // Bit 1: Acknowledge status
+#define REG_TIMER5_CSR          XDATA_REG8(0xCCB9)  /* Timer 5 control/status (alternate) */
 #define REG_XFER2_DMA_ADDR_LO   XDATA_REG8(0xCCDA)  /* Transfer 2 DMA address low */
 #define REG_XFER2_DMA_ADDR_HI   XDATA_REG8(0xCCDB)  /* Transfer 2 DMA address high */
+#define REG_CPU_EXT_CTRL        XDATA_REG8(0xCCF8)  /* CPU extended control */
 #define REG_CPU_EXT_STATUS      XDATA_REG8(0xCCF9)  /* CPU extended status */
 #define   CPU_EXT_STATUS_ACK     0x02  // Bit 1: Acknowledge extended status
+
+//=============================================================================
+// CPU Extended Control (0xCD00-0xCD3F)
+//=============================================================================
+#define REG_CPU_TIMER_CTRL_CD31 XDATA_REG8(0xCD31)  /* CPU timer control */
 
 //=============================================================================
 // SCSI DMA Control (0xCE00-0xCE3F)
@@ -738,12 +788,18 @@
 #define REG_SYS_CTRL_E760       XDATA_REG8(0xE760)
 #define REG_SYS_CTRL_E761       XDATA_REG8(0xE761)
 #define REG_SYS_CTRL_E763       XDATA_REG8(0xE763)
+#define REG_SYS_CTRL_E765       XDATA_REG8(0xE765)  /* System control E765 */
 #define REG_FLASH_READY_STATUS  XDATA_REG8(0xE795)
 #define REG_PHY_LINK_CTRL       XDATA_REG8(0xE7E3)
 #define   PHY_LINK_CTRL_BIT6      0x40  // Bit 6: PHY link control flag
 #define   PHY_LINK_CTRL_BIT7      0x80  // Bit 7: PHY link ready
 #define REG_PHY_LINK_TRIGGER    XDATA_REG8(0xE7FA)  /* PHY link trigger/config */
 #define REG_LINK_MODE_CTRL      XDATA_REG8(0xE7FC)
+
+//=============================================================================
+// System Control Extended (0xEA00-0xEAFF)
+//=============================================================================
+#define REG_SYS_CTRL_EA90       XDATA_REG8(0xEA90)  /* System control EA90 */
 
 //=============================================================================
 // NVMe Event (0xEC00-0xEC0F)

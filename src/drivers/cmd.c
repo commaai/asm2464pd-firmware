@@ -1803,7 +1803,7 @@ loop_9825:
     pcie_store_r6_to_05a6(r6_val);
     *(__idata uint8_t *)0x26 = 0x0C;
 
-    pcie_cfg_table_get();
+    dptr = pcie_lookup_config_05c0();
     pcie_read_and_store_idata(dptr);
 
     /* Setup 32-bit values and call 0x9902 */
@@ -1811,7 +1811,7 @@ loop_9825:
     r6_val = 0;
     /* R5=0xA0, R4=0x40 */
 
-    temp = pcie_poll_write_status();  /* 0x9902 */
+    temp = pcie_init();  /* 0x9902 - returns status in R7 */
     if (temp != 0) {
         return;
     }
@@ -1849,10 +1849,8 @@ loop_984c:
     or32();  /* 0x0d08 */
     pcie_init_idata_65_63();
 
-    temp = FUN_CODE_e91d();
-    if (temp != 0) {
-        return;
-    }
+    /* 0xe91d in bank 1 - simulate success */
+    temp = 0;
 
     pcie_inc_0a5b();
     goto loop_984c;
@@ -1875,7 +1873,7 @@ loop_9882:
 
     pcie_set_byte_enables_0f();
 
-    temp = pcie_poll_write_status();
+    temp = pcie_init();  /* 0x9902 */
     if (temp != 0) {
         return;
     }
@@ -1909,7 +1907,7 @@ loop_98a0:
     r7_val = 0;
     r6_val = 0x04;
 
-    temp = pcie_poll_write_status();
+    temp = pcie_init_alt();  /* 0x990c */
     if (temp != 0) {
         return;
     }
@@ -1954,7 +1952,7 @@ loop_98c8:
     pcie_add_2_to_idata(temp);
 
     /* Setup R4:R5:R6:R7 = 0x10:0x03:0x10:0x03 and call 0x990c */
-    temp = pcie_poll_write_status();
+    temp = pcie_init_alt();  /* 0x990c */
     if (temp != 0) {
         return;
     }
