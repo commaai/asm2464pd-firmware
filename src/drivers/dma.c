@@ -1531,7 +1531,7 @@ loop_start:
 
     /* 0x263e: Compare with buffer state */
     if (G_BUFFER_STATE_0AA7 == r7) {
-        REG_DMA_STATUS &= 0xFE;
+        REG_DMA_STATUS &= ~DMA_STATUS_TRIGGER;
         goto handle_match_end;
     }
 

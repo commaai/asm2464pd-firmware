@@ -967,7 +967,7 @@ void usb_state_setup_4c98(void)
 
     /* Configure NVMe queue based on LUN */
     if (lun == 0) {
-        REG_NVME_QUEUE_CFG &= 0xFC;  /* Clear bits 0-1 */
+        REG_NVME_QUEUE_CFG &= ~NVME_QUEUE_CFG_MASK_LO;  /* Clear bits 0-1 */
     } else {
         REG_NVME_QUEUE_CFG = (REG_NVME_QUEUE_CFG & 0xFC) | 0x01;  /* Set bit 0 */
     }
@@ -1990,7 +1990,7 @@ void nvme_util_get_queue_depth(uint8_t p1, uint8_t p2)
     usb_init_pcie_txn_state();
 
     /* Clear high bit of NVME data control */
-    REG_NVME_DATA_CTRL &= 0x7F;
+    REG_NVME_DATA_CTRL &= ~NVME_DATA_CTRL_BIT7;
 
     /* Handle SCSI control state */
     scsi_ctrl = G_SCSI_CTRL;
@@ -4092,7 +4092,7 @@ void helper_96ae(void)
 }
 
 /* helper_dd0e - Address: 0xdd0e
- * Sets R5=1, R7=0x0f and falls through to helper_dd12
+ * Sets R5=1, R7=0x0f and falls through to cmd_trigger_params
  */
 void helper_dd0e(void)
 {

@@ -2220,7 +2220,7 @@ uint8_t dma_queue_action_handler(uint8_t param_1, uint8_t param_2, uint8_t actio
     }
 
     /* Clear queue config bits 0-1 */
-    REG_NVME_QUEUE_CFG &= 0xFC;
+    REG_NVME_QUEUE_CFG &= ~NVME_QUEUE_CFG_MASK_LO;
 
     /* Copy IDATA[0x16:0x17] to NVMe count registers */
     REG_NVME_COUNT_HIGH = I_CORE_STATE_H;
@@ -2243,7 +2243,7 @@ uint8_t dma_queue_action_handler(uint8_t param_1, uint8_t param_2, uint8_t actio
     G_STATE_HELPER_41 = temp;
 
     /* Clear NVMe control status bit 1 */
-    REG_NVME_CTRL_STATUS &= 0xFD;
+    REG_NVME_CTRL_STATUS &= ~NVME_CTRL_STATUS_READY;
 
     /* Check action code bit 1 for special processing */
     if ((G_ACTION_CODE_0A83 & 0x02) == 0) {
@@ -2288,7 +2288,7 @@ void cmd_queue_status_handler(uint8_t param_1)
     uint8_t counter;
 
     /* Read queue status from 0xC451 and combine with DMA entry */
-    queue_status = REG_NVME_QUEUE_STATUS_51 & 0x1F;
+    queue_status = REG_NVME_QUEUE_STATUS_51 & NVME_QUEUE_STATUS_51_MASK;
     cmd_entry = REG_DMA_ENTRY;
     REG_DMA_ENTRY = (cmd_entry & 0xE0) | queue_status;
 
@@ -2408,7 +2408,7 @@ void cmd_queue_status_handler(uint8_t param_1)
     usb_get_xfer_status();
 
     /* Clear bit in USB control */
-    REG_USB_CTRL_9201 &= 0xEF;
+    REG_USB_CTRL_9201 &= ~USB_CTRL_9201_BIT4;
 
     /* Update PCIe status register */
     {
@@ -3387,7 +3387,7 @@ uint8_t queue_idx_get_3291(void)
  * Reads the DMA status 3 register at 0xC8D9 and returns
  * only bits 3-7 (masked with 0xF8).
  *
- * Returns: (REG_DMA_STATUS3 & 0xF8)
+ * Returns: (REG_DMA_STATUS3 & DMA_STATUS3_UPPER)
  *
  * Original disassembly:
  *   3298: mov dptr, #0xc8d9
@@ -3397,7 +3397,7 @@ uint8_t queue_idx_get_3291(void)
  */
 uint8_t dma_status3_read_3298(void)
 {
-    return REG_DMA_STATUS3 & 0xF8;
+    return REG_DMA_STATUS3 & DMA_STATUS3_UPPER;
 }
 
 /*

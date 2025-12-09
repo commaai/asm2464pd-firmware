@@ -572,8 +572,8 @@ static void vendor_cmd_e8_reset(void)
         case 0x01:
             /* Soft/PCIe reset */
             /* Clear link control bits, trigger re-enumeration */
-            REG_LINK_MODE_CTRL &= ~0x03;
-            REG_LINK_CTRL_E324 |= 0x04;
+            REG_LINK_MODE_CTRL &= ~LINK_MODE_CTRL_MASK;
+            REG_LINK_CTRL_E324 |= LINK_CTRL_E324_BIT2;
             break;
 
         case 0x51:

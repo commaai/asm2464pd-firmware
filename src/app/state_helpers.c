@@ -1897,7 +1897,7 @@ __xdata uint8_t *get_usb_index_ptr_15a0(void)
 void set_usb_status_bit0_1be1(void)
 {
     /* d0b9: Set bit 0 of 0x9006 (REG_USB_EP0_CONFIG) */
-    REG_USB_EP0_CONFIG |= 0x01;
+    REG_USB_EP0_CONFIG |= USB_EP0_CONFIG_ENABLE;
 }
 
 /*
@@ -1961,7 +1961,7 @@ __xdata uint8_t *set_dptr_04xx_1660(uint8_t offset)
  */
 void set_c412_bit1_1b59(void)
 {
-    REG_NVME_CTRL_STATUS |= 0x02;
+    REG_NVME_CTRL_STATUS |= NVME_CTRL_STATUS_READY;
 }
 
 /*
@@ -2174,8 +2174,8 @@ __xdata uint8_t *get_ptr_0456_offset_16e9(uint8_t offset)
  */
 void clear_c8d6_bits_16f3(void)
 {
-    REG_DMA_STATUS &= 0xF7;  /* Clear bit 3 */
-    REG_DMA_STATUS &= 0xFB;  /* Clear bit 2 */
+    REG_DMA_STATUS &= ~DMA_STATUS_ERROR;  /* Clear bit 3 */
+    REG_DMA_STATUS &= ~DMA_STATUS_DONE;  /* Clear bit 2 */
 }
 
 /*
@@ -2275,8 +2275,8 @@ void setup_c415_from_0475_1b47(void)
     uint8_t val_0475 = G_STATE_HELPER_42;
     uint8_t val_c415 = REG_NVME_DEV_STATUS & 0xC0;
     REG_NVME_DEV_STATUS = val_0475 | val_c415;
-    REG_NVME_CTRL_STATUS &= 0xFD;  /* Clear bit 1 */
-    REG_NVME_CTRL_STATUS |= 0x02;  /* Set bit 1 */
+    REG_NVME_CTRL_STATUS &= ~NVME_CTRL_STATUS_READY;  /* Clear bit 1 */
+    REG_NVME_CTRL_STATUS |= NVME_CTRL_STATUS_READY;  /* Set bit 1 */
 }
 
 /* Forward declarations */
@@ -2486,14 +2486,14 @@ void flash_config_copy_9403(void)
         helper_bbc0(&REG_PHY_CFG_C65A);
     } else {
         /* Clear bit 3 at 0xC65A */
-        REG_PHY_CFG_C65A &= 0xF7;
+        REG_PHY_CFG_C65A &= ~PHY_CFG_C65A_BIT3;
     }
 
     /* Check r6_ae3 and r7_ae6 for REG_CPU_EXEC_STATUS_3 (0xCC35) update */
     if (r6_ae3 == 0 || r7_ae6 == 0) {
         helper_bb6e(&REG_CPU_EXEC_STATUS_3);
     } else {
-        REG_CPU_EXEC_STATUS_3 &= 0xFB;  /* Clear bit 2 */
+        REG_CPU_EXEC_STATUS_3 &= ~CPU_EXEC_STATUS_3_BIT2;  /* Clear bit 2 */
     }
 
     /* Call helper based on r6_ae3 state */
@@ -2513,7 +2513,7 @@ void flash_config_copy_9403(void)
     }
 
     /* Clear bit 4 of USB endpoint control */
-    REG_USB_EP_CTRL_905F &= 0xEF;
+    REG_USB_EP_CTRL_905F &= ~USB_EP_CTRL_905F_BIT4;
 }
 
 /*

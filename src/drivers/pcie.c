@@ -2730,7 +2730,7 @@ uint8_t pcie_queue_handler_a62d(void)
 {
     /* Call bank 1 handler at 0xe7ae */
     /* Read status from link width register, mask with 0xe0 */
-    return REG_LINK_WIDTH_E710 & 0xe0;
+    return REG_LINK_WIDTH_E710 & LINK_WIDTH_MASK;
 }
 
 /*
@@ -3503,7 +3503,7 @@ void pcie_lane_config_helper(uint8_t param)
     G_STATE_COUNTER_0AAC = 1;
 
     /* Read current lane state from B434 low nibble */
-    lane_state = REG_PCIE_LINK_STATE & 0x0F;
+    lane_state = REG_PCIE_LINK_STATE & PCIE_LINK_STATE_MASK;
     G_STATE_HELPER_0AAB = lane_state;
     G_FLASH_RESET_0AAA = 0;
 

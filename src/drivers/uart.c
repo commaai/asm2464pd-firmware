@@ -396,7 +396,7 @@ end_checks:
     }
 
     /* Check 0xE661 bit 7 */
-    if (REG_DEBUG_INT_E661 & 0x80) {
+    if (REG_DEBUG_INT_E661 & DEBUG_INT_E661_FLAG) {
         /* Write 0x80 to acknowledge */
         REG_DEBUG_INT_E661 = 0x80;
     }

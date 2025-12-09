@@ -1787,7 +1787,7 @@ void scsi_slot_config_46f8(uint8_t r7_val, uint8_t r5_val)
     helper_1d43();
 
     /* Clear bit 7 of REG_NVME_DATA_CTRL (0xC414) */
-    REG_NVME_DATA_CTRL &= 0x7F;
+    REG_NVME_DATA_CTRL &= ~NVME_DATA_CTRL_BIT7;
 
     /* Check SCSI control */
     tmp = G_SCSI_CTRL;  /* 0x0171 */
@@ -1913,7 +1913,7 @@ void scsi_csw_build_ext_488f(void)
     }
 
     /* Check REG_CPU_LINK_CEF3 bit 3 */
-    if (REG_CPU_LINK_CEF3 & 0x08) {
+    if (REG_CPU_LINK_CEF3 & CPU_LINK_CEF3_ACTIVE) {
         REG_CPU_LINK_CEF3 = 0x08;  /* Clear bit by writing 1 */
         handler_2608();
     }

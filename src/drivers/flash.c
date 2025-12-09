@@ -508,7 +508,7 @@ void flash_run_transaction(uint8_t cmd)
     REG_FLASH_CON = 0x00;
 
     /* Clear mode bit 0 */
-    REG_FLASH_MODE &= 0xFE;
+    REG_FLASH_MODE &= ~FLASH_MODE_ENABLE;
 
     /* Clear buffer offset */
     REG_FLASH_BUF_OFFSET = 0x0000;
