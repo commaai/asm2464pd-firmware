@@ -60,6 +60,16 @@ extern uint8_t usb_event_handler(void);
 extern void usb_reset_interface(uint8_t param);
 extern void power_check_status(uint8_t param);
 
+/* External functions for moved stubs */
+extern uint8_t usb_get_sys_status_offset(void);
+extern void pcie_disable_and_trigger_e74e(void);
+extern void dispatch_062e(void);
+extern void dispatch_059d(void);
+extern void dispatch_055c(void);
+extern void cmd_wait_completion(void);
+extern void cmd_engine_clear(void);
+extern void cmd_trigger_params(uint8_t param1, uint8_t param2);
+
 /* Stub helper functions - these need to be implemented properly */
 static void nvme_calc_addr_01xx(uint8_t param) { (void)param; }
 static void FUN_CODE_1bec(void) { }
@@ -3695,3 +3705,432 @@ default_handler:
     return;
 }
 
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * FUN_CODE_1c9f - Check core state and return status
+ * Address: 0x1c9f-0x1cad (15 bytes)
+ *
+ * Calls initialization functions, then returns nonzero if
+ * either byte of I_CORE_STATE is nonzero.
+ */
+uint8_t core_state_check(uint8_t param)
+{
+    (void)param;  /* Parameter not used in current implementation */
+    /* Original calls 0x4ff2 and 0x4e6d for setup */
+    return I_CORE_STATE_L | I_CORE_STATE_H;
+}
+
+/*
+ * helper_328a - Get USB link status (low 2 bits)
+ * Address: 0x328a-0x3290 (7 bytes)
+ *
+ * Disassembly:
+ *   328a: mov dptr, #0x9100  ; REG_USB_LINK_STATUS
+ *   328d: movx a, @dptr      ; Read register
+ *   328e: anl a, #0x03       ; Mask bits 0-1
+ *   3290: ret
+ *
+ * Returns: REG_USB_LINK_STATUS & 0x03
+ * These bits typically indicate USB link speed/state.
+ */
+uint8_t helper_328a(void)
+{
+    return REG_USB_LINK_STATUS & 0x03;
+}
+
+/*
+ * helper_3298 - Get DMA status high bits
+ * Address: 0x3298-0x329e (7 bytes)
+ *
+ * Disassembly:
+ *   3298: mov dptr, #0xc8d9  ; REG_DMA_STATUS3
+ *   329b: movx a, @dptr      ; Read register
+ *   329c: anl a, #0xf8       ; Mask bits 3-7
+ *   329e: ret
+ *
+ * Returns: REG_DMA_STATUS3 & 0xF8
+ * These are the upper 5 bits of DMA status register 3.
+ */
+uint8_t helper_3298(void)
+{
+    return REG_DMA_STATUS3 & 0xF8;
+}
+
+void helper_3578(uint8_t param)
+{
+    uint8_t status;
+
+    G_LOG_PROCESSED_INDEX = param;
+
+    if (G_SYS_FLAGS_07EF == 0) {
+        status = usb_get_sys_status_offset();
+        G_PCIE_TXN_COUNT_LO = status;
+        protocol_dispatch();
+
+        /* Complex transfer handling - simplified */
+        if (status != 0 && XDATA8(0x05A6) == 0x04) {
+            /* Transfer complete path */
+            XDATA8(0xB455) = 2;
+            XDATA8(0xB455) = 4;
+            XDATA8(0xB2D5) = 1;
+            REG_PCIE_STATUS = 8;
+        }
+    }
+}
+
+void interface_ready_check(uint8_t p1, uint8_t p2, uint8_t p3) {
+    (void)p1; (void)p2; (void)p3;
+}
+
+/*
+ * protocol_compare_32bit - Compare 32-bit values and return carry
+ *
+ * Compares IDATA registers R4:R5:R6:R7 with R0:R1:R2:R3.
+ * Returns 1 if R4567 < R0123 (carry set), 0 otherwise.
+ */
+uint8_t protocol_compare_32bit(void)
+{
+    volatile uint8_t *idata = (__idata uint8_t *)0x00;
+    uint8_t r4 = idata[4], r5 = idata[5], r6 = idata[6], r7 = idata[7];
+    uint8_t r0 = idata[0], r1 = idata[1], r2 = idata[2], r3 = idata[3];
+    uint32_t val1 = ((uint32_t)r4 << 24) | ((uint32_t)r5 << 16) | ((uint32_t)r6 << 8) | r7;
+    uint32_t val2 = ((uint32_t)r0 << 24) | ((uint32_t)r1 << 16) | ((uint32_t)r2 << 8) | r3;
+    return (val1 < val2) ? 1 : 0;
+}
+
+/*
+ * helper_dd42 - State update based on param and 0x0af1 flag
+ * Address: 0xdd42-0xdd77 (54 bytes)
+ *
+ * Disassembly:
+ *   dd42: mov dptr, #0x0af1  ; G_STATE_FLAG_0AF1
+ *   dd45: movx a, @dptr      ; Read flag
+ *   dd46: jnb 0xe0.5, 0xdd72 ; If bit 5 clear, goto default
+ *   dd49: mov a, r7          ; Get param
+ *   dd4a: jz 0xdd72          ; If param == 0, goto default
+ *   dd4c: cjne a, #0x02, dd51; If param != 2, check next
+ *   dd4f: sjmp 0xdd72        ; Default case
+ *   dd51: mov a, r7
+ *   dd52: cjne a, #0x04, dd5c; If param != 4, check next
+ *   dd55: mov dptr, #0xe7e3  ; Write 0x30
+ *   dd58: mov a, #0x30
+ *   dd5a: movx @dptr, a
+ *   dd5b: ret
+ *   dd5c: mov a, r7
+ *   dd5d: cjne a, #0x01, dd67; If param != 1, check next
+ *   dd60: mov dptr, #0xe7e3  ; Write 0xcc
+ *   dd63: mov a, #0xcc
+ *   dd65: movx @dptr, a
+ *   dd66: ret
+ *   dd67: mov a, r7
+ *   dd68: cjne a, #0xff, dd77; If param != 0xff, return
+ *   dd6b: mov dptr, #0xe7e3  ; Write 0xfc
+ *   dd6e: mov a, #0xfc
+ *   dd70: movx @dptr, a
+ *   dd71: ret
+ *   dd72: mov dptr, #0xe7e3  ; Default: write 0
+ *   dd75: clr a
+ *   dd76: movx @dptr, a
+ *   dd77: ret
+ *
+ * Based on param value, writes specific values to REG 0xe7e3
+ * if bit 5 of G_STATE_FLAG_0AF1 is set.
+ */
+void helper_dd42(uint8_t param)
+{
+    uint8_t flag = G_STATE_FLAG_0AF1;
+
+    /* If bit 5 is clear, write 0 to PHY_LINK_CTRL */
+    if (!(flag & 0x20)) {
+        REG_PHY_LINK_CTRL = 0;
+        return;
+    }
+
+    /* If param == 0 or param == 2, write 0 */
+    if (param == 0 || param == 2) {
+        REG_PHY_LINK_CTRL = 0;
+        return;
+    }
+
+    /* Handle specific param values */
+    if (param == 4) {
+        REG_PHY_LINK_CTRL = 0x30;
+        return;
+    }
+
+    if (param == 1) {
+        REG_PHY_LINK_CTRL = 0xcc;
+        return;
+    }
+
+    if (param == 0xff) {
+        REG_PHY_LINK_CTRL = 0xfc;
+        return;
+    }
+
+    /* Default: do nothing (return without writing) */
+}
+
+/*
+ * helper_d17a - Protocol finalization
+ * Address: 0xd17a-0xd196 (29 bytes, first return path)
+ *
+ * Calls multiple sub-helpers and returns a status value in r7.
+ * Returns 0 on success, non-zero otherwise.
+ */
+void helper_d17a(void)
+{
+    /* Complex finalization - calls multiple sub-helpers */
+    /* Stub implementation */
+}
+
+void handler_9d90(void) {}
+
+void protocol_state_dispatch(void)
+{
+    uint8_t state;
+
+    /* Copy state from 0x0B1B to 0x0A9D */
+    G_LANE_STATE_0A9D = G_STATE_0B1B;
+
+    /* Call PCIe disable and trigger */
+    pcie_disable_and_trigger_e74e();
+
+    /* Read the state back and dispatch */
+    state = G_LANE_STATE_0A9D;
+
+    if (state == 0x01) {
+        /* State 1: jump to Bank1 handler at 0xE374 */
+        dispatch_062e();
+        return;
+    }
+
+    if (state == 0x02) {
+        /* State 2: check debug marker, possibly jump to Bank1 handler */
+        if (G_CMD_DEBUG_FF != 0x69) {
+            dispatch_059d();
+        }
+        return;
+    }
+
+    if (state == 0x03) {
+        /* State 3: call handler */
+        dispatch_055c();
+    }
+    /* Otherwise just return */
+}
+
+void wait_status_loop(void)
+{
+    cmd_wait_completion();
+}
+
+/*
+ * helper_3279 - Extend 16-bit value in R6:A to 32-bit value
+ * Address: 0x3279-0x327f (7 bytes)
+ *
+ * Takes the 16-bit value from helper_3181() (R6=high, A=low)
+ * and extends it to a 32-bit value (R0:R1:R2:R3 = 0:0:R6:A)
+ *
+ * In C, this function is effectively a no-op since the 32-bit
+ * result is used implicitly with the 16-bit input from helper_3181.
+ *
+ * Original disassembly:
+ *   3279: mov r3, a         ; R3 = A (low byte)
+ *   327a: mov r2, 0x06      ; R2 = R6 (high byte)
+ *   327c: clr a
+ *   327d: mov r1, a         ; R1 = 0
+ *   327e: mov r0, a         ; R0 = 0
+ *   327f: ret
+ */
+void helper_3279(void)
+{
+    /* In assembly this extends R6:A to R0:R1:R2:R3 (32-bit)
+     * In C, this is a no-op - the extension happens implicitly
+     * when the 16-bit return from helper_3181() is used as 32-bit
+     */
+}
+
+/*
+ * helper_313d - Check if 32-bit value at IDATA[0x6B] is non-zero
+ * Address: 0x313d-0x3146 (10 bytes)
+ *
+ * Reads the 32-bit value from IDATA starting at address 0x6B
+ * (I_TRANSFER_6B through I_TRANSFER_6B+3) and returns non-zero
+ * if any byte is non-zero.
+ *
+ * Original disassembly:
+ *   313d: mov r0, #0x6b     ; r0 = 0x6B
+ *   313f: lcall 0x0d78      ; idata_load_dword - loads 32-bit into R4:R5:R6:R7
+ *   3142: mov a, r4         ; A = R4
+ *   3143: orl a, r5         ; A |= R5
+ *   3144: orl a, r6         ; A |= R6
+ *   3145: orl a, r7         ; A |= R7
+ *   3146: ret               ; Returns A (non-zero if value != 0)
+ *
+ * Returns: non-zero if the 32-bit value is non-zero, 0 otherwise
+ */
+uint8_t helper_313d(void)
+{
+    __idata uint8_t *ptr = (__idata uint8_t *)0x6B;
+    return ptr[0] | ptr[1] | ptr[2] | ptr[3];
+}
+
+/*
+ * helper_96ae - Clear command engine and return status
+ * Address: 0x96ae-0x96b6 (9 bytes)
+ *
+ * Saves R7/R6 to R3/R2, calls helper_e73a to clear command registers,
+ * then returns the original R7 value.
+ *
+ * Original disassembly:
+ *   96ae: mov r3, 0x07     ; R3 = R7
+ *   96b0: mov r2, 0x06     ; R2 = R6
+ *   96b2: lcall 0xe73a     ; Call helper_e73a (clear 0xE420-0xE43F)
+ *   96b5: mov a, r3        ; A = R3 (original R7)
+ *   96b6: ret
+ *
+ * Note: R7/R6 parameters and return value currently ignored in callers.
+ */
+void helper_96ae(void)
+{
+    /* Clear command engine registers */
+    cmd_engine_clear();
+}
+
+/* helper_dd0e - Address: 0xdd0e
+ * Sets R5=1, R7=0x0f and falls through to cmd_trigger_params
+ */
+void helper_dd0e(void)
+{
+    cmd_trigger_params(0x0F, 0x01);
+}
+
+/* helper_95a0 - Address: 0x95a0
+ * Command error recovery helper
+ * Sets R5=2, calls cmd_param_setup, writes to E424/E425/07C4
+ */
+void helper_95a0(uint8_t r7)
+{
+    (void)r7;
+    /* Stub - should call cmd_param_setup(r7, 0x02) and write to cmd regs */
+}
+
+/*
+ * helper_312a - Setup and set USB EP0 config bit 0
+ * Address: 0x312a-0x3139 (16 bytes)
+ *
+ * Writes 0x01 to XDATA 0x0AF2 (setting a flag), then falls through
+ * to helper_3130 which sets bit 0 of REG_USB_EP0_CONFIG (0x9006).
+ *
+ * Original disassembly:
+ *   312a: mov dptr, #0x0af2
+ *   312d: mov a, #0x01
+ *   312f: movx @dptr, a
+ *   3130: mov dptr, #0x9006   (falls through to helper_3130)
+ *   3133: movx a, @dptr
+ *   3134: anl a, #0xfe
+ *   3136: orl a, #0x01
+ *   3138: movx @dptr, a
+ *   3139: ret
+ */
+void helper_312a(void)
+{
+    extern void helper_3130(void);
+    XDATA_VAR8(0x0AF2) = 0x01;
+    helper_3130();
+}
+
+void helper_dbbb(void)
+{
+    /* Stub */
+}
+
+/* helper_3e81 - USB status handler
+ * Address: 0x3e81
+ */
+void helper_3e81(void)
+{
+    uint8_t pending;
+    uint8_t counter;
+
+    pending = REG_NVME_QUEUE_PENDING & 0x3F;
+    I_WORK_38 = pending;
+
+    counter = XDATA8(0x0500 + pending + 0x17);
+    counter++;
+    XDATA8(0x0500 + pending + 0x17) = counter;
+    I_WORK_39 = counter;
+}
+
+/*
+ * helper_9617 - Set interrupt enable bit 4
+ * Address: 0x9617-0x9620 (10 bytes)
+ *
+ * Sets bit 4 of REG_INT_ENABLE (0xC801).
+ *
+ * Original disassembly:
+ *   9617: mov dptr, #0xc801  ; REG_INT_ENABLE
+ *   961a: movx a, @dptr      ; Read
+ *   961b: anl a, #0xef       ; Clear bit 4
+ *   961d: orl a, #0x10       ; Set bit 4
+ *   961f: movx @dptr, a      ; Write back
+ *   9620: ret
+ */
+void helper_9617(void)
+{
+    uint8_t val = REG_INT_ENABLE;
+    val = (val & ~0x10) | 0x10;  /* Set bit 4 */
+    REG_INT_ENABLE = val;
+}
+
+/*
+ * helper_95bf - DMA config write sequence
+ * Address: 0x95bf-0x95c8 (10 bytes)
+ *
+ * Writes 0x04 then 0x02 to REG_XFER_DMA_CFG (0xCC99).
+ * This is the tail of cmd_clear_cc9a_setup but can be called directly.
+ *
+ * Original disassembly:
+ *   95bf: mov dptr, #0xcc99  ; REG_XFER_DMA_CFG
+ *   95c2: mov a, #0x04
+ *   95c4: movx @dptr, a      ; Write 0x04
+ *   95c5: mov a, #0x02
+ *   95c7: movx @dptr, a      ; Write 0x02
+ *   95c8: ret
+ */
+void helper_95bf(void)
+{
+    REG_XFER_DMA_CFG = 0x04;
+    REG_XFER_DMA_CFG = 0x02;
+}
+
+/*
+ * helper_95e1 - Config helper with two params
+ * Address: 0x95e1
+ */
+void helper_95e1(uint8_t r7, uint8_t r5)
+{
+    (void)r7;
+    (void)r5;
+}
+
+/*
+ * helper_95af - Set command status to 0x06
+ * Address: 0x95af-0x95b5 (7 bytes)
+ *
+ * Original disassembly:
+ *   95af: mov dptr, #0x07c4  ; G_CMD_STATUS
+ *   95b2: mov a, #0x06
+ *   95b4: movx @dptr, a      ; G_CMD_STATUS = 0x06
+ *   95b5: ret
+ */
+void helper_95af(void)
+{
+    G_CMD_STATUS = 0x06;
+}

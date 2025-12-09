@@ -47,6 +47,7 @@ __idata __at(0x17) uint8_t I_CORE_STATE_H;    /* Core state high byte */
 __idata __at(0x18) uint8_t I_WORK_18;         /* Work variable 0x18 */
 __idata __at(0x19) uint8_t I_WORK_19;         /* Work variable 0x19 */
 __idata __at(0x21) uint8_t I_LOG_INDEX;       /* Log index */
+#define I_WORK_21 I_LOG_INDEX  /* Alias for work variable 0x21 */
 __idata __at(0x22) uint8_t I_WORK_22;         /* Work variable 0x22 - slot value */
 __idata __at(0x23) uint8_t I_WORK_23;         /* Work variable 0x23 */
 __idata __at(0x38) uint8_t I_WORK_38;         /* Work variable 0x38 */
@@ -206,6 +207,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_DMA_WORK_05AC         XDATA_VAR8(0x05AC)  /* DMA work byte */
 #define G_DMA_WORK_05AD         XDATA_VAR8(0x05AD)  /* DMA work byte */
 #define G_MAX_LOG_ENTRIES       XDATA_VAR8(0x06E5)  /* Max error log entries */
+#define G_QUEUE_COUNT_06E5      G_MAX_LOG_ENTRIES   /* Alias - queue count */
 #define G_STATE_FLAG_06E6       XDATA_VAR8(0x06E6)  /* Processing complete flag / error flag */
 #define G_SCSI_STATUS_06CB      XDATA_VAR8(0x06CB)  /* SCSI status byte */
 #define G_WORK_06E7             XDATA_VAR8(0x06E7)  /* Work variable 0x06E7 */
@@ -477,6 +479,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 // PCIe Interrupt Handler Work Area
 //=============================================================================
 #define G_PCIE_LANE_STATE_0A9E  XDATA_VAR8(0x0A9E)  /* PCIe lane state */
+#define G_PCIE_WORK_0B34        XDATA_VAR8(0x0B34)  /* PCIe work byte */
 #define G_PCIE_STATUS_0B35      XDATA_VAR8(0x0B35)  /* PCIe status work byte */
 #define G_PCIE_STATUS_0B36      XDATA_VAR8(0x0B36)  /* PCIe status work byte */
 #define G_PCIE_STATUS_0B37      XDATA_VAR8(0x0B37)  /* PCIe status work byte */
@@ -489,6 +492,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_PCIE_STATUS_0B19      XDATA_VAR8(0x0B19)  /* PCIe status flag */
 #define G_PCIE_STATUS_0B1A      XDATA_VAR8(0x0B1A)  /* PCIe status work */
 #define G_STATE_0B1B            XDATA_VAR8(0x0B1B)  /* State variable for protocol dispatch */
+#define G_PCIE_STATUS_0B1C      XDATA_VAR8(0x0B1C)  /* PCIe status work */
 #define G_DMA_WORK_0B1D         XDATA_VAR8(0x0B1D)  /* DMA work byte (r4) */
 #define G_DMA_WORK_0B1E         XDATA_VAR8(0x0B1E)  /* DMA work byte (r5) */
 #define G_DMA_WORK_0B1F         XDATA_VAR8(0x0B1F)  /* DMA work byte (r6) */

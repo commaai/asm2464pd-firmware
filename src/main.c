@@ -51,6 +51,12 @@ extern void system_timer_handler(void);        /* drivers/timer.c - 0x0642 -> 0x
 /* External functions */
 extern void uart_init(void);
 extern void usb_ep_dispatch_loop(void);
+extern void usb_buffer_handler(void);          /* drivers/usb.c - 0x0448 */
+extern void usb_get_descriptor_length(uint8_t param);  /* drivers/usb.c */
+extern void usb_convert_speed(uint8_t param);  /* drivers/usb.c */
+extern uint8_t nvme_build_cmd(uint8_t param);  /* drivers/nvme.c - 0x31da */
+extern void handler_9d90(void);                /* app/protocol.c */
+extern void handler_db09(void);                /* drivers/pcie.c */
 
 /* Dispatch stubs from app/dispatch.c */
 extern void dispatch_04b7(void);               /* 0x04b7 -> Bank0:0xE597 */
@@ -1011,3 +1017,162 @@ extern void sys_init_helper_bbc7(void);              /* 0xbbc7 - System init hel
 extern void sys_timer_handler_e957(void);            /* 0xe957 - Timer/watchdog handler */
 
 /* system_init_from_flash() moved to drivers/flash.c */
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * handler_0395 - Polling/wait dispatch entry
+ * Address: 0x0395 (dispatch entry), target: 0xDA8F
+ *
+ * From ghidra.c: jump_bank_0(0xda8f)
+ * This is a wait/poll function called during CSW sending.
+ */
+void handler_0395(void)
+{
+    /* Dispatch to 0xDA8F - wait/poll function */
+    /* For now, no-op since it's a poll loop */
+}
+
+void handler_0327_usb_power_init(void)
+{
+    usb_power_init();
+}
+
+void handler_039a_buffer_dispatch(void)
+{
+    usb_buffer_handler();
+}
+
+void startup_init(void)
+{
+    uint8_t offset;
+
+    offset = G_EP_DISPATCH_OFFSET;
+    if (offset < 0x20) {
+        /* Clear dispatch offset temporarily */
+        G_EP_DISPATCH_OFFSET = 0;
+
+        /* Get descriptor length with offset + 0x0C */
+        usb_get_descriptor_length(offset + 0x0C);
+
+        /* Convert speed with offset + 0x2F */
+        usb_convert_speed(offset + 0x2F);
+
+        /* Build NVMe command */
+        nvme_build_cmd(0);
+
+        /* Restore and finalize */
+        usb_convert_speed(G_EP_DISPATCH_OFFSET + 0x2F);
+    }
+}
+
+void sys_event_dispatch_05e8(void)
+{
+    /* Dispatch to event handler at 0x9D90 in bank 1 */
+    handler_9d90();
+}
+
+/*
+ * sys_init_helper_bbc7 - System init helper
+ * Address: 0xbbc7-0xbbc9 (3 bytes)
+ *
+ * From ghidra.c (line 16491):
+ *   write_xdata_reg(0, 0x12, 0xb, 1)
+ *
+ * Writes to XDATA register with specific parameters.
+ * WARNING: Ghidra shows this as infinite loop / no return.
+ */
+void sys_init_helper_bbc7(void)
+{
+    /* Write configuration to register area */
+    /* Parameters: 0, 0x12, 0x0b, 1 suggest:
+     * - Base offset 0
+     * - Value 0x12
+     * - Register/mode 0x0b
+     * - Count/flag 1 */
+    XDATA8(0x0B12) = 0x01;  /* Simplified write */
+}
+
+void sys_timer_handler_e957(void)
+{
+    handler_db09();
+}
+
+/*
+ * cpu_int_ctrl_trigger_e933 - CPU interrupt control trigger
+ * Address: 0xe933-0xe939 (Bank 1)
+ *
+ * Writes timer start sequence (0x04 then 0x02) to REG_CPU_INT_CTRL.
+ *
+ * Disassembly:
+ *   e933: mov dptr, #0xcc81   ; REG_CPU_INT_CTRL
+ *   e936: lcall 0x95c2        ; Write 0x04 then 0x02
+ *   e939: ret
+ *
+ * The helper at 0x95c2:
+ *   95c2: mov a, #0x04
+ *   95c4: movx @dptr, a
+ *   95c5: mov a, #0x02
+ *   95c7: movx @dptr, a
+ *   95c8: ret
+ */
+void cpu_int_ctrl_trigger_e933(void)
+{
+    REG_CPU_INT_CTRL = 0x04;
+    REG_CPU_INT_CTRL = 0x02;
+}
+
+/*
+ * cpu_dma_setup_e81b - CPU DMA setup and trigger
+ * Address: 0xe81b-0xe82b (Bank 1)
+ *
+ * Sets up DMA address in registers 0xCC82-0xCC83 and triggers via CPU_INT_CTRL.
+ *
+ * Disassembly:
+ *   e81b: mov dptr, #0xcc82
+ *   e81e: mov a, r6          ; param_hi
+ *   e81f: movx @dptr, a      ; Write to 0xCC82
+ *   e820: inc dptr
+ *   e821: mov a, r7          ; param_lo
+ *   e822: movx @dptr, a      ; Write to 0xCC83
+ *   e823: mov dptr, #0xcc81  ; REG_CPU_INT_CTRL
+ *   e826: lcall 0x95c2       ; Write 0x04 then 0x02
+ *   e829: dec a              ; a = 0x01
+ *   e82a: movx @dptr, a      ; Write 0x01 to CC81
+ *   e82b: ret
+ *
+ * Parameters:
+ *   param_hi (r6): High byte of DMA value
+ *   param_lo (r7): Low byte of DMA value
+ */
+void cpu_dma_setup_e81b(uint8_t param_hi, uint8_t param_lo)
+{
+    /* Write DMA parameters to 0xCC82-0xCC83 */
+    XDATA_REG8(0xCC82) = param_hi;
+    XDATA_REG8(0xCC83) = param_lo;
+
+    /* Trigger sequence: 0x04, 0x02, 0x01 to CPU_INT_CTRL */
+    REG_CPU_INT_CTRL = 0x04;
+    REG_CPU_INT_CTRL = 0x02;
+    REG_CPU_INT_CTRL = 0x01;
+}
+
+/*
+ * cpu_dma_channel_91_trigger_e93a - Trigger DMA on channel 0xCC91
+ * Address: 0xe93a-0xe940 (7 bytes)
+ *
+ * Disassembly:
+ *   e93a: mov dptr, #0xcc91   ; DMA channel register
+ *   e93d: lcall 0x95c2        ; Trigger sequence (write 0x04, then 0x02)
+ *   e940: ret
+ *
+ * Writes trigger sequence 0x04, 0x02 to DMA channel register 0xCC91
+ */
+void cpu_dma_channel_91_trigger_e93a(void)
+{
+    XDATA_REG8(0xCC91) = 0x04;
+    XDATA_REG8(0xCC91) = 0x02;
+}

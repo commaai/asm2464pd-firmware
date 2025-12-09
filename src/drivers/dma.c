@@ -116,6 +116,20 @@
 extern uint32_t xdata_load_triple(__xdata uint8_t *ptr);
 extern uint32_t idata_load_dword(__idata uint8_t *ptr);
 extern void idata_store_dword(__idata uint8_t *ptr, uint32_t val);
+extern uint8_t banked_load_byte(uint8_t addrlo, uint8_t addrhi, uint8_t memtype);
+extern void banked_store_byte(uint8_t addrlo, uint8_t addrhi, uint8_t memtype, uint8_t val);
+extern void helper_e50d_full(uint8_t div_bits, uint8_t threshold_hi, uint8_t threshold_lo);
+
+/* External PCIe functions */
+extern uint8_t pcie_read_status_a334(void);
+extern void pcie_handler_e890(void);
+extern uint8_t get_pcie_status_flags_e00c(void);
+extern void clear_pcie_status_bytes_e8cd(void);
+extern void pcie_trigger_cc11_e8ef(void);
+
+/* External protocol/state functions */
+extern void helper_dd42(uint8_t param);
+extern void state_handler_d996(void);
 
 /* Forward declarations */
 void dma_set_scsi_param3(void);
@@ -1730,3 +1744,334 @@ handle_match_end:
     *ptr = r6;
 }
 
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * transfer_func_1633 - Set bit 0 at specified register address
+ * Address: 0x1633-0x1639 (7 bytes)
+ *
+ * Disassembly:
+ *   1633: movx a, @dptr      ; Read current value (DPTR passed as param)
+ *   1634: anl a, #0xfe       ; Clear bit 0
+ *   1636: orl a, #0x01       ; Set bit 0
+ *   1638: movx @dptr, a      ; Write back
+ *   1639: ret
+ *
+ * Sets bit 0 of the register at the specified address.
+ */
+void transfer_func_1633(uint16_t addr)
+{
+    __xdata uint8_t *ptr = (__xdata uint8_t *)addr;
+    uint8_t val = *ptr;
+    val = (val & 0xFE) | 0x01;  /* Clear and set bit 0 */
+    *ptr = val;
+}
+
+/*
+ * transfer_handler_ce23 - PCIe lane configuration transfer handler
+ * Address: 0xce23-0xce76 (84 bytes)
+ *
+ * Configures PCIe lane registers based on param:
+ * - If param != 0: OR global status bytes with extended register values
+ * - If param == 0: AND complement of global status bytes with ext reg values
+ *
+ * Then writes combined status back to register 0x35 and continues
+ * PCIe initialization sequence.
+ *
+ * Disassembly:
+ *   ce23: lcall 0xa334       ; status = pcie_read_status_a334()
+ *   ce26: anl a, #0x3f       ; mask to bits 0-5
+ *   ce28: mov r6, a          ; save in r6
+ *   ce29: lcall 0xe890       ; pcie_handler_e890()
+ *   ce2c: mov a, r7          ; check param (preserved in r7)
+ *   ce2d-ce31: setup r3=0x02, r2=0x12, r1=0x40 for banked access
+ *   ce33: jz 0xce4c          ; if param == 0, use AND-NOT path
+ *   [ce35-ce4a: OR path - read ext regs, OR with globals, write to lane regs]
+ *   [ce4c-ce64: AND-NOT path - read ext regs, AND with ~globals, write to lane regs]
+ *   ce65: mov r1, #0x3f
+ *   ce67: lcall 0x0be6       ; write accumulated value to ext reg 0x3f
+ *   ce6a: lcall 0xe00c       ; get_pcie_status_flags_e00c()
+ *   ce6d: lcall 0xa334       ; status = pcie_read_status_a334()
+ *   ce70: anl a, #0xc0       ; keep bits 6-7 only
+ *   ce72: orl a, r6          ; combine with saved bits 0-5
+ *   ce73: lcall 0xe7f8       ; pcie_lane_init_e7f8() - writes combined to 0x35
+ *   ce76: ljmp 0xe8cd        ; tail call clear_pcie_status_bytes_e8cd()
+ *
+ * PCIe extended registers (banked 0x02:0x12:xx -> XDATA 0xB2xx):
+ *   0xB235: Link config status
+ *   0xB23C-0xB23F: Lane config registers (write)
+ *   0xB240-0xB243: Lane status registers (read)
+ */
+void transfer_handler_ce23(uint8_t param)
+{
+    uint8_t saved_status_lo;
+    uint8_t reg_val;
+    uint8_t combined;
+
+    /* Save lower 6 bits of current status */
+    saved_status_lo = pcie_read_status_a334() & 0x3F;
+
+    /* Reset PCIe extended registers and clear lane config */
+    pcie_handler_e890();
+
+    if (param != 0) {
+        /* Non-zero path: OR global values with extended register values */
+        /* Read ext reg 0x40, OR with G_PCIE_WORK_0B34, write to 0x3C */
+        reg_val = XDATA_REG8(0xB240);
+        combined = G_PCIE_WORK_0B34 | reg_val;
+        XDATA_REG8(0xB23C) = combined;
+
+        /* Read ext reg 0x41, OR with G_PCIE_STATUS_0B35, write to 0x3D */
+        reg_val = XDATA_REG8(0xB241);
+        combined = G_PCIE_STATUS_0B35 | reg_val;
+        XDATA_REG8(0xB23D) = combined;
+
+        /* Read ext reg 0x42, OR with G_PCIE_STATUS_0B36, write to 0x3E */
+        reg_val = XDATA_REG8(0xB242);
+        combined = G_PCIE_STATUS_0B36 | reg_val;
+        XDATA_REG8(0xB23E) = combined;
+
+        /* Read ext reg 0x43, OR with G_PCIE_STATUS_0B37 */
+        reg_val = XDATA_REG8(0xB243);
+        combined = G_PCIE_STATUS_0B37 | reg_val;
+    } else {
+        /* Zero path: AND complement of globals with extended register values */
+        /* Read ext reg 0x40, AND with ~G_PCIE_WORK_0B34, write to 0x3C */
+        reg_val = XDATA_REG8(0xB240);
+        combined = (~G_PCIE_WORK_0B34) & reg_val;
+        XDATA_REG8(0xB23C) = combined;
+
+        /* Read ext reg 0x41, AND with ~G_PCIE_STATUS_0B35, write to 0x3D */
+        reg_val = XDATA_REG8(0xB241);
+        combined = (~G_PCIE_STATUS_0B35) & reg_val;
+        XDATA_REG8(0xB23D) = combined;
+
+        /* Read ext reg 0x42, AND with ~G_PCIE_STATUS_0B36, write to 0x3E */
+        reg_val = XDATA_REG8(0xB242);
+        combined = (~G_PCIE_STATUS_0B36) & reg_val;
+        XDATA_REG8(0xB23E) = combined;
+
+        /* Read ext reg 0x43, AND with ~G_PCIE_STATUS_0B37 */
+        reg_val = XDATA_REG8(0xB243);
+        combined = (~G_PCIE_STATUS_0B37) & reg_val;
+    }
+
+    /* Write final combined value to lane config register 0x3F */
+    XDATA_REG8(0xB23F) = combined;
+
+    /* Build status flags from PCIe buffers */
+    get_pcie_status_flags_e00c();
+
+    /* Combine upper 2 bits of current status with saved lower 6 bits */
+    combined = (pcie_read_status_a334() & 0xC0) | saved_status_lo;
+
+    /* Write combined status to register 0x35 and continue init */
+    XDATA_REG8(0xB235) = combined;
+
+    /* Continue with pcie_lane_init_e7f8 logic:
+     * - Read reg 0x37, clear bit 7, set bit 7, write back
+     * - Trigger command via reg 0x38
+     * - Poll for completion
+     * - Clear lane config registers
+     */
+    reg_val = XDATA_REG8(0xB237);
+    reg_val = (reg_val & 0x7F) | 0x80;
+    XDATA_REG8(0xB237) = reg_val;
+
+    /* Write 0x01 to command trigger register */
+    XDATA_REG8(0xB238) = 0x01;
+
+    /* Poll until bit 0 clears (command complete) */
+    while (XDATA_REG8(0xB238) & 0x01) {
+        /* Wait for hardware */
+    }
+
+    /* Read link config, keep only bits 6-7, write back */
+    reg_val = XDATA_REG8(0xB235);
+    reg_val &= 0xC0;
+    XDATA_REG8(0xB235) = reg_val;
+
+    /* Clear lane config registers 0x3C-0x3F */
+    XDATA_REG8(0xB23C) = 0x00;
+    XDATA_REG8(0xB23D) = 0x00;
+    XDATA_REG8(0xB23E) = 0x00;
+    XDATA_REG8(0xB23F) = 0x00;
+
+    /* Clear PCIe status bytes (tail call) */
+    clear_pcie_status_bytes_e8cd();
+}
+
+/*
+ * transfer_continuation_d996 - PCIe transfer continuation after poll complete
+ * Address: 0xd996-0xd9?? (large function)
+ *
+ * This is the continuation function called as a tail call from transfer_poll_handler_ceab.
+ * It performs extensive PCIe register configuration using banked memory access.
+ *
+ * Called functions:
+ *   - 0xccac: helper_ccac
+ *   - 0xe8a9: helper_e8a9
+ *   - 0xe57d: timer_phy_setup_e57d
+ *   - 0xd630: power_helper_d630
+ *   - 0xd436: config_helper_d436
+ *   - 0xe25e: state_update_e25e
+ *   - 0x0bc8: banked_load_byte
+ *   - 0x0be6: banked_store_byte
+ *
+ * TODO: Implement full logic once helper functions are available.
+ * For now, this is a stub that performs minimal setup.
+ */
+void transfer_continuation_d996(void)
+{
+    uint8_t val;
+
+    /* Extended memory: clear bit 6 of banked register memtype=0x02, addr=0x7041 */
+    val = banked_load_byte(0x41, 0x70, 0x02);
+    val &= 0xBF;  /* Clear bit 6 */
+    banked_store_byte(0x41, 0x70, 0x02, val);
+
+    /* Extended memory: clear bit 2 of banked register memtype=0x00, addr=0x1507 */
+    val = banked_load_byte(0x07, 0x15, 0x00);
+    val &= 0xFB;  /* Clear bit 2 */
+    banked_store_byte(0x07, 0x15, 0x00, val);
+
+    /* Note: Original has extensive register configuration with calls to:
+     * helper_ccac, helper_e8a9(0x0F), timer_phy_setup_e57d,
+     * power_helper_d630(0x01), config_helper_d436(0x0F), state_update_e25e
+     * These will be added once the helper functions are implemented. */
+}
+
+/*
+ * transfer_poll_handler_ceab - Timer poll and transfer handler
+ * Address: 0xceab-0xcece (36 bytes)
+ *
+ * Sets up timer, polls status registers until ready, then calls
+ * continuation handlers for PCIe transfer completion.
+ *
+ * Called from bank1 (5 calls from 0x14xxx addresses).
+ *
+ * Original disassembly:
+ *   ceab: mov r7, #0x03        ; Set timer divisor bits to 3
+ *   cead: lcall 0xe50d         ; Call timer setup helper
+ *   ; Poll loop:
+ *   ceb0: mov dptr, #0xe712    ; REG_LINK_STATUS_E712
+ *   ceb3: movx a, @dptr        ; Read status
+ *   ceb4: jb 0xe0.0, 0xcec6    ; If bit 0 set (done), exit loop
+ *   ceb7: movx a, @dptr        ; Re-read status
+ *   ceb8: anl a, #0x02         ; Isolate bit 1
+ *   ceba: mov r7, a            ; Save in r7
+ *   cebb: clr c
+ *   cebc: rrc a                ; Shift right (bit 1 -> bit 0)
+ *   cebd: jnz 0xcec6           ; If bit 1 was set, exit loop
+ *   cebf: mov dptr, #0xcc11    ; REG_TIMER0_CSR
+ *   cec2: movx a, @dptr        ; Read timer status
+ *   cec3: jnb 0xe0.1, 0xceb0   ; If bit 1 NOT set, continue polling
+ *   ; Exit path:
+ *   cec6: lcall 0xe8ef         ; pcie_trigger_cc11_e8ef
+ *   cec9: clr a
+ *   ceca: mov r7, a            ; r7 = 0
+ *   cecb: lcall 0xdd42         ; helper_dd42(0)
+ *   cece: ljmp 0xd996          ; Tail call to continuation
+ */
+void transfer_poll_handler_ceab(void)
+{
+    uint8_t status;
+
+    /* Set timer divisor bits to 3 and start timer */
+    /* Note: e50d also uses r4/r5 for thresholds inherited from caller context,
+     * but the key part is setting div_bits = 3 */
+    helper_e50d_full(0x03, 0x00, 0x00);
+
+    /* Poll loop: wait for link status or timer timeout */
+    while (1) {
+        /* Check link status register */
+        status = REG_LINK_STATUS_E712;
+
+        /* If bit 0 is set, transfer complete - exit */
+        if (status & 0x01) {
+            break;
+        }
+
+        /* Check bit 1 for error/alternate exit condition */
+        if (status & 0x02) {
+            break;
+        }
+
+        /* Check timer status - bit 1 indicates timeout */
+        status = REG_TIMER0_CSR;
+        if (status & 0x02) {
+            /* Timeout - exit poll loop */
+            break;
+        }
+    }
+
+    /* Reset timer/trigger */
+    pcie_trigger_cc11_e8ef();
+
+    /* Call state handler with param 0 */
+    helper_dd42(0);
+
+    /* Continue with transfer completion (tail call) */
+    transfer_continuation_d996();
+}
+
+/*
+ * TODO: dma_buffer_store_result_e68f is complex as it uses
+ * DPTR-returning helpers (0x9983, 0x99bc, 0x9980) that modify DPTR
+ * for table indexing. These helpers compute DPTR = base + R7*34.
+ *
+ * The function:
+ * 1. Sets DPTR=0x05b3, calls 0x9983 to offset, writes R5 to result
+ * 2. Calls 0x99bc to offset further, writes R3 to result
+ * 3. Sets DPTR=0x0a5f, saves value, calls 0x9980, restores value
+ *
+ * This requires careful assembly-level handling as C can't directly
+ * express DPTR manipulation across function boundaries.
+ */
+void dma_buffer_store_result_e68f(void)
+{
+    /* TODO: Implement - requires inline assembly or restructuring */
+    (void)0;
+}
+
+void transfer_handler_ceab(void)
+{
+    uint8_t status;
+
+    /* Configure Timer0 with divisor bits = 3 */
+    helper_e50d_full(3, 0, 0);
+
+    /* Poll loop: wait for E712 ready or timer timeout */
+    while (1) {
+        /* Read poll status register */
+        status = REG_LINK_STATUS_E712;
+
+        /* Check if bit 0 is set (ready) */
+        if (status & 0x01) {
+            break;
+        }
+
+        /* Check if bit 1 is set (alternate ready) */
+        if (status & 0x02) {
+            break;
+        }
+
+        /* Check timer status - if bit 1 of CC11 is set, timer expired */
+        if (REG_TIMER0_CSR & 0x02) {
+            break;
+        }
+    }
+
+    /* Reset timer */
+    pcie_trigger_cc11_e8ef();
+
+    /* Update state to 0 */
+    helper_dd42(0);
+
+    /* Tail call to state handler */
+    state_handler_d996();
+}

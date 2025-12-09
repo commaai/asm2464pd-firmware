@@ -285,7 +285,9 @@
 
 // Adapter Link State (0xB430-0xB4C8)
 #define REG_TUNNEL_LINK_STATE   XDATA_REG8(0xB430)  // Tunnel link state (bit 0 = up)
+#define REG_POWER_CTRL_B432     XDATA_REG8(0xB432)  // Power control for lanes
 #define REG_PCIE_LINK_STATE     XDATA_REG8(0xB434)  // PCIe link state (low nibble = lane mask)
+#define REG_POWER_LANE_B404     REG_PCIE_LINK_PARAM_B404  // Alias for power lane config
 #define   PCIE_LINK_STATE_MASK    0x0F  // Bits 0-3: PCIe link state/lane mask
 #define REG_PCIE_LANE_CONFIG    XDATA_REG8(0xB436)  // PCIe lane configuration
 #define   PCIE_LANE_CFG_LO_MASK   0x0F  // Bits 0-3: Low config
@@ -436,6 +438,7 @@
 #define REG_PHY_CFG_C655        XDATA_REG8(0xC655)  /* PHY config (bit 3 set by helper_bbc0) */
 #define REG_PHY_EXT_56          XDATA_REG8(0xC656)
 #define   PHY_EXT_SIGNAL_CFG      0x20  // Bit 5: Signal config
+#define REG_PCIE_LANE_CTRL_C659 XDATA_REG8(0xC659)  /* PCIe lane control */
 #define REG_PHY_CFG_C65A        XDATA_REG8(0xC65A)  /* PHY config (bit 3 set by helper_bbc0) */
 #define   PHY_CFG_C65A_BIT3       0x08  // Bit 3: PHY config flag
 #define REG_PHY_EXT_5B          XDATA_REG8(0xC65B)
@@ -799,6 +802,7 @@
 #define REG_SYS_CTRL_E760       XDATA_REG8(0xE760)
 #define REG_SYS_CTRL_E761       XDATA_REG8(0xE761)
 #define REG_SYS_CTRL_E763       XDATA_REG8(0xE763)
+#define REG_PHY_TIMER_CTRL_E764 XDATA_REG8(0xE764)  /* PHY timer control */
 #define REG_SYS_CTRL_E765       XDATA_REG8(0xE765)  /* System control E765 */
 #define REG_FLASH_READY_STATUS  XDATA_REG8(0xE795)
 #define REG_PHY_LINK_CTRL       XDATA_REG8(0xE7E3)

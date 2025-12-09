@@ -508,3 +508,27 @@ uint8_t uart_write_daff(void)
     if (low < 0x1C) high++;  /* Handle carry */
     return high;
 }
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * uart_wait_tx_ready - Wait for UART transmit buffer ready
+ * Address: 0xe7ae-0xe7c0 (19 bytes)
+ *
+ * Two polling loops:
+ * 1. Wait until (REG_UART_TFBF & 0x1F) == 0x10 (FIFO level)
+ * 2. Wait until (REG_UART_STATUS & 0x07) == 0 (not busy)
+ */
+void uart_wait_tx_ready(void)
+{
+    /* Wait until UART FIFO level reaches 0x10 */
+    while ((REG_UART_TFBF & 0x1F) != 0x10)
+        ;
+
+    /* Wait until UART not busy */
+    while ((REG_UART_STATUS & 0x07) != 0)
+        ;
+}

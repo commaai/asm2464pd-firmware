@@ -259,3 +259,62 @@ uint8_t buf_check_transfer_pending(void)
 
     return result;
 }
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * FUN_CODE_5043 - Calculate buffer address with 0x08 offset and read
+ * Address: 0x5043-0x504e (12 bytes)
+ *
+ * Disassembly:
+ *   5043: mov a, #0x08
+ *   5045: add a, r7          ; A = 0x08 + R7
+ *   5046: mov 0x82, a        ; DPL = result
+ *   5048: clr a
+ *   5049: addc a, #0x01      ; DPH = 0x01 + carry
+ *   504b: mov 0x83, a
+ *   504d: movx a, @dptr      ; Read byte
+ *   504e: ret
+ *
+ * Returns: XDATA[0x0108 + R7]
+ */
+uint8_t buf_read_offset_08(uint8_t param)
+{
+    uint16_t addr = 0x0108 + param;
+    return XDATA_REG8(addr);
+}
+
+/*
+ * buf_read_base - Alternate entry into buf_read_offset_08 (at mov DPL instruction)
+ * Address: 0x5046-0x504e (9 bytes)
+ *
+ * From ghidra.c: return *(undefined1 *)CONCAT11('\x01' - (in_PSW >> 7), param_1)
+ * Reads from address (0x01xx or 0x00xx based on carry) + param
+ */
+uint8_t buf_read_base(uint8_t param)
+{
+    /* Read from 0x0100 + param (assuming no carry from prior add) */
+    return XDATA8(0x0100 + param);
+}
+
+/*
+ * buf_read_offset_3e - Read from calculated address (param - 0x3E)
+ * Address: 0x505d-0x5066 (10 bytes)
+ *
+ * From ghidra.c: return *(undefined1 *)CONCAT11(-(((0x3d < param_1) << 7) >> 7), param_1 - 0x3e)
+ * Reads from address calculated as (high_byte, param - 0x3E)
+ * High byte is 0xFF if param <= 0x3D (borrow), else 0x00
+ */
+uint8_t buf_read_offset_3e(uint8_t param)
+{
+    uint16_t addr;
+    if (param <= 0x3D) {
+        addr = 0xFF00 + (uint8_t)(param - 0x3E);  /* Borrow case */
+    } else {
+        addr = (uint8_t)(param - 0x3E);  /* Normal case */
+    }
+    return XDATA8(addr);
+}

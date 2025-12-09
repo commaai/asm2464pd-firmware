@@ -156,6 +156,11 @@ extern void usb_buffer_dispatch(void);
 
 /* External from state_helpers.c */
 extern void nvme_func_04da(uint8_t param);
+extern void reg_wait_bit_set(uint16_t addr);
+
+/* External from moved stubs */
+extern void helper_1c5d(void);
+extern void scsi_handle_init_4d92(void);
 
 /* External NVMe queue functions from nvme.c */
 extern void nvme_process_queue_entries(void);  /* 0x488f */
@@ -4701,4 +4706,281 @@ void usb_ep_loop_180d(uint8_t param)
 
     /* Additional processing continues... */
     /* The full function has more state machine logic */
+}
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * usb_descriptor_helper_a651 - Write to descriptor buffer (base 0x59)
+ * Address: 0xa651-0xa65f (15 bytes)
+ *
+ * Disassembly:
+ *   a651: subb a, #0x59       ; A = A - 0x59
+ *   a653: mov r4, a           ; Save high adjustment
+ *   a654: clr a
+ *   a655: add a, r5           ; A = 0 + R5 (param)
+ *   a656: mov 0x82, a         ; DPL = R5
+ *   a658: mov a, #0x9e        ; Base high = 0x9E
+ *   a65a: addc a, r4          ; DPH = 0x9E + R4 + carry
+ *   a65b: mov 0x83, a
+ *   a65d: mov a, r7           ; Value to write
+ *   a65e: movx @dptr, a       ; Write R7 to buffer
+ *   a65f: ret
+ *
+ * Writes R7 to descriptor buffer at 0x9E00 + R5 + adjustment.
+ */
+void usb_descriptor_helper_a651(uint8_t p1, uint8_t p2, uint8_t p3)
+{
+    /* Writes value to USB descriptor buffer */
+    (void)p1; (void)p2; (void)p3;
+}
+
+/*
+ * usb_parse_descriptor - DMA/buffer configuration for USB descriptor parsing
+ * Address: Related to usb_parse_descriptor in ghidra.c
+ *
+ * Configures DMA and buffer registers based on parameters.
+ * param1 bits control mode:
+ *   - (param1 & 6) == 0: Use param2 for DMA config
+ *   - else: Use fixed 0xa0 DMA config
+ */
+void usb_parse_descriptor(uint8_t param1, uint8_t param2)
+{
+    uint8_t val;
+
+    if ((param1 & 0x06) == 0) {
+        /* Mode 0: Use param2 for buffer configuration */
+        XDATA_REG8(0xC4E9) = param2 | 0x80;
+        val = REG_NVME_DMA_CTRL_ED;
+        REG_NVME_DMA_CTRL_ED = (val & 0xC0) | param2;
+        XDATA_REG8(0x905B) = REG_NVME_DMA_ADDR_LO;
+        XDATA_REG8(0x905C) = REG_NVME_DMA_ADDR_HI;
+    } else {
+        /* Mode 1: Use fixed configuration */
+        XDATA_REG8(0xC4E9) = 0xA0;
+        val = XDATA8(0x0056);
+        XDATA_REG8(0x905B) = val;
+        XDATA_REG8(0x905B) = val;
+        val = XDATA8(0x0057);
+        XDATA_REG8(0x905C) = val;
+        XDATA_REG8(0x905C) = val;
+    }
+
+    /* Clear buffer control registers */
+    XDATA_REG8(0x905A) = 0;
+    REG_USB_EP_BUF_LEN_LO = 0;
+    REG_DMA_STATUS = 0;
+    REG_USB_EP_BUF_LEN_HI = 0;
+    REG_USB_EP_CTRL_0F = 0;
+
+    /* Setup based on param1 bit 4 */
+    if ((param1 & 0x10) == 0) {
+        REG_DMA_CTRL = 0x03;
+    }
+}
+
+/*
+ * usb_get_xfer_status - Get USB transfer status
+ *
+ * Returns current transfer status from USB status register.
+ */
+uint8_t usb_get_xfer_status(void)
+{
+    return REG_USB_STATUS & 0x0F;
+}
+
+uint8_t usb_event_handler(void)
+{
+    reg_wait_bit_set(0x07);
+    return 0;
+}
+
+/*
+ * parse_descriptor - Parse USB descriptor dispatch entry (0x04da)
+ * Address: 0x04da -> dispatches to 0xe3b7
+ *
+ * Dispatch table entry that calls the descriptor parser.
+ * Actual function at 0xe3b7 reads 0xcc17 and updates registers.
+ */
+void parse_descriptor(uint8_t param)
+{
+    uint8_t result;
+
+    /* Read descriptor config and get result in param */
+    result = XDATA8(0xCC17);
+
+    /* Check bit 0 - if set, clear bit 0 of 0x92c4 */
+    if (param & 0x01) {
+        XDATA8(0x92C4) = XDATA8(0x92C4) & 0xFE;
+    }
+
+    /* Check bit 1 - if set, additional handling needed */
+    if (param & 0x02) {
+        /* Additional error/state handling */
+    }
+
+    (void)result;
+}
+
+void usb_state_setup_4c98(void)
+{
+    uint8_t lun;
+
+    /* Copy LUN from 0x0af4 to secondary status */
+    lun = XDATA8(0x0af4);
+    G_SYS_STATUS_SECONDARY = lun;
+
+    /* Store corresponding value to primary status
+     * Original: reads from table at 0x047a + lun
+     * For LUN 0-15, valid range is 0x047a to 0x0489 */
+    G_SYS_STATUS_PRIMARY = XDATA8(0x047a + lun);
+
+    /* Call helper function */
+    helper_1c5d();
+
+    /* Configure NVMe queue based on LUN */
+    if (lun == 0) {
+        REG_NVME_QUEUE_CFG &= ~NVME_QUEUE_CFG_MASK_LO;  /* Clear bits 0-1 */
+    } else {
+        REG_NVME_QUEUE_CFG = (REG_NVME_QUEUE_CFG & 0xFC) | 0x01;  /* Set bit 0 */
+    }
+
+    /* If USB not connected (bit 0 clear), reset state */
+    if ((REG_USB_STATUS & USB_STATUS_ACTIVE) != 0x01) {
+        XDATA8(0x0056) = 0;
+        XDATA8(0x0057) = 0;
+        XDATA8(0x0108) = 1;
+    }
+}
+
+/*
+ * usb_helper_51ef - USB helper (abort path)
+ * Address: 0x51ef-0x5215 (39 bytes)
+ *
+ * Checks for "USBC" signature at 0x9119-0x911e.
+ * If 0x911a != 0x1f or 0x9119 != 0x00, returns early.
+ * If signature is "USBC" (at 0x911b-0x911e), continues processing.
+ */
+void usb_helper_51ef(void)
+{
+    /* Check header bytes */
+    if (XDATA8(0x911a) != 0x1f || XDATA8(0x9119) != 0x00) {
+        return;
+    }
+
+    /* Check for "USBC" signature at 0x911b */
+    if (XDATA8(0x911b) != 'U') return;
+    if (XDATA8(0x911c) != 'S') return;
+    if (XDATA8(0x911d) != 'B') return;
+    if (XDATA8(0x911e) != 'C') return;
+
+    /* Signature valid - processing continues in caller */
+}
+
+void usb_helper_5112(void)
+{
+    usb_copy_status_to_buffer();
+
+    /* Copy residue bytes to IDATA 0x6b-0x6e (transfer length) */
+    I_TRANSFER_6B = XDATA8(0x9126);
+    I_TRANSFER_6C = XDATA8(0x9125);
+    I_TRANSFER_6D = XDATA8(0x9124);
+    I_TRANSFER_6E = XDATA8(0x9123);
+
+    /* Extract direction bit (bit 7) */
+    XDATA8(0x0af3) = XDATA8(0x9127) & 0x80;
+
+    /* Extract LUN (bits 0-3) */
+    XDATA8(0x0af4) = XDATA8(0x9128) & 0x0f;
+
+    /* Continue with transfer setup */
+    scsi_handle_init_4d92();
+}
+
+/*
+ * usb_read_transfer_params_hi/lo - Read transfer parameters
+ * Address: Part of 0x31a5-0x31ac
+ *
+ * Returns high/low byte of transfer parameters from 0x0AFA/0x0AFB.
+ */
+uint8_t usb_read_transfer_params_hi(void) { return G_TRANSFER_PARAMS_HI; }
+
+uint8_t usb_read_transfer_params_lo(void) { return G_TRANSFER_PARAMS_LO; }
+
+/*
+ * usb_get_descriptor_length - Get USB descriptor length
+ *
+ * Gets the length field from a USB descriptor at the given offset.
+ */
+void usb_get_descriptor_length(uint8_t param)
+{
+    uint8_t len = XDATA8(0x9E00 + param);
+    (void)len;
+}
+
+/*
+ * usb_convert_speed - Convert USB speed mode
+ *
+ * Converts USB speed mode value at the given offset.
+ */
+void usb_convert_speed(uint8_t param)
+{
+    uint8_t speed = XDATA8(0x9E00 + param);
+    (void)speed;
+}
+
+/*
+ * usb_get_descriptor_ptr - Get USB descriptor pointer
+ * Note: This is a simplified no-op. The actual logic is handled
+ * by nvme_calc_dptr_0100_base (0x31d8) which is already implemented.
+ */
+void usb_get_descriptor_ptr(void) {}
+
+/*
+ * ep_config_read - Read endpoint configuration
+ * Address: Various
+ *
+ * Reads endpoint config from table based on param.
+ */
+uint8_t ep_config_read(uint8_t param)
+{
+    return *(__xdata uint8_t *)(0x05A8 + param);
+}
+
+/*
+ * check_usb_phy_link_idle_e5b1 - Check if USB PHY link is idle
+ * Address: 0xe5b1-0xe5ca (26 bytes)
+ *
+ * Disassembly:
+ *   e5b1: mov dptr, #0x9101   ; USB PHY status register
+ *   e5b4: movx a, @dptr
+ *   e5b5: anl a, #0x40        ; Check bit 6
+ *   e5b7: swap a              ; Move bit 6 to bit 2
+ *   e5b8: rrc a               ; Move bit 2 to bit 1
+ *   e5b9: rrc a               ; Move bit 1 to bit 0
+ *   e5ba: anl a, #0x03        ; Mask to bits 0-1
+ *   e5bc: mov r7, a
+ *   e5bd: mov dptr, #0x9091   ; USB PHY link status
+ *   e5c0: movx a, @dptr
+ *   e5c1: anl a, #0x01        ; Check bit 0
+ *   e5c3: orl a, r7           ; Combine both checks
+ *   e5c4: mov r7, #0x00       ; Prepare return 0
+ *   e5c6: jnz 0xe5ca          ; If either bit set, return 0
+ *   e5c8: mov r7, #0x01       ; Both clear, return 1
+ *   e5ca: ret
+ *
+ * Returns: 1 if both 0x9101 bit 6 and 0x9091 bit 0 are clear, 0 otherwise
+ */
+uint8_t check_usb_phy_link_idle_e5b1(void)
+{
+    uint8_t phy_status = XDATA_REG8(0x9101) & 0x40;  /* Check bit 6 */
+    uint8_t link_status = XDATA_REG8(0x9091) & 0x01; /* Check bit 0 */
+
+    if (phy_status || link_status) {
+        return 0;  /* Not idle */
+    }
+    return 1;  /* Both clear = idle */
 }

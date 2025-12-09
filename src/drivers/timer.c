@@ -116,6 +116,12 @@
 extern void jump_bank_0(uint16_t addr);
 extern void jump_bank_1(uint16_t addr);
 
+/* External functions for moved stubs */
+extern void helper_e50d_full(uint8_t div_bits, uint8_t threshold_hi, uint8_t threshold_lo);
+extern void cmd_engine_clear(void);
+extern void helper_95e1(uint8_t r7, uint8_t r5);
+extern void cmd_wait_completion(void);
+
 /*
  * timer_idle_timeout_handler - Handle idle timeout events
  * Address: 0x0520-0x0523 (4 bytes)
@@ -670,3 +676,124 @@ void timer_wait(uint8_t timeout_lo, uint8_t timeout_hi, uint8_t mode)
     REG_TIMER0_CSR = 0x02;
 }
 
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * timer_config_trampoline - Trampoline to helper_e50d (0xe50d)
+ * Address: 0x0511
+ * Original: mov dptr, #0xe50d; ajmp 0x0300
+ * Params: p1→threshold_hi, p2→threshold_lo, p3→div_bits
+ */
+void timer_config_trampoline(uint8_t p1, uint8_t p2, uint8_t p3)
+{
+    helper_e50d_full(p3, p1, p2);
+}
+
+/*
+ * timer_event_init - Timer/event initialization handler
+ * Address: 0xe883-0xe88d (11 bytes)
+ *
+ * Calls helper_e73a, then calls 0x95e1 with r7=0x10, r5=0,
+ * then jumps to cmd_wait_completion.
+ */
+void timer_event_init(void)
+{
+    /* Clear command registers */
+    cmd_engine_clear();
+
+    /* Call config function with r7=0x10, r5=0 */
+    helper_95e1(0x10, 0);
+
+    /* Wait for completion */
+    cmd_wait_completion();
+}
+
+/*
+ * timer_trigger_e726 - Trigger timer via 0xCD31
+ * Address: 0xe726-0xe72f (10 bytes)
+ *
+ * Disassembly:
+ *   e726: mov dptr, #0xcd31
+ *   e729: mov a, #0x04
+ *   e72b: movx @dptr, a
+ *   e72c: mov a, #0x02
+ *   e72e: movx @dptr, a
+ *   e72f: ret
+ *
+ * Writes 0x04 then 0x02 to register 0xCD31 (timer trigger sequence)
+ */
+void timer_trigger_e726(void)
+{
+    XDATA_REG8(0xCD31) = 0x04;
+    XDATA_REG8(0xCD31) = 0x02;
+}
+
+/*
+ * delay_loop_adb0 - Delay loop with status check
+ * Address: 0xadb0-0xade5 (~54 bytes)
+ *
+ * Iterates 12 times (0x0C), calling helper 0x9a53 each time.
+ * Then checks IDATA[0x60] bit 0 and IDATA[0x61] to determine result code.
+ * Sets up TLP type in R7 (0x04/0x05 or 0x44/0x45) and writes to REG_PCIE_FMT_TYPE.
+ *
+ * Algorithm:
+ *   1. Clear G_ERROR_CODE_06EA, set I_WORK_51 = 0
+ *   2. Loop: for (i=0; i<12; i++) call helper_9a53(i)
+ *   3. Check IDATA[0x60] bit 0:
+ *      - If set: R7 = (IDATA[0x61] != 0) ? 0x45 : 0x44
+ *      - If clear: R7 = (IDATA[0x61] != 0) ? 0x05 : 0x04
+ *   4. Write R7 to REG_PCIE_FMT_TYPE (0xB210)
+ *   5. Write 0x01 to REG_PCIE_TLP_CTRL (0xB213)
+ *   6. Check I_WORK_65 and return via other helpers
+ *
+ * Side effects:
+ *   - Sets up I_WORK_65 result code
+ *   - Writes to REG_PCIE_FMT_TYPE and REG_PCIE_TLP_CTRL
+ */
+void delay_loop_adb0(void)
+{
+    uint8_t i;
+    uint8_t tlp_type;
+
+    /* Clear error code and work variable */
+    G_ERROR_CODE_06EA = 0;
+    I_WORK_51 = 0;
+
+    /* Loop 12 times - helper_9a53 does status polling */
+    for (i = 0; i < 12; i++) {
+        /* Placeholder for helper_9a53(i) call */
+        /* This helper updates I_WORK_65 based on polling result */
+    }
+
+    /* Determine TLP type based on IDATA values */
+    if (*(__idata uint8_t *)0x60 & 0x01) {
+        /* High type range (Config space) */
+        tlp_type = (*(__idata uint8_t *)0x61 != 0) ? 0x45 : 0x44;
+    } else {
+        /* Low type range (Memory) */
+        tlp_type = (*(__idata uint8_t *)0x61 != 0) ? 0x05 : 0x04;
+    }
+
+    /* Write TLP type to PCIe format register */
+    REG_PCIE_FMT_TYPE = tlp_type;
+
+    /* Write 0x01 to PCIe TLP control register */
+    REG_PCIE_TLP_CTRL = 0x01;
+
+    /* I_WORK_65 is left with result from polling loop
+     * 0 = success, non-zero = error */
+}
+
+void timer_phy_config_e57d(uint8_t param)
+{
+    uint8_t val;
+    if (!(param & 0x01)) return;
+    val = REG_PHY_TIMER_CTRL_E764; val &= 0xFD; REG_PHY_TIMER_CTRL_E764 = val;
+    val = REG_PHY_TIMER_CTRL_E764; val &= 0xFE; REG_PHY_TIMER_CTRL_E764 = val;
+    val = REG_PHY_TIMER_CTRL_E764; val &= 0xF7; REG_PHY_TIMER_CTRL_E764 = val;
+    val = REG_PHY_TIMER_CTRL_E764; val = (val & 0xFB) | 0x04; REG_PHY_TIMER_CTRL_E764 = val;
+}

@@ -13,6 +13,21 @@
 #include "globals.h"
 #include "structs.h"
 
+/* Forward declarations */
+void scsi_dma_mode_setup(void);
+
+/* External functions from moved stubs */
+extern void handler_3adb(uint8_t param);
+extern void handler_0395(void);
+
+/* Stub helpers for slot address calculations */
+static __xdata uint8_t *get_slot_addr_71(void) { return &XDATA8(0x0171 + I_WORK_22); }
+static __xdata uint8_t *get_slot_addr_4e(void) { return &XDATA8(0x004E + I_WORK_22); }
+static __xdata uint8_t *get_slot_addr_7c(void) { return &XDATA8(0x017C + I_WORK_22); }
+static __xdata uint8_t *get_addr_from_slot(uint8_t base) { return &XDATA8(base + I_WORK_22); }
+static __xdata uint8_t *get_addr_low(uint8_t offset) { return &XDATA8(offset + I_WORK_22); }
+static uint8_t get_ep_config_4e(void) { return XDATA8(0x004E + I_WORK_22); }
+
 /* External functions */
 extern uint8_t usb_read_transfer_params_hi(void);
 extern uint8_t usb_read_transfer_params_lo(void);
@@ -2498,3 +2513,450 @@ void scsi_loop_process_573b(void)
  * - 0x54fc-0x5621: Data table/jump table
  * - 0x5622-0x5930: Large data tables
  */
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * FUN_CODE_1b07 - Read from SCSI control array
+ * Address: 0x1b07-0x1b13 (13 bytes)
+ *
+ * Disassembly:
+ *   1b07: mov a, #0x71       ; Base offset
+ *   1b09: add a, 0x3e        ; A = 0x71 + I_WORK_3E
+ *   1b0b: mov DPL, a         ; (continues to helper_1b0b)
+ *   1b0d: clr a
+ *   1b0e: addc a, #0x01      ; DPH = 0x01 + carry
+ *   1b10: mov DPH, a
+ *   1b12: movx a, @dptr      ; Read from XDATA
+ *   1b13: ret
+ *
+ * Returns: XDATA[0x0171 + I_WORK_3E]
+ * This reads from G_SCSI_CTRL (0x0171) plus I_WORK_3E offset.
+ * The G_SCSI_CTRL array stores SCSI command/control parameters indexed by I_WORK_3E.
+ */
+uint8_t scsi_read_ctrl_indexed(void)
+{
+    uint8_t low = 0x71 + I_WORK_3E;
+    uint16_t addr = 0x0100 + low;  /* Base is 0x0100, add 0x71 + offset */
+    if (low < 0x71) {
+        addr += 0x0100;  /* Handle overflow carry to high byte */
+    }
+    return *(__xdata uint8_t *)addr;
+}
+
+void scsi_send_csw(uint8_t status, uint8_t param)
+{
+    uint8_t flags, regval;
+
+    G_FLASH_ERROR_0 = param;
+    G_FLASH_ERROR_1 = status;
+
+    while (1) {
+        flags = G_FLASH_ERROR_1;
+
+        /* Check bit 1 for interrupt handling */
+        if ((flags >> 1) & 1) {
+            if (G_FLASH_ERROR_0 == 0) {
+                regval = REG_CPU_LINK_CEF3;
+                if ((regval >> 3) & 1) {
+                    REG_CPU_LINK_CEF3 = 8;  /* Clear interrupt */
+                    return;
+                }
+            } else {
+                regval = XDATA8(0xB294);
+                if ((regval >> 5) & 1) {
+                    XDATA8(0xB294) = 0x20;
+                    return;
+                }
+                if (XDATA8(0x05AD) != 0 && ((regval >> 4) & 1)) {
+                    XDATA8(0xB294) = 0x10;
+                    return;
+                }
+            }
+        }
+
+        /* Check bit 0 for completion */
+        if (flags & 1) {
+            if (G_FLASH_ERROR_0 == 0) {
+                if ((int8_t)REG_CPU_LINK_CEF2 < 0) {
+                    REG_CPU_LINK_CEF2 = 0x80;
+                    handler_3adb(0);
+                    return;
+                }
+            } else {
+                regval = XDATA8(0xB294);
+                if ((regval >> 4) & 1) {
+                    XDATA8(0xB294) = 0x10;
+                    handler_3adb(0);
+                    return;
+                }
+            }
+        }
+
+        /* Polling call */
+        handler_0395();
+
+        if (flags != 0) {
+            return;
+        }
+    }
+}
+
+/*
+ * scsi_dma_transfer_process - SCSI/DMA transfer state machine
+ * Address: 0x11a2-0x152x (~500 bytes)
+ *
+ * Processes SCSI command state and manages DMA transfers.
+ * Input: param in R7 (0 = initialize, non-0 = active transfer check)
+ * Output: result in R7 (0 = not ready, 1 = ready/success)
+ *
+ * Uses: I_WORK_3F (transfer count), I_WORK_40-46 (work vars)
+ * Reads: CE51/CE55/CE60/CE6E (SCSI DMA registers)
+ * Writes: G_0470-0476 (command state), G_053A (NVMe param)
+ */
+uint8_t scsi_dma_transfer_process(uint8_t param)
+{
+    uint8_t val;
+    __xdata uint8_t *ptr;
+
+    /* Copy slot index from I_QUEUE_IDX to I_WORK_43 */
+    I_WORK_43 = I_QUEUE_IDX;
+
+    if (param != 0) {
+        /* Active transfer check path (param != 0) */
+        /* Read SCSI tag index into I_WORK_3F */
+        I_WORK_3F = REG_SCSI_TAG_IDX;
+
+        /* Check slot table at 0x0171 + slot */
+        ptr = get_slot_addr_71();
+        val = *ptr;
+
+        if (val == 0xFF) {
+            /* Tag is complete - copy tag value to slot tables */
+            uint8_t tag_val = REG_SCSI_TAG_VALUE;
+
+            /* Store to 0x009F + slot */
+            ptr = get_addr_from_slot(0x9F);
+            *ptr = tag_val;
+
+            /* Store to 0x0171 + slot */
+            ptr = get_slot_addr_71();
+            *ptr = tag_val;
+
+            /* Clear NVMe parameter */
+            G_NVME_PARAM_053A = 0;
+        }
+        /* Fall through to check I_WORK_3F value */
+    } else {
+        /* Transfer initialization path (param == 0) */
+        val = G_SCSI_CMD_PARAM_0470;
+
+        if (val & 0x01) {
+            /* Bit 0 set - use G_DMA_LOAD_PARAM2 directly */
+            I_WORK_3F = G_DMA_LOAD_PARAM2;
+        } else {
+            /* Calculate from endpoint config table */
+            uint8_t ep_idx = G_SYS_STATUS_SECONDARY;
+            uint16_t addr = (uint16_t)ep_idx * 0x14 + 0x054B;
+            uint8_t base_count = *(__xdata uint8_t *)addr;
+
+            /* Load transfer params and calculate count */
+            /* dma_load_transfer_params does: R7 = 16-bit div result */
+            /* Simplified: just use the base count */
+            I_WORK_3F = base_count;
+
+            /* Call again and check if remainder is non-zero */
+            /* If so, increment count */
+            /* (Simplified - actual code does complex division) */
+        }
+
+        /* Check bit 3 for division path */
+        val = G_SCSI_CMD_PARAM_0470;
+        if (val & 0x08) {
+            /* Get multiplier from EP config */
+            uint8_t mult = get_ep_config_4e();
+
+            if (mult != 0) {
+                /* G_XFER_DIV_0476 = I_WORK_3F / mult */
+                G_XFER_DIV_0476 = I_WORK_3F / mult;
+
+                /* Check remainder, if non-zero increment */
+                if ((I_WORK_3F % mult) != 0) {
+                    G_XFER_DIV_0476++;
+                }
+            } else {
+                G_XFER_DIV_0476 = I_WORK_3F;
+            }
+
+            /* Check USB status for slot table update */
+            val = REG_USB_STATUS;
+            if (val & USB_STATUS_ACTIVE) {
+                ptr = get_slot_addr_71();
+                val = *ptr;
+                if (val == 0xFF) {
+                    /* Update slot tables from G_XFER_DIV_0476 */
+                    uint8_t div_result = G_XFER_DIV_0476;
+                    ptr = get_addr_from_slot(0x9F);
+                    *ptr = div_result;
+                    ptr = get_slot_addr_71();
+                    *ptr = div_result;
+                    G_NVME_PARAM_053A = 0;
+                }
+
+                /* Update C414 bit 7 based on comparison */
+                ptr = get_addr_from_slot(0x9F);
+                val = *ptr;
+                /* Swap nibbles and subtract 1, compare with R7 (slot high) */
+                uint8_t swapped = ((I_WORK_43 >> 4) | (I_WORK_43 << 4)) - 1;
+                if (val == swapped) {
+                    /* Set bit 7 of C414 */
+                    REG_NVME_DATA_CTRL = (REG_NVME_DATA_CTRL & 0x7F) | 0x80;
+                } else {
+                    /* Clear bit 7 of C414 */
+                    REG_NVME_DATA_CTRL = REG_NVME_DATA_CTRL & 0x7F;
+                }
+            }
+        }
+    }
+
+    /* Check transfer count range */
+    /* if I_WORK_3F >= 0x81, return 0 */
+    if (I_WORK_3F == 0 || I_WORK_3F > 0x80) {
+        /* Call dma_setup_transfer(0, 0x24, 0x05) and return 0 */
+        dma_setup_transfer(0, 0x24, 0x05);
+        return 0;
+    }
+
+    /* Check bit 2 of G_SCSI_CMD_PARAM_0470 */
+    val = G_SCSI_CMD_PARAM_0470;
+    if (val & 0x04) {
+        /* Simple path - store helpers */
+        G_STATE_HELPER_41 = 0;
+        G_STATE_HELPER_42 = I_WORK_3F & 0x1F;
+        return 1;
+    }
+
+    /* Check if I_WORK_3F == 1 (single transfer) */
+    if (I_WORK_3F == 1) {
+        /* Read CE60 into I_WORK_40 */
+        I_WORK_40 = REG_XFER_STATUS_CE60;
+
+        /* Check range */
+        if (I_WORK_40 >= 0x40) {
+            return 0;
+        }
+
+        /* Write to SCSI DMA status register */
+        REG_SCSI_DMA_STATUS_L = I_WORK_40;
+        G_STATE_HELPER_41 = I_WORK_40;
+        G_STATE_HELPER_42 = I_WORK_40 + I_WORK_3F;
+
+        /* Call helpers with calculated addresses */
+        ptr = get_addr_low(0x59 + I_WORK_43);
+        /* FUN_CODE_1755 would write here */
+
+        ptr = get_slot_addr_4e();
+        *ptr = I_WORK_40;
+
+        ptr = get_slot_addr_7c();
+        *ptr = I_WORK_40;
+
+        /* Write 1 to slot addr 71 */
+        ptr = get_slot_addr_71();
+        *ptr = 1;
+
+        return 1;
+    }
+
+    /* Multi-transfer path - read tag status */
+    ptr = get_addr_from_slot(0x9F);
+    I_WORK_42 = *ptr;
+    I_WORK_44 = get_ep_config_4e();
+
+    /* Complex state machine based on I_WORK_42 and I_WORK_44 */
+    /* Simplified: just return success for valid transfers */
+    if (I_WORK_42 < 2) {
+        /* Simple case */
+        G_STATE_HELPER_41 = I_WORK_41;
+        G_STATE_HELPER_42 = (I_WORK_41 + I_WORK_3F) & 0x1F;
+        return I_WORK_3F;
+    }
+
+    /* Tag chain case - check slot table for match */
+    ptr = get_slot_addr_71();
+    if (*ptr != I_WORK_42) {
+        /* Mismatch - special handling based on I_WORK_44 */
+        return 0;
+    }
+
+    /* Chain traversal loop */
+    I_WORK_46 = 0;
+    do {
+        /* Read chain entry from 0x002F + I_WORK_45 */
+        uint8_t chain_val = *(__xdata uint8_t *)(0x002F + I_WORK_43);
+        I_WORK_45 = chain_val;
+
+        if (I_WORK_45 == 0x21) {
+            break;  /* End of chain */
+        }
+
+        /* Check slot at 0x0517 + chain_val */
+        if (*(__xdata uint8_t *)(0x0517 + I_WORK_45) == 0) {
+            I_WORK_46 = 1;
+            break;
+        }
+    } while (1);
+
+    /* Calculate product with cap */
+    I_WORK_47 = I_WORK_42 * I_WORK_44;
+    if (I_WORK_47 > 0x20) {
+        I_WORK_47 = 0x20;
+    }
+
+    /* Final state update */
+    G_STATE_HELPER_41 = I_WORK_41;
+    G_STATE_HELPER_42 = (I_WORK_41 + I_WORK_3F) & 0x1F;
+
+    return I_WORK_3F;
+}
+
+/*
+ * helper_544c - Call queue processing with specific parameters
+ * Address: 0x544c-0x5454 (9 bytes)
+ *
+ * Wrapper that calls helper_523c(0, 0x24, 5).
+ * Sets up queue processing with index 0x24, mode 5.
+ *
+ * Original disassembly:
+ *   544c: clr a              ; r3 = 0
+ *   544d: mov r3, a
+ *   544e: mov r5, #0x24
+ *   5450: mov r7, #0x05
+ *   5452: ljmp 0x523c
+ */
+void helper_544c(void)
+{
+    extern void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7);
+    helper_523c(0, 0x24, 5);
+}
+
+/*
+ * helper_545c - Clear transfer flag
+ * Address: 0x545c-0x5461 (6 bytes)
+ *
+ * Clears the transfer flag at 0x0AF8.
+ *
+ * Original disassembly:
+ *   545c: clr a              ; A = 0
+ *   545d: mov dptr, #0x0af8  ; G_TRANSFER_FLAG_0AF8
+ *   5460: movx @dptr, a      ; Write 0
+ *   5461: ret
+ */
+void helper_545c(void)
+{
+    G_TRANSFER_FLAG_0AF8 = 0;
+}
+
+/*
+ * scsi_dma_mode_setup - SCSI DMA mode setup
+ * Address: Likely part of 0x5462 context or nearby
+ *
+ * Called when G_EP_STATUS_CTRL != 0 to configure DMA for SCSI transfers.
+ * Sets up DMA registers for the pending transfer mode.
+ */
+void scsi_dma_mode_setup(void)
+{
+    /* Configure DMA for SCSI mode transfer */
+    /* This is called from scsi_mode_setup_5462 when EP status is active */
+
+    /* Set DMA configuration for SCSI mode */
+    REG_DMA_CONFIG = 0xA0;  /* Enable DMA with mode setting */
+}
+
+/*
+ * scsi_handle_init_4d92 - SCSI handle initialization
+ * Address: 0x4d92-0x4e6c (219 bytes)
+ *
+ * This is an alias for the SCSI command processing initialization.
+ * Called by usb_helper_5112 after extracting transfer parameters.
+ * The actual implementation is in scsi.c as scsi_cmd_process.
+ */
+void scsi_handle_init_4d92(void)
+{
+    /* The real implementation initializes transfer state and
+     * starts the SCSI command state machine. For now, stub. */
+}
+
+/* helper_488f - Queue processor
+ * Address: 0x488f
+ */
+void helper_488f(void)
+{
+    uint8_t status;
+
+    G_STATE_FLAG_06E6 = 1;
+    I_WORK_39 = 0;
+
+    status = REG_NVME_LINK_STATUS;
+    if ((status >> 1) & 1) {
+        G_SYS_STATUS_PRIMARY = 0;
+        G_SYS_STATUS_SECONDARY = 0;
+        if (XDATA8(0x0AF8) != 0) {
+            REG_NVME_QUEUE_TRIGGER = XDATA8(0xC51A);
+        }
+    }
+}
+
+/* helper_4784 - Link status handler
+ * Address: 0x4784
+ */
+void helper_4784(void)
+{
+    uint8_t state = I_STATE_6A;
+
+    if (state == 3) {
+        REG_NVME_QUEUE_CFG = (REG_NVME_QUEUE_CFG & 0xF7) | 0x08;
+        REG_NVME_QUEUE_CFG &= 0xFE;
+    } else if (state == 4) {
+        REG_NVME_QUEUE_CFG = (REG_NVME_QUEUE_CFG & 0xF7) | 0x08;
+    } else if (state == 5) {
+        if (XDATA8(0x0001) == 5) {
+            REG_NVME_QUEUE_CFG = (REG_NVME_QUEUE_CFG & 0xF7) | 0x08;
+        }
+    }
+}
+
+/* helper_49e9 - USB control handler
+ * Address: 0x49e9
+ */
+void helper_49e9(void)
+{
+    uint8_t queue_idx;
+    uint8_t expected;
+    uint8_t counter;
+
+    queue_idx = REG_NVME_QUEUE_INDEX;
+    I_WORK_38 = queue_idx;
+    REG_NVME_QUEUE_INDEX = 0xFF;
+
+    expected = XDATA8(0x009F);
+    counter = XDATA8(0x0517);
+    counter++;
+    XDATA8(0x0517) = counter;
+
+    if (counter != expected) {
+        uint8_t alt_val = XDATA8(0x00C2);
+        if (XDATA8(0x0517) == alt_val) {
+            /* Match */
+        }
+    }
+}
+
+void helper_538d(uint8_t r3, uint8_t r2, uint8_t r1)
+{
+    (void)r3; (void)r2; (void)r1;
+    /* Stub */
+}

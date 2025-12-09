@@ -4,25 +4,40 @@
 
 | Metric | Value |
 |--------|-------|
-| **Firmware Size** | 52,935 / 98,012 bytes (54.0%) |
+| **Firmware Size** | 52,853 / 98,012 bytes (53.9%) |
 | **Total Functions** | ~1,100 identified in fw.bin |
-| **Implemented** | ~635 with actual logic |
-| **Empty Stubs** | 1 function (handler_9d90 - just ret in original) |
+| **Implemented** | ~640 with actual logic |
+| **Empty Stubs** | ~27 functions needing implementation |
 | **Dispatch Stubs** | 162 bank-switching trampolines |
 
 Note: SDCC generates different code than the original Keil C51 compiler, so byte-exact matching is not possible. Function-level correctness is the goal.
 
 ---
 
-## 1. Empty Stub Functions (41 total, 41 completed) ✓ ALL DONE
+## 1. Stub Functions Status
 
-All empty stub functions have been implemented or verified:
-- 5 stubs were resolved in this session:
-  - `handler_9d90` - Verified as just `ret` in original firmware (correct as empty)
-  - `usb_get_descriptor_ptr` - Simplified no-op (actual logic in nvme_calc_dptr_0100_base)
-  - `nvme_util_get_queue_depth` - Implemented with queue management logic
-  - `helper_2608` - Removed duplicate (already in dma.c as handler_2608)
-  - `helper_3adb` - Removed duplicate (already in protocol.c as handler_3adb)
+### Intentionally Empty/Inline Functions (~50)
+Many 8051 functions use DPTR/register chaining that can't be directly replicated in C.
+These are documented as empty with comments explaining that callers handle the logic inline:
+- `helper_157d`, `helper_166f`, `helper_173b` - DPTR setup functions
+- Various address calculation helpers that set up DPTR for next operation
+
+### Functions Needing Implementation (~30)
+These have empty bodies and need actual logic:
+
+**High Priority - Frequently Called:**
+- `cmd_trigger_params(uint8_t, uint8_t)` - Command trigger parameters
+- `cmd_param_setup(uint8_t, uint8_t)` - Command parameter setup
+- `helper_95e1(uint8_t, uint8_t)` - State machine helper
+- `transfer_func_1633(uint16_t)` - Transfer address setup
+
+**Medium Priority - State Functions:**
+- `protocol_state_dispatch(void)` - Protocol state machine
+- `pcie_link_state_init(void)` - PCIe initialization
+- `scsi_send_csw(uint8_t, uint8_t)` - SCSI command status word
+
+**Low Priority:**
+- Various `pcie_*`, `timer_*`, `usb_*` helpers
 
 ### USB/Descriptor Stubs (11 functions) [DONE]
 
@@ -428,8 +443,9 @@ Focus on the 40+ dispatch targets in the 0xE000-0xEFFF range.
 - [ ] Consolidate duplicate helper functions (optional refactoring)
 
 ### Build Verification
-- Current size: 52,718 / 98,012 bytes (53.8%)
+- Current size: 52,853 / 98,012 bytes (53.9%)
 - Target: Match function behavior, not byte-exact matching
+- error_log_process (0xC2F4) - fully implemented with dma_transfer_state_dispatch call
 
 ---
 
@@ -445,3 +461,4 @@ Focus on the 40+ dispatch targets in the 0xE000-0xEFFF range.
 - [x] Core drivers: pcie.c, nvme.c, usb.c, dma.c, flash.c, phy.c, power.c, timer.c, uart.c
 - [x] Utility Functions (0x0000-0x0FFF) - analyzed, none standalone
 - [x] Register naming audit
+- [x] Error logging (error_log.c) - error_log_process fully implemented

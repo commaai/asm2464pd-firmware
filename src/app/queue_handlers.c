@@ -1276,3 +1276,43 @@ void state_clear_all_bfc4(uint8_t val)
     reg_val &= 0xFD;  /* Clear bit 1 */
     REG_POWER_CTRL_92C8 = reg_val;
 }
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * queue_buf_addr_high - Calculate queue buffer address high byte
+ * Address: 0x504f-0x505c (14 bytes)
+ *
+ * From ghidra.c: bVar1 = DAT_EXTMEM_0a84; return -(((0xf3 < bVar1) << 7) >> 7)
+ * Returns 0x00 if XDATA[0x0A84] <= 0xF3, otherwise 0xFF (borrow indicator)
+ */
+uint8_t queue_buf_addr_high(void)
+{
+    uint8_t idx = XDATA8(0x0A84);
+    /* Returns high byte adjustment based on index value */
+    if (idx > 0xF3) {
+        return 0xFF;  /* Borrow occurred */
+    }
+    return 0x00;
+}
+
+__xdata uint8_t * queue_calc_dptr_c44f(void)
+{
+    uint16_t addr;
+    uint8_t idx = I_WORK_21;
+
+    /* Calculate: 0x057E + (idx * 10) */
+    addr = 0x057E + (idx * 10);
+
+    return (__xdata uint8_t *)addr;
+}
+
+uint8_t queue_check_status_c4a9(void)
+{
+    uint8_t idx = I_WORK_21;
+    uint8_t count = G_QUEUE_COUNT_06E5;
+    return (idx < count) ? 1 : 0;
+}

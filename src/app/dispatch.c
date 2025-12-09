@@ -634,3 +634,44 @@ void dispatch_0647(void) { jump_bank_1(0xE4D2); }
 
 /* 0x064C: Target Bank1:0xE5CB (file 0x165CB) - handler_e5cb */
 void dispatch_064c(void) { jump_bank_1(0xE5CB); }
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * dispatch_handler_0557 - PCIe event dispatch handler
+ * Address: 0x0557 -> targets 0xee94 (bank 1)
+ *
+ * Original disassembly at 0x16e94:
+ *   ee94: acall 0xe97f   ; calls helper at 0x1697f
+ *   ee96: rr a           ; rotate result right
+ *   ee97: ljmp 0xed82    ; -> 0x16d82 -> ljmp 0x7a12 (NOP slide to 0x8000)
+ *
+ * The helper at 0x1697f:
+ *   e97f: mov r1, #0xe6  ; setup parameter
+ *   e981: ljmp 0x538d    ; call bank 0 dispatch function
+ *
+ * This function is part of the PCIe event handling chain. It checks event
+ * state and returns non-zero (in R7) if dispatch/processing should continue.
+ *
+ * The caller in pcie.c uses the return value:
+ *   if (result) { pcie_queue_handler_a62d(); ... }
+ *
+ * Returns: Non-zero if event processing should continue, 0 otherwise.
+ */
+uint8_t dispatch_handler_0557(void)
+{
+    /* Check event flags to determine if dispatch is needed.
+     * The original function calls into bank 0/1 dispatch logic
+     * that reads from event control registers.
+     *
+     * For now, return 0 (no dispatch) as a safe default.
+     * A more complete implementation would check:
+     * - G_EVENT_CTRL_09FA state
+     * - PCIe link status
+     * - Pending transfer state
+     */
+    return 0;  /* No dispatch needed - conservative default */
+}

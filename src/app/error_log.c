@@ -428,3 +428,14 @@ void error_handler_system_timer(void)
 {
     /* Empty - original firmware has NOPs at this address */
 }
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+void process_log_entries(uint8_t param)
+{
+    (void)param;
+    /* Stub */
+}

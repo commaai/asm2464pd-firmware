@@ -11,6 +11,24 @@
 #include "registers.h"
 #include "globals.h"
 
+/* External functions */
+extern void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7);  /* app/protocol.c */
+extern void power_config_init(void);                /* drivers/power.c */
+extern void power_check_status_e647(void);          /* drivers/power.c */
+extern void uart_puthex(uint8_t val);               /* drivers/uart.c */
+extern void cmd_engine_clear(void);                 /* drivers/cmd.c */
+extern void cmd_config_e40b(void);                  /* drivers/cmd.c */
+extern uint8_t cmd_check_busy(void);                /* drivers/cmd.c */
+extern void cmd_start_trigger(void);                /* drivers/cmd.c */
+
+/* Forward declarations for functions defined later in this file */
+void ext_mem_access_0bc8(uint8_t bank, uint8_t addr_hi, uint8_t addr_lo);
+
+/* Stub functions - these may need proper implementation */
+void helper_befb(void) { /* TODO: implement 0xbefb */ }
+void helper_b8c3(void) { /* TODO: implement 0xb8c3 */ }
+void helper_9536(void) { /* TODO: implement 0x9536 */ }
+
 /*
  * idata_load_dword - Load 32-bit value from IDATA
  * Address: 0x0d78-0x0d83 (12 bytes)
@@ -1431,3 +1449,1054 @@ void table_search_dispatch(void) __naked
     __endasm;
 }
 
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * helper_1579 - Read PCIe transaction count and set up array access
+ * Address: 0x1579-0x157c (4 bytes)
+ *
+ * Reads G_PCIE_TXN_COUNT_LO then falls through to helper_157d.
+ */
+void helper_1579(void)
+{
+    uint8_t idx = G_PCIE_TXN_COUNT_LO;
+    (void)idx;  /* Sets up for subsequent array access */
+}
+
+/*
+ * helper_157d - Set up array access with index calculation
+ * Address: 0x157d-0x1585 (9 bytes)
+ *
+ * Disassembly:
+ *   157d: mov dptr, #0x05b4  ; Base address (G_PCIE_DIRECTION area)
+ *   1580: mov B, #0x22       ; Element size = 34 bytes
+ *   1583: ljmp 0x0dd1        ; Array index calculation helper
+ *
+ * The 0x0dd1 function calculates: DPTR = DPTR + (A * B)
+ * This sets DPTR to point to a 34-byte structure in an array at 0x05B4.
+ */
+void helper_157d(void)
+{
+    /* This sets up DPTR for array access - DPTR = 0x05B4 + (A * 0x22)
+     * In context, A contains the index from prior call */
+}
+
+void helper_15d4(void)
+{
+    /* This is a DPTR setup continuation - callers handle this inline */
+}
+
+void helper_15ef(uint8_t a, uint8_t b)
+{
+    (void)a; (void)b;
+    /* Sets DPTR = 0xCE40 + index - callers should use helper_15ef_ptr() */
+}
+
+void helper_15f1(uint8_t param)
+{
+    (void)param;
+    /* Sets DPTR = 0xCE40 + param - callers should use helper_15f1_ptr() */
+}
+
+/*
+ * helper_1646 - Get endpoint config value with array index calculation
+ * Address: 0x1646-0x1658 (19 bytes)
+ *
+ * Disassembly:
+ *   1646: mov dptr, #0x0465  ; G_SYS_STATUS_SECONDARY
+ *   1649: movx a, @dptr      ; Read index value
+ *   164a: mov B, #0x14       ; Element size = 20 bytes
+ *   164d: mul ab             ; index * 20
+ *   164e: add a, #0x4e       ; Add offset 0x4E
+ *   1650: mov DPL, a
+ *   1652: clr a
+ *   1653: addc a, #0x05      ; DPH = 0x05 + carry
+ *   1655: mov DPH, a
+ *   1657: movx a, @dptr      ; Read value at calculated address
+ *   1658: ret
+ *
+ * Returns: XDATA[0x054E + (G_SYS_STATUS_SECONDARY * 0x14)]
+ */
+uint8_t helper_1646(void)
+{
+    uint8_t idx = G_SYS_STATUS_SECONDARY;
+    uint16_t addr = 0x054E + ((uint16_t)idx * 0x14);
+    return XDATA_REG8(addr);
+}
+
+/*
+ * helper_1755 - Set up address pointer (0x59 + offset)
+ * Address: 0x1755
+ *
+ * Sets DPTR to the computed address.
+ */
+void helper_1755(uint8_t offset)
+{
+    (void)offset;
+    /* TODO: Implement address setup */
+}
+
+/*
+ * helper_159f - Write value via computed pointer
+ * Address: 0x159f
+ *
+ * Writes the parameter to the address set up by prior helper.
+ */
+void helper_159f(uint8_t value)
+{
+    (void)value;
+    /* TODO: Implement write operation */
+}
+
+void helper_166f(void)
+{
+    /* DPTR = 0x007C + I_WORK_43 - handled inline by callers */
+}
+
+/*
+ * helper_16e9 - Calculate DPTR address 0x0456 + param
+ * Address: 0x16e9-0x16f2 (10 bytes)
+ *
+ * Disassembly:
+ *   16e9: add a, #0x56       ; A = param + 0x56
+ *   16eb: mov DPL, a         ; DPL = A
+ *   16ed: clr a
+ *   16ee: addc a, #0x04      ; DPH = 0x04 + carry
+ *   16f0: mov DPH, a
+ *   16f2: ret
+ *
+ * Returns: XDATA pointer at 0x0456 + param
+ */
+__xdata uint8_t * helper_16e9(uint8_t param)
+{
+    return (__xdata uint8_t *)(0x0456 + param);
+}
+
+/*
+ * helper_16eb - Calculate DPTR address 0x0400 + param (mid-entry of 16e9)
+ * Address: 0x16eb-0x16f2 (8 bytes)
+ *
+ * Disassembly:
+ *   16eb: mov DPL, a         ; DPL = param (param already in A)
+ *   16ed: clr a
+ *   16ee: addc a, #0x04      ; DPH = 0x04 + carry
+ *   16f0: mov DPH, a
+ *   16f2: ret
+ *
+ * Returns: XDATA pointer at 0x0400 + param
+ */
+__xdata uint8_t * helper_16eb(uint8_t param)
+{
+    return (__xdata uint8_t *)(0x0400 + param);
+}
+
+/*
+ * helper_173b - DMA/queue pointer helper used by SCSI path
+ * Address: 0x173b (entry point only)
+ *
+ * The original firmware tail-calls into a small routine that prepares
+ * DPTR before issuing a DMA-related request. The exact side effects are
+ * still unknown, but we stub it out so the firmware links and higher
+ * level logic can continue to be reverse engineered.
+ */
+void helper_173b(void)
+{
+    /* TODO: Implement once behavior at 0x173b is understood. */
+}
+
+/*
+ * helper_1b0b - Set DPTR and read from XDATA
+ * Address: 0x1b0b-0x1b13 (9 bytes)
+ *
+ * Alternate entry point - A already contains low byte.
+ * Computes DPTR = 0x0100 + A (with carry), reads and returns value.
+ *
+ * Parameters:
+ *   low_byte: Pre-computed low byte of address
+ *   carry: Carry flag from prior ADD operation
+ *
+ * Returns: XDATA[0x01xx] where xx = low_byte
+ */
+uint8_t helper_1b0b(uint8_t low_byte, uint8_t carry)
+{
+    uint16_t addr = 0x0100 + low_byte;
+    if (carry) {
+        addr += 0x0100;  /* Carry adds 0x100 to address */
+    }
+    return *(__xdata uint8_t *)addr;
+}
+
+/*
+ * xdata_write_load_triple_1564 - Write value and load triple from 0x045E
+ * Address: 0x1564-0x156e (11 bytes)
+ *
+ * Entry point called after caller sets A = value to write.
+ * Flow: write A to memory (via 0x0be6), then load 3 bytes from 0x045E.
+ *
+ * Disassembly:
+ *   1564: lcall 0x0be6       ; Write A to memory at (r2:r1) with mode r3
+ *   1567: mov dptr, #0x045e  ; Set DPTR to 0x045E
+ *   156a: lcall 0x0ddd       ; Load 3 bytes: r3=[045e], r2=[045f], r1=[0460]
+ *   156d: mov a, r1          ; Return r1 in A
+ *   156e: ret
+ *
+ * The function writes a value to memory, then reads the state params at
+ * 0x045E-0x0460 and returns the third byte (r1 = [0x0460]).
+ *
+ * Parameters:
+ *   value: Value to write (passed in A)
+ *   r1_addr: Low byte of write address
+ *   r2_addr: High byte of write address
+ *   r3_mode: Memory type (1=XDATA, 0=idata, 0xfe=xram)
+ *
+ * Returns: XDATA[0x0460]
+ */
+uint8_t xdata_write_load_triple_1564(uint8_t value, uint8_t r1_addr, uint8_t r2_addr, uint8_t r3_mode)
+{
+    /* Write value to memory based on mode */
+    if (r3_mode == 0x01) {
+        /* XDATA write */
+        __xdata uint8_t *ptr = (__xdata uint8_t *)((uint16_t)r2_addr << 8 | r1_addr);
+        *ptr = value;
+    } else if (r3_mode == 0x00) {
+        /* idata write */
+        *(__idata uint8_t *)r1_addr = value;
+    }
+    /* Mode 0xfe (xram) not commonly used here */
+
+    /* Read and return byte at 0x0460 (third byte of the triple) */
+    return XDATA8(0x0460);
+}
+
+uint8_t load_triple_1564_read(void)
+{
+    return XDATA8(0x0460);
+}
+
+/*
+ * mem_read_ptr_1bd7 - Set up address and read from memory
+ * Address: 0x1bd7-0x1bdb (5 bytes)
+ *
+ * Called with A containing pre-computed low byte (after some add operation).
+ * Sets up r1/r2 and jumps to generic read at 0x0bc8.
+ *
+ * Disassembly:
+ *   1bd7: mov r1, a          ; r1 = A (low byte of address)
+ *   1bd8: clr a              ; A = 0
+ *   1bd9: addc a, r2         ; A = r2 + carry
+ *   1bda: mov r2, a          ; r2 = updated high byte
+ *   1bdb: ljmp 0x0bc8        ; Generic memory read
+ *
+ * The 0x0bc8 function reads from memory at (r2:r1) based on r3 mode:
+ *   - r3 == 1: Read from XDATA at (r2:r1)
+ *   - r3 != 1, carry clear: Read from idata at r1
+ *   - r3 == 0xfe: Read from xram at r1
+ *
+ * Parameters:
+ *   low_byte: Low byte of address (result of prior add)
+ *   r2_hi: High byte before carry propagation
+ *   r3_mode: Memory type
+ *   carry: Carry flag from prior add operation
+ *
+ * Returns: Value read from computed address
+ */
+uint8_t mem_read_ptr_1bd7(uint8_t low_byte, uint8_t r2_hi, uint8_t r3_mode, uint8_t carry)
+{
+    uint16_t addr;
+    uint8_t hi = r2_hi;
+
+    /* Propagate carry to high byte */
+    if (carry) {
+        hi++;
+    }
+
+    addr = ((uint16_t)hi << 8) | low_byte;
+
+    /* Read based on mode */
+    if (r3_mode == 0x01) {
+        /* XDATA read */
+        return *(__xdata uint8_t *)addr;
+    } else if (r3_mode == 0x00) {
+        /* idata read */
+        return *(__idata uint8_t *)low_byte;
+    } else if (r3_mode == 0xfe) {
+        /* xram indirect read */
+        return *(__xdata uint8_t *)low_byte;
+    }
+
+    /* Default: XDATA read */
+    return *(__xdata uint8_t *)addr;
+}
+
+/*
+ * helper_1b2e - Calculate DPTR address 0x0108 + param
+ * Address: 0x1b2e-0x1b37 (10 bytes)
+ */
+__xdata uint8_t * helper_1b2e(uint8_t param)
+{
+    return (__xdata uint8_t *)(0x0108 + param);
+}
+
+/*
+ * helper_1b30 - Calculate DPTR address 0x0100 + param (mid-entry of 1b2e)
+ * Address: 0x1b30-0x1b37 (8 bytes)
+ */
+__xdata uint8_t * helper_1b30(uint8_t param)
+{
+    return (__xdata uint8_t *)(0x0100 + param);
+}
+
+/*
+ * helper_1c13 - Calculate DPTR address from param
+ * Address: 0x1c13-0x1c1a (8 bytes)
+ */
+__xdata uint8_t * helper_1c13(uint8_t param)
+{
+    return (__xdata uint8_t *)(uint16_t)param;
+}
+
+uint8_t helper_1cf0(void)
+{
+    helper_523c(0, 0x20, 5);
+    return 5;
+}
+
+/*
+ * helper_0cab - 32-bit subtraction: R4-R7 = R4-R7 - R0-R3
+ * Address: 0x0cab-0x0cb8 (14 bytes)
+ *
+ * Disassembly:
+ *   0cab: clr c            ; Clear carry for subtraction
+ *   0cac: mov a, r7        ; Start with LSB
+ *   0cad: subb a, r3       ; R7 - R3
+ *   0cae: mov r7, a
+ *   0caf: mov a, r6
+ *   0cb0: subb a, r2       ; R6 - R2 - borrow
+ *   0cb1: mov r6, a
+ *   0cb2: mov a, r5
+ *   0cb3: subb a, r1       ; R5 - R1 - borrow
+ *   0cb4: mov r5, a
+ *   0cb5: mov a, r4
+ *   0cb6: subb a, r0       ; R4 - R0 - borrow (MSB)
+ *   0cb7: mov r4, a
+ *   0cb8: ret
+ *
+ * This performs 32-bit subtraction where:
+ *   R4:R5:R6:R7 = R4:R5:R6:R7 - R0:R1:R2:R3
+ * Result returned in R4:R5:R6:R7 (R4=MSB, R7=LSB)
+ *
+ * In C, this is called with SDCC convention where params are passed differently.
+ * The function subtracts minuend (r4-r7) from subtrahend (r0-r3).
+ */
+uint8_t helper_0cab(uint8_t r0, uint8_t r1, uint8_t r6, uint8_t r7) {
+    /* This is a 32-bit subtraction helper used by calling code
+     * The actual implementation manipulates R4-R7 registers directly
+     * In C, we return a dummy value as the real work is done via registers */
+    (void)r0; (void)r1; (void)r6; (void)r7;
+    return 0;  /* Actual result is in R4-R7 registers */
+}
+
+/*
+ * helper_1c5d - USB/Transfer table lookup helper
+ * Address: 0x1c5d-0x1c6b (15 bytes)
+ *
+ * Reads a value from a table based on G_SYS_STATUS_PRIMARY (0x0464)
+ * and stores result in G_PCIE_TXN_COUNT_LO (0x05a6).
+ *
+ * From ghidra.c FUN_CODE_1c5d:
+ *   G_PCIE_TXN_COUNT_LO = table[0x05A8 + *param_1];
+ *   where param_1 points to G_SYS_STATUS_PRIMARY (0x0464)
+ */
+void helper_1c5d(void)
+{
+    uint8_t idx = G_SYS_STATUS_PRIMARY;
+    /* Table lookup at 0x05A8 + idx */
+    G_PCIE_TXN_COUNT_LO = XDATA8(0x05a8 + idx);
+}
+
+/*
+ * reg_poll - Register dispatch table polling
+ */
+void reg_poll(uint8_t param)
+{
+    (void)param;
+}
+
+/*
+ * helper_057a - Dispatch to event handler via address lookup
+ * Address: 0x057a-0x057e (5 bytes)
+ *
+ * Disassembly:
+ *   057a: mov dptr, #0xe0d9    ; Target handler address
+ *   057d: ajmp 0x0311          ; Jump to dispatch table handler
+ *
+ * This is part of a dispatch table in the low memory area.
+ * Sets DPTR to a handler address and jumps to the dispatcher.
+ * The dispatcher at 0x0311 performs an indirect call to DPTR.
+ *
+ * The param selects which entry to dispatch (R7 is passed through).
+ */
+void helper_057a(uint8_t param)
+{
+    (void)param;
+
+    /* This dispatches to the handler at 0xe0d9 */
+    /* The actual dispatch mechanism uses DPTR and indirect jump */
+    /* For C implementation, we would call the handler directly */
+    /* TODO: implement handler_e0d9 call when available */
+}
+
+/*
+ * addr_calc_high_borrow - Calculate high byte with borrow check
+ * Address: 0x5038-0x5042 (11 bytes)
+ *
+ * From ghidra.c: return '\x05' - (((0xe8 < param_1) << 7) >> 7)
+ * Returns 0x05 if param <= 0xe8, otherwise 0x04 (borrow occurred)
+ * Used for address calculation high byte.
+ */
+uint8_t addr_calc_high_borrow(uint8_t param)
+{
+    /* Returns 0x05 or 0x04 based on whether param > 0xE8 */
+    if (param > 0xE8) {
+        return 0x04;  /* Borrow occurred */
+    }
+    return 0x05;
+}
+
+/*
+ * ext_mem_read_bc57 - Extended memory read stub
+ * Address: 0xbc57
+ *
+ * Stub implementation - actual read would access extended memory.
+ */
+void ext_mem_read_bc57(uint8_t r3, uint8_t r2, uint8_t r1)
+{
+    (void)r3; (void)r2; (void)r1;
+    /* Extended memory read - stub */
+}
+
+/*
+ * helper_1677 - Calculate address 0x0477 + (IDATA 0x53 * 4)
+ * Address: 0x1677-0x1686 (16 bytes)
+ *
+ * Reads IDATA 0x53, multiplies by 4, adds 0x77, forms DPTR = 0x04XX.
+ * The actual implementation is in dma.c as transfer_calc_work53_offset.
+ *
+ * Original disassembly:
+ *   1677: mov a, 0x53          ; A = IDATA[0x53]
+ *   1679: add a, acc           ; A *= 2
+ *   167b: add a, acc           ; A *= 2 (total x4)
+ *   167d: add a, #0x77
+ *   167f: mov DPL, a
+ *   1681: clr a
+ *   1682: addc a, #0x04
+ *   1684: mov DPH, a
+ *   1686: ret
+ */
+void helper_1677(void)
+{
+    /* This sets up DPTR for subsequent operations.
+     * In C context, this is typically used before a read/write.
+     * The real implementation is transfer_calc_work53_offset in dma.c */
+    __idata uint8_t *work53 = (__idata uint8_t *)0x53;
+    uint16_t addr = 0x0477 + ((*work53) * 4);
+    /* DPTR would be set to addr in assembly - in C this is a no-op
+     * unless we read/write to the address */
+    (void)addr;
+}
+
+/*
+ * helper_1659 - Write param and calculate endpoint address
+ * Address: 0x1659-0x1667 (15 bytes)
+ *
+ * Writes param to current DPTR position, then reads from 0x0464
+ * and calculates address 0x044E + that value.
+ *
+ * Original disassembly:
+ *   1659: movx @dptr, a        ; Write A to @DPTR (caller set DPTR)
+ *   165a: mov dptr, #0x0464
+ *   165d: movx a, @dptr        ; A = [0x0464]
+ *   165e: add a, #0x4e
+ *   1660: mov DPL, a
+ *   ...
+ *
+ * In C, we can't replicate the DPTR-based chaining. This function
+ * writes param to a working location and sets up for next operation.
+ */
+void helper_1659(uint8_t param)
+{
+    /* The param would be written to whatever DPTR the caller set up.
+     * Based on context, this is likely writing to an endpoint config area.
+     * Then it calculates address 0x044E + G_SYS_STATUS_PRIMARY */
+    uint8_t status = *(__xdata uint8_t *)0x0464;  /* G_SYS_STATUS_PRIMARY */
+    uint16_t addr = 0x044E + status;
+
+    /* Write param to the computed address (approximation of the behavior) */
+    *(__xdata uint8_t *)addr = param;
+}
+
+/*
+ * helper_1ce4 - Calculate address 0x04B7 + IDATA[0x23]
+ * Address: 0x1ce4-0x1cef (12 bytes)
+ *
+ * Adds 0xB7 to IDATA[0x23], returns DPTR = 0x04XX.
+ * This is used to access endpoint descriptor/config table entries.
+ * The real implementation is in usb.c as usb_calc_addr_04b7_plus.
+ *
+ * Original disassembly:
+ *   1ce4: mov a, #0xb7
+ *   1ce6: add a, 0x23         ; A = 0xB7 + IDATA[0x23]
+ *   1ce8: mov 0x82, a         ; DPL
+ *   1cea: clr a
+ *   1ceb: addc a, #0x04       ; DPH = 0x04 + carry
+ *   1ced: mov 0x83, a
+ *   1cef: ret
+ */
+void helper_1ce4(void)
+{
+    /* This sets up DPTR for subsequent read/write in the caller.
+     * In C, subsequent operations need to explicitly use the address. */
+    __idata uint8_t *work23 = (__idata uint8_t *)0x23;
+    uint16_t addr = 0x04B7 + (*work23);
+    /* The caller typically reads from this address next */
+    (void)addr;
+}
+
+/*
+ * helper_165e - Get pointer to 0x044E + offset
+ * Address: 0x165e-0x1667 (10 bytes)
+ *
+ * Adds 0x4E to offset and returns address in 0x04XX range.
+ * In original assembly this sets DPTR; in C we return a pointer.
+ * The return value from the pointer dereference is what callers expect.
+ */
+uint8_t helper_165e(uint8_t param)
+{
+    uint8_t low = param + 0x4E;
+    uint16_t addr = 0x0400 + low;
+    if (low < 0x4E) {
+        addr += 0x0100;  /* Handle overflow carry */
+    }
+    return *(__xdata uint8_t *)addr;
+}
+
+/*
+ * helper_1660 - Set up address and write to it
+ * Address: 0x1660-0x1667 (8 bytes)
+ *
+ * This is entry 0x1660 which expects A already contains the computed offset.
+ * First param is the offset (after add 0x4E), second is written to @DPTR.
+ * Actually based on call site: helper_1660(status + 0x4E, r6_val)
+ * - param1 = computed offset
+ * - param2 = value to write to that address
+ */
+void helper_1660(uint8_t offset, uint8_t value)
+{
+    uint16_t addr = 0x0400 + offset;
+    if (offset < 0x4E) {
+        addr += 0x0100;  /* Handle potential carry */
+    }
+    *(__xdata uint8_t *)addr = value;
+}
+
+/*
+ * helper_1cc1 - Set endpoint queue control to 0x84
+ * Address: 0x1cc1-0x1cc7 (7 bytes)
+ */
+void helper_1cc1(void)
+{
+    G_EP_QUEUE_CTRL = 0x84;
+}
+
+/*
+ * helper_1ba5 - Read 16-bit buffer address
+ * Address: 0x1ba5-0x1bad (9 bytes)
+ *
+ * Returns 16-bit buffer address (G_BUF_ADDR_HI:G_BUF_ADDR_LO).
+ */
+uint16_t helper_1ba5(void)
+{
+    return ((uint16_t)G_BUF_ADDR_HI << 8) | G_BUF_ADDR_LO;
+}
+
+void mul_add_index(uint8_t param1, uint8_t param2)
+{
+    (void)param1;
+    (void)param2;
+}
+
+/*
+ * helper_1bd7 - Part of calculation chain
+ * Address: 0x1bd7-0x1bdb (5 bytes)
+ *
+ * Mid-function entry for arithmetic chain.
+ */
+void helper_1bd7(void)
+{
+    /* Part of calculation chain - context-dependent */
+}
+
+/*
+ * helper_1c6d - Subtract 16-bit value from core state
+ * Address: 0x1c6d-0x1c76 (10 bytes)
+ *
+ * Subtracts r6:r7 from IDATA[0x16:0x17].
+ * Note: IDATA stores in lo:hi order, params in hi:lo.
+ */
+void helper_1c6d(uint8_t hi, uint8_t lo)
+{
+    uint8_t temp = I_CORE_STATE_H;
+    uint8_t borrow = (lo > temp) ? 1 : 0;
+    I_CORE_STATE_H = temp - lo;
+    I_CORE_STATE_L = I_CORE_STATE_L - hi - borrow;
+}
+
+uint8_t helper_1b9d(uint8_t p1, uint16_t p2)
+{
+    (void)p1;
+    (void)p2;
+    return 0;
+}
+
+/*
+ * helper_15a0 - Calculate state pointer from I_WORK_43
+ * Address: 0x15a0-0x15ab (12 bytes)
+ *
+ * Disassembly:
+ *   15a0: mov a, #0x4e       ; A = 0x4e
+ *   15a2: add a, 0x43        ; A = 0x4e + IDATA[0x43]
+ *   15a4: mov DPL, a         ; DPL = A
+ *   15a6: clr a              ; A = 0
+ *   15a7: addc a, #0x01      ; A = 0x01 + carry
+ *   15a9: mov DPH, a         ; DPH = A
+ *   15ab: ret
+ *
+ * Returns pointer to XDATA at (0x014e + I_WORK_43).
+ */
+__xdata uint8_t * helper_15a0(void)
+{
+    return (__xdata uint8_t *)(0x014e + I_WORK_43);
+}
+
+void helper_03a4(void)
+{
+    power_config_init();
+}
+
+void helper_041c(void)
+{
+    power_check_status_e647();
+}
+
+/*
+ * helper_1d43 - Clear TLP status and setup transaction table
+ * Address: 0x1d43-0x1d61+ (complex)
+ *
+ * Clears G_TLP_STATUS and performs table address calculation.
+ */
+void helper_1d43(void)
+{
+    G_TLP_STATUS = 0;
+    /* Additional setup performed via helper calls */
+}
+
+/*
+ * helper_1b47 - Update NVMe device and control status
+ * Address: 0x1b47-0x1b5f (25 bytes)
+ *
+ * Reads G_STATE_HELPER_42, ORs with high bits of REG_NVME_DEV_STATUS,
+ * writes result. Then sets bit 1 of REG_NVME_CTRL_STATUS.
+ */
+void helper_1b47(void)
+{
+    uint8_t state_val = G_STATE_HELPER_42;
+    uint8_t dev_status_hi = REG_NVME_DEV_STATUS & 0xC0;
+    REG_NVME_DEV_STATUS = state_val | dev_status_hi;
+    REG_NVME_CTRL_STATUS = (REG_NVME_CTRL_STATUS & 0xFD) | 0x02;
+}
+
+/*
+ * helper_1c56 - Read NVMe device status high bits
+ * Address: 0x1c56-0x1c5c (7 bytes)
+ *
+ * Returns REG_NVME_DEV_STATUS & 0xC0 (top 2 bits).
+ */
+uint8_t helper_1c56(void)
+{
+    return REG_NVME_DEV_STATUS & 0xC0;
+}
+
+/*
+ * helper_1d39 - Add to USB index counter with 5-bit wrap
+ * Address: 0x1d39-0x1d42 (10 bytes)
+ *
+ * Adds param to G_USB_INDEX_COUNTER, masks to 5 bits.
+ */
+void helper_1d39(uint8_t param)
+{
+    G_USB_INDEX_COUNTER = (G_USB_INDEX_COUNTER + param) & 0x1F;
+}
+
+/*
+ * helper_1b77 - Read 16-bit core state
+ * Address: 0x1b77-0x1b7d (7 bytes)
+ *
+ * Returns I_CORE_STATE_L:I_CORE_STATE_H as 16-bit value.
+ */
+uint16_t helper_1b77(void)
+{
+    return ((uint16_t)I_CORE_STATE_L << 8) | I_CORE_STATE_H;
+}
+
+uint8_t helper_bb5e(uint8_t val, __xdata uint8_t *dest)
+{
+    /* rrc a (x2), anl a, #0x01, movx @dptr, a, return G_FLASH_BUF_707D */
+    val = (val >> 2) & 0x01;
+    *dest = val;
+    return XDATA_VAR8(0x707D);
+}
+
+void helper_bb6e(__xdata uint8_t *dest)
+{
+    /* movx a, @dptr; anl a, #0xfb; orl a, #0x04; movx @dptr, a */
+    uint8_t val = *dest;
+    val = (val & 0xFB) | 0x04;
+    *dest = val;
+}
+
+uint8_t helper_bb75(uint8_t val, __xdata uint8_t *dest)
+{
+    /* rrc a, anl a, #0x01, movx @dptr, a, return G_FLASH_BUF_707D */
+    val = (val >> 1) & 0x01;
+    *dest = val;
+    return XDATA_VAR8(0x707D);
+}
+
+uint8_t helper_bb96(uint8_t val, __xdata uint8_t *dest)
+{
+    /* rrc a (x2), anl a, #0x03, movx @dptr, a, return G_FLASH_BUF_707B */
+    val = (val >> 2) & 0x03;
+    *dest = val;
+    return XDATA_VAR8(0x707B);
+}
+
+uint8_t helper_bba0(uint8_t val, __xdata uint8_t *dest)
+{
+    /* anl a, #0x01, movx @dptr, a, return G_FLASH_BUF_707D */
+    val = val & 0x01;
+    *dest = val;
+    return XDATA_VAR8(0x707D);
+}
+
+void helper_bbc0(__xdata uint8_t *dest)
+{
+    /* movx a, @dptr; anl a, #0xf7; orl a, #0x08; movx @dptr, a */
+    uint8_t val = *dest;
+    val = (val & 0xF7) | 0x08;
+    *dest = val;
+}
+
+/*
+ * helper_048a - State checksum/validation helper
+ * Address: 0x048a -> targets 0xece1 (bank 1)
+ *
+ * IMPORTANT: This uses overlapping code entry - 0xece1 enters in the middle
+ * of another function's lcall instruction, creating alternate execution path.
+ *
+ * Original disassembly when entering at 0x16ce1:
+ *   ece1: jc 0x6cf0       ; if carry set, goto alternate path
+ *   ece3: mov a, r5       ; get loop counter
+ *   ece4: cjne a, #0x08, 0x6cd2  ; loop back if counter < 8
+ *   ece7: mov dptr, #0x0240
+ *   ecea: mov a, r7       ; get computed checksum
+ *   eceb: movx @dptr, a   ; write result to 0x0240
+ *   ecec: ret
+ *
+ * When carry set (path at 0x6cf0 / 0x16cf0):
+ *   ecf0: anl a, #0xf0    ; mask high nibble
+ *   ecf2: orl a, #0x08    ; set bit 3
+ *   ecf4: lcall 0xbfa7    ; call helper
+ *   ecf7: mov a, #0x1a
+ *   ecf9: lcall 0xbfb7    ; call another helper
+ *   ecfc: mov r1, #0x3f
+ *   ecfe: mov a, r7
+ *   ecff: lcall 0x0be6    ; banked_store_byte
+ *   ed02: lcall 0x05c5    ; dispatch_05c5
+ *   ed05: clr a
+ *   ed06: mov dptr, #0x023f
+ *   ed09: movx @dptr, a   ; clear G_BANK1_STATE_023F
+ *   ed0a: ret
+ *
+ * The loop at 0x6cd2 (0x16cd2) XORs bytes from 0x0241-0x0248 together.
+ * This appears to compute a checksum of state bytes.
+ *
+ * Called when G_STATE_FLAG_0AF1 bit 2 (0x04) is set.
+ */
+void helper_048a(void)
+{
+    /* This function computes an XOR checksum of bytes at 0x0241-0x0248
+     * and stores the result at 0x0240.
+     *
+     * The overlapping code entry means the carry flag state at entry
+     * determines which path is taken. Without knowing the carry state
+     * from the C caller, we implement the common (no-carry) path.
+     */
+    uint8_t checksum = 0xFF;  /* Initial value as in original */
+    uint8_t i;
+
+    /* XOR together bytes at 0x0241-0x0248 */
+    for (i = 0; i < 8; i++) {
+        checksum ^= XDATA_VAR8(0x0241 + i);
+    }
+
+    /* Store result at 0x0240 */
+    XDATA_VAR8(0x0240) = checksum;
+}
+
+/*
+ * helper_048f - Bank-switching trampoline to NOP space (empty)
+ * Address: 0x048f-0x0493 (5 bytes)
+ *
+ * This dispatch entry loads DPTR with 0xef1e and jumps to the bank 1
+ * handler at 0x0311. The target 0xef1e contains NOPs (0x00), indicating
+ * this is reserved/unused space or a placeholder for future functionality.
+ *
+ * Original disassembly:
+ *   048f: mov dptr, #0xef1e
+ *   0492: ajmp 0x0311
+ */
+void helper_048f(void)
+{
+    /* Target is NOP space - intentionally empty */
+}
+
+/*
+ * helper_1c77 - Read NVMe command param high bits
+ * Address: 0x1c77-0x1c7d (7 bytes)
+ *
+ * Returns REG_NVME_CMD_PARAM & 0xE0 (top 3 bits).
+ */
+uint8_t helper_1c77(void)
+{
+    return REG_NVME_CMD_PARAM & 0xE0;
+}
+
+/*
+ * helper_0584 - Bank-switching trampoline to NOP space (empty)
+ * Address: 0x0584-0x0588 (5 bytes)
+ *
+ * This dispatch entry loads DPTR with 0xef24 and jumps to the bank 1
+ * handler at 0x0311. The target 0xef24 contains NOPs (0x00), indicating
+ * this is reserved/unused space or a placeholder for future functionality.
+ *
+ * Original disassembly:
+ *   0584: mov dptr, #0xef24
+ *   0587: ajmp 0x0311
+ */
+void helper_0584(void)
+{
+    /* Target is NOP space - intentionally empty */
+}
+
+/*
+ * helper_1aad - Setup queue parameter and calculate buffer offset
+ * Address: 0x1aad-0x1acd (33 bytes)
+ *
+ * Stores param to G_EP_QUEUE_PARAM, then calculates:
+ *   offset = G_BUF_BASE + (G_USB_PARAM_0B00 * 0x40)
+ * And stores the result to G_BUF_OFFSET_HI:G_BUF_OFFSET_LO.
+ */
+void helper_1aad(uint8_t param)
+{
+    uint16_t base = ((uint16_t)G_BUF_BASE_HI << 8) | G_BUF_BASE_LO;
+    uint16_t offset_val = (uint16_t)G_USB_PARAM_0B00 * 0x40;
+    uint16_t result = base + offset_val;
+
+    G_EP_QUEUE_PARAM = param;
+    G_BUF_OFFSET_HI = (uint8_t)(result >> 8);
+    G_BUF_OFFSET_LO = (uint8_t)result;
+}
+
+/*
+ * helper_1cae - Increment queue index with 5-bit wrap
+ * Address: 0x1cae-0x1cb6 (9 bytes)
+ *
+ * Disassembly:
+ *   1cae: mov dptr, #0x0b00  ; G_USB_PARAM_0B00
+ *   1cb1: movx a, @dptr      ; Read current value
+ *   1cb2: inc a              ; Increment
+ *   1cb3: anl a, #0x1f       ; Mask to 5 bits (0-31)
+ *   1cb5: movx @dptr, a      ; Write back
+ *   1cb6: ret
+ */
+void helper_1cae(void)
+{
+    G_USB_PARAM_0B00 = (G_USB_PARAM_0B00 + 1) & 0x1F;
+}
+
+uint8_t helper_1c1b(void) { return 0; }
+
+void ext_mem_init_address_e914(void)
+{
+    /* Set up extended memory address and call access routine */
+    /* Address: Bank 0x02, offset 0x2805 */
+    ext_mem_access_0bc8(0x02, 0x28, 0x05);
+}
+
+/*
+ * helper_0be6 - Conditional XDATA write helper (register-based)
+ * Address: 0x0be6-0x0bef (10 bytes)
+ *
+ * This is a low-level helper that writes the A register to XDATA at
+ * address r2:r1 if r3 == 1. It's used for conditional memory writes
+ * where the calling function has set up the register context.
+ *
+ * Original disassembly:
+ *   0be6: cjne r3, #0x01, 0x0bef  ; if r3 != 1, skip to return
+ *   0be9: mov 0x82, r1            ; DPL = r1 (low byte of address)
+ *   0beb: mov 0x83, r2            ; DPH = r2 (high byte of address)
+ *   0bed: movx @dptr, a           ; write A to xdata[r2:r1]
+ *   0bee: ret
+ *   0bef: ret                     ; skip case - just return
+ *
+ * Since this function operates on raw register state from the caller,
+ * and C cannot easily replicate this register-passing behavior,
+ * the stub remains empty. Callers that use this function should be
+ * aware that the write operation is not performed in the C version.
+ *
+ * The function is primarily called from:
+ * - pcie_lane_init_e7f8 (after setting up r1, r2, r3, A via prior calls)
+ * - helper_048a (checksum computation path)
+ */
+void helper_0be6(void)
+{
+    /* Register-based function - cannot be directly replicated in C.
+     * The calling context would need to set up r1, r2, r3, A registers
+     * which is not possible with standard C calling conventions. */
+}
+
+void ext_mem_access_0bc8(uint8_t bank, uint8_t addr_hi, uint8_t addr_lo)
+{
+    (void)bank; (void)addr_hi; (void)addr_lo;
+    /* Stub */
+}
+
+/*
+ * helper_053e - Bank-switching trampoline to NOP space (empty)
+ * Address: 0x053e-0x0542 (5 bytes)
+ *
+ * This dispatch entry loads DPTR with 0xef03 and jumps to the bank 1
+ * handler at 0x0311. The target 0xef03 contains NOPs (0x00), indicating
+ * this is reserved/unused space or a placeholder for future functionality.
+ *
+ * Original disassembly:
+ *   053e: mov dptr, #0xef03
+ *   0541: ajmp 0x0311
+ */
+void helper_053e(void)
+{
+    /* Target is NOP space - intentionally empty */
+}
+
+/*
+ * helper_bd23 - Set bit 5 in register at DPTR
+ * Address: 0xbd23-0xbd29 (7 bytes)
+ *
+ * Original disassembly:
+ *   bd23: movx a, @dptr      ; Read
+ *   bd24: anl a, #0xdf       ; Clear bit 5
+ *   bd26: orl a, #0x20       ; Set bit 5
+ *   bd28: movx @dptr, a      ; Write back
+ *   bd29: ret
+ *
+ * Note: Called with DPTR pre-set to target register.
+ * In C, we pass the register address as a parameter.
+ */
+void helper_bd23(__xdata uint8_t *reg)
+{
+    uint8_t val = *reg;
+    val = (val & 0xDF) | 0x20;  /* Set bit 5 */
+    *reg = val;
+}
+
+/*
+ * ext_mem_access_wrapper_e914 - Extended memory access wrapper
+ * Address: 0xe914-0xe91a (7 bytes)
+ */
+void ext_mem_access_wrapper_e914(void)
+{
+    ext_mem_access_0bc8(0x02, 0x28, 0x05);
+}
+
+void helper_be8b(void)
+{
+    uint8_t mode_bits;
+    uint8_t val;
+
+    /* Read E302 and check bits 4-5 */
+    mode_bits = XDATA_REG8(0xE302) & 0x30;
+
+    /* Extract and check if both bits 4-5 are set (mode_bits >> 4 == 3) */
+    if (((mode_bits >> 4) & 0x0F) == 0x03) {
+        /* Alternate path - both bits set */
+        helper_befb();
+        uart_puthex(0);  /* lcall 0x51c7 */
+        /* uart_puts - different address than main path */
+        return;
+    }
+
+    /* Main processing path */
+    helper_befb();
+    uart_puthex(0);
+
+    /* Additional helper calls */
+    cmd_engine_clear();
+    helper_b8c3();
+    helper_9536();
+
+    /* Poll loop 1: Wait for CC89 bit 1 */
+    while (!(XDATA_REG8(0xCC89) & 0x02)) {
+        /* Wait */
+    }
+
+    /* Configure registers */
+    cmd_config_e40b();
+
+    /* E403 = 0 */
+    XDATA_REG8(0xE403) = 0x00;
+    /* E404 = 0x40 */
+    XDATA_REG8(0xE404) = 0x40;
+    /* E405: clear bits 0-2, set bits 0 and 2 (value 5) */
+    val = XDATA_REG8(0xE405);
+    val = (val & 0xF8) | 0x05;
+    XDATA_REG8(0xE405) = val;
+    /* E402: clear bits 5-7, set bit 5 */
+    val = XDATA_REG8(0xE402);
+    val = (val & 0x1F) | 0x20;
+    XDATA_REG8(0xE402) = val;
+
+    /* Poll loop 2: Wait for cmd_check_busy to return 0 */
+    while (cmd_check_busy()) {
+        /* Wait */
+    }
+
+    /* Start trigger */
+    cmd_start_trigger();
+
+    /* Poll loop 3: Wait for E41C bit 0 to clear */
+    while (XDATA_REG8(0xE41C) & 0x01) {
+        /* Wait */
+    }
+
+    /* Set completion flag */
+    XDATA_VAR8(0x07DF) = 1;
+}
+
+void helper_bd05(void)
+{
+    reg_timer_init_and_start();
+}

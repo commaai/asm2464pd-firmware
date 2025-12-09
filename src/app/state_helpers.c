@@ -61,6 +61,13 @@ extern uint8_t helper_1646(void);
 extern void helper_1755(uint8_t offset);
 extern void helper_159f(uint8_t value);
 
+/* External functions for moved stubs */
+extern uint8_t pcie_read_ctrl_b402(void);
+extern void pcie_lane_disable_e8a9(uint8_t param);
+extern void timer_phy_config_e57d(uint8_t param);
+extern void power_config_d630(uint8_t param);
+extern void pcie_lane_config(uint8_t lane_mask);
+
 /*
  * state_get_table_entry - Get state table entry pointer
  * Address: 0x15dc-0x15ee (19 bytes)
@@ -2689,4 +2696,49 @@ void usb_state_handler_isr_1006(void)
     }
 
     /* Return from interrupt - context restored by caller */
+}
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * state_update_e25e - Update state registers
+ * Address: 0xe25e-0xe281
+ */
+void state_update_e25e(void)
+{
+    uint8_t val;
+    val = XDATA_REG8(0x78AF); val = (val & 0xBF) | 0x40; XDATA_REG8(0x78AF) = val;
+    val = XDATA_REG8(0x78B0); val = (val & 0xBF) | 0x40; XDATA_REG8(0x78B0) = val;
+    val = XDATA_REG8(0x78B1); val = (val & 0xBF) | 0x40; XDATA_REG8(0x78B1) = val;
+    val = XDATA_REG8(0x78B2); val = (val & 0xBF) | 0x40; XDATA_REG8(0x78B2) = val;
+}
+
+/*
+ * state_handler_d996 - PCIe state machine handler
+ * Address: 0xd996-0xd9d4 (63 bytes)
+ *
+ * Complex state machine handler that configures PCIe registers
+ * and calls multiple helper functions. Called as tail call from
+ * transfer_handler_ceab.
+ *
+ * TODO: Full implementation requires:
+ *   - helper_ccac, helper_e8a9(0x0F), helper_e57d
+ *   - helper_d630(0x01), helper_d436(0x0F), helper_e25e
+ *   - ext_mem_access_0bc8 calls for register configuration
+ */
+void state_handler_d996(void)
+{
+    uint8_t val;
+    val = pcie_read_ctrl_b402();
+    (void)val;
+    pcie_lane_disable_e8a9(0x0F);
+    timer_phy_config_e57d(0x0F);
+    power_config_d630(0x01);
+    pcie_lane_config(0x0F);
+    state_update_e25e();
+    val = XDATA_REG8(0x7041); val &= 0xBF; XDATA_REG8(0x7041) = val;
+    val = XDATA_REG8(0x1507); val = (val & 0xFB) | 0x04; XDATA_REG8(0x1507) = val;
+    val = XDATA_REG8(0x1507); val = (val & 0xFD) | 0x02; XDATA_REG8(0x1507) = val;
 }

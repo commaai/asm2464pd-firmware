@@ -1101,3 +1101,15 @@ void power_reset_sys_state_c9ef(void)
     G_SYS_FLAGS_07E8 = 0;
     G_INTERFACE_READY_0B2F = 1;
 }
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+void power_config_d630(uint8_t param)
+{
+    uint8_t val;
+    val = REG_POWER_CTRL_B432; val = (val & 0xF8) | 0x07; REG_POWER_CTRL_B432 = val;
+    val = REG_POWER_LANE_B404; val = (val & 0xF0) | (param & 0x0F); REG_POWER_LANE_B404 = val;
+}

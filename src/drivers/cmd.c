@@ -1962,3 +1962,294 @@ loop_98c8:
 
     /* 0x9901: ret - implicit return */
 }
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+/*
+ * cmd_trigger_default - Command trigger entry point
+ * Address: 0xdd0e-0xdd11 (4 bytes)
+ *
+ * Sets up parameters R5=1, R7=0x0F and falls through to dd12.
+ */
+void cmd_trigger_default(void)
+{
+    cmd_trigger_params(0x0F, 0x01);  /* R7=0x0F, R5=0x01 */
+}
+
+/*
+ * cmd_trigger_params - Command trigger and mode setup
+ * Address: 0xdd12-0xdd41 (48 bytes)
+ *
+ * Sets initial trigger value based on G_CMD_MODE, configures E405/E421,
+ * then combines state and clears/sets trigger bits.
+ *
+ * Parameters:
+ *   p1 (R7): Trigger bits to OR into final REG_CMD_TRIGGER value
+ *   p2 (R5): Parameter passed to cmd_config_e405_e421 for E421 setup
+ */
+void cmd_trigger_params(uint8_t p1, uint8_t p2)
+{
+    uint8_t mode;
+    uint8_t e421_val;
+    uint8_t state_shifted;
+    uint8_t trigger_val;
+
+    /* Read command mode */
+    mode = G_CMD_MODE;
+
+    /* Set initial trigger value based on mode */
+    if (mode == 0x02 || mode == 0x03) {
+        REG_CMD_TRIGGER = 0x80;
+    } else {
+        REG_CMD_TRIGGER = 0x40;
+    }
+
+    /* Configure E405 and E421 (clears E405 bits 0-2, writes shifted p2 to E421) */
+    cmd_config_e405_e421(p2);
+
+    /* Read E421 value and compute state * 2 */
+    e421_val = REG_CMD_MODE_E421;
+    state_shifted = G_CMD_STATE << 1;
+
+    /* Write combined value to E421 */
+    REG_CMD_MODE_E421 = e421_val | state_shifted;
+
+    /* Clear trigger bits 0-5, keep bits 6-7 */
+    trigger_val = REG_CMD_TRIGGER;
+    trigger_val &= 0xC0;
+    REG_CMD_TRIGGER = trigger_val;
+
+    /* OR in the p1 bits and write final value */
+    trigger_val = REG_CMD_TRIGGER;
+    trigger_val |= p1;
+    REG_CMD_TRIGGER = trigger_val;
+}
+
+/*
+ * cmd_param_setup - Command parameter setup
+ * Address: 0xe120-0xe14a (43 bytes)
+ *
+ * Configures command registers E422-E425 based on parameters and mode.
+ *
+ * Parameters:
+ *   p1 (r7): Bits to OR into REG_CMD_PARAM (bits 0-3)
+ *   p2 (r5): Parameter bits (bits 0-1 go to bits 6-7 of REG_CMD_PARAM)
+ *
+ * Writes computed value to REG_CMD_PARAM (0xE422).
+ * Sets REG_CMD_STATUS to 0x80 if mode==1, else 0xA8.
+ * Initializes REG_CMD_ISSUE=0, REG_CMD_TAG=0xFF.
+ */
+void cmd_param_setup(uint8_t p1, uint8_t p2)
+{
+    uint8_t val;
+
+    /* Compute parameter value:
+     * - Bits 0-1 of p2 go to bits 6-7
+     * - OR with p1 for bits 0-3
+     * - Clear bits 4-5
+     */
+    val = ((p2 & 0x03) << 6) | (p1 & 0x0F);
+    val &= 0xCF;  /* Clear bits 4-5 */
+    REG_CMD_PARAM = val;
+
+    /* Set status based on command mode */
+    if (G_CMD_MODE == 0x01) {
+        REG_CMD_STATUS = 0x80;
+    } else {
+        REG_CMD_STATUS = 0xA8;
+    }
+
+    /* Clear issue, set tag to 0xFF */
+    REG_CMD_ISSUE = 0x00;
+    REG_CMD_TAG = 0xFF;
+}
+
+/*
+ * cmd_engine_clear - Clear command engine registers 0xE420-0xE43F
+ * Address: 0xe73a-0xe74d (20 bytes)
+ *
+ * Clears 32 bytes (0x20) starting at address 0xE420.
+ * This resets the command engine parameter area.
+ *
+ * Original disassembly:
+ *   e73a: clr a              ; A = 0
+ *   e73b: mov r7, a          ; R7 = 0 (loop counter)
+ *   e73c: mov a, #0x20       ; Loop start
+ *   e73e: add a, r7          ; A = 0x20 + R7
+ *   e73f: mov 0x82, a        ; DPL = 0x20 + R7
+ *   e741: clr a
+ *   e742: addc a, #0xe4      ; DPH = 0xE4
+ *   e744: mov 0x83, a        ; DPTR = 0xE420 + R7
+ *   e746: clr a
+ *   e747: movx @dptr, a      ; Write 0 to [0xE420 + R7]
+ *   e748: inc r7             ; R7++
+ *   e749: mov a, r7
+ *   e74a: cjne a, #0x20, e73c; Loop until R7 == 0x20
+ *   e74d: ret
+ */
+void cmd_engine_clear(void)
+{
+    uint8_t i;
+    volatile uint8_t __xdata *ptr = &REG_CMD_TRIGGER;
+
+    /* Clear 32 bytes of command register block at 0xE420-0xE43F */
+    for (i = 0; i < 0x20; i++) {
+        ptr[i] = 0;
+    }
+}
+
+/*
+ * cmd_setup_aa37 - Command parameter setup (NVMe/SCSI)
+ * Address: 0xaa37-0xab0d (~214 bytes) - Main body starts at 0xaa40
+ *
+ * This function sets up command parameters in the E420 register block
+ * for NVMe or SCSI command processing. The original firmware has
+ * overlapping code entry points at 0xaa36 and 0xaa37.
+ *
+ * Main body (0xaa40-0xab0d):
+ *   1. Check G_CMD_MODE (0x07ca) for mode 2/3
+ *   2. Call cmd_trigger_params and cmd_param_setup
+ *   3. Set up command LBA registers (E426-E429)
+ *   4. Clear command count/status registers (E42A-E42F)
+ *   5. Copy control parameters from globals to registers
+ *   6. For mode 2: set up extended parameters and flash error tracking
+ *   7. Set G_CMD_STATUS to 0x16 (mode 2) or 0x12 (other modes)
+ *
+ * Original disassembly highlights:
+ *   aa40: mov dptr, #0x07ca   ; G_CMD_MODE
+ *   aa43: movx a, @dptr
+ *   aa44: cjne a, #0x02, aa4b ; if mode != 2, r5=4
+ *   aa47: mov r5, #0x05       ; else r5=5
+ *   aa4f: lcall 0xdd12        ; cmd_trigger_params(r5, 0x0f)
+ *   aa56: lcall 0xe120        ; cmd_param_setup(1, 1)
+ *   aa59: mov dptr, #0xe426   ; REG_CMD_LBA_0
+ *   aa5c: mov a, #0x4c        ; 'L' - NVMe command byte
+ *   ... (sets up remaining registers)
+ *   ab08: mov dptr, #0x07c4   ; G_CMD_STATUS
+ *   ab0b: mov a, #0x16 or 0x12
+ *   ab0d: movx @dptr, a; ret
+ */
+void cmd_setup_aa37(void)
+{
+    uint8_t cmd_mode;
+    uint8_t flash_cmd_type;
+    uint8_t event_flags;
+    uint8_t r5_param;
+    uint8_t error_val;
+
+    /* Read command mode */
+    cmd_mode = G_CMD_MODE;
+
+    /* Set helper parameter based on mode */
+    if (cmd_mode == 0x02) {
+        r5_param = 0x05;
+    } else {
+        r5_param = 0x04;
+    }
+
+    /* Call setup helpers */
+    cmd_trigger_params(0x0F, r5_param);
+    cmd_param_setup(0x01, 0x01);
+
+    /* Set up LBA registers */
+    REG_CMD_LBA_0 = 0x4C;  /* 'L' - LBA marker */
+    REG_CMD_LBA_1 = 0x17;
+
+    /* LBA_2 depends on mode */
+    cmd_mode = G_CMD_MODE;  /* Re-read mode */
+    if (cmd_mode == 0x02) {
+        REG_CMD_LBA_2 = 0x40;
+    } else {
+        REG_CMD_LBA_2 = 0x00;
+    }
+
+    /* LBA_3 depends on flash type and event flags */
+    flash_cmd_type = G_FLASH_CMD_TYPE;
+    event_flags = G_EVENT_FLAGS;
+    if ((flash_cmd_type == 0x00) && (event_flags & 0x80)) {
+        REG_CMD_LBA_3 = 0x54;  /* 'T' - Transfer mode */
+    } else {
+        REG_CMD_LBA_3 = 0x50;  /* 'P' - Standard mode */
+    }
+
+    /* Clear command count area (E42A-E42F) - 6 bytes */
+    REG_CMD_COUNT_LOW = 0x00;
+    REG_CMD_COUNT_HIGH = 0x00;
+    XDATA_REG8(0xE42C) = 0x00;
+    XDATA_REG8(0xE42D) = 0x00;
+    XDATA_REG8(0xE42E) = 0x00;
+    REG_CMD_RESP_STATUS = 0x00;
+
+    /* Copy control parameters from globals */
+    REG_CMD_CTRL = G_CMD_CTRL_PARAM;
+    REG_CMD_TIMEOUT = G_CMD_TIMEOUT_PARAM;
+
+    /* Mode 2 specific setup */
+    if (cmd_mode == 0x02) {
+        /* Calculate error value based on event flags */
+        event_flags = G_EVENT_FLAGS;
+        if (event_flags & 0x03) {
+            error_val = 0x03;
+        } else {
+            error_val = 0x02;
+        }
+        G_FLASH_ERROR_0 = error_val;
+
+        /* Set bit 3 if event flag bit 7 is set */
+        if (event_flags & 0x80) {
+            G_FLASH_ERROR_0 |= 0x08;
+        }
+
+        /* Set command parameter based on flash type */
+        if (flash_cmd_type == 0x00) {
+            REG_CMD_PARAM_L = G_FLASH_ERROR_0;
+        } else {
+            REG_CMD_PARAM_L = 0x02;
+        }
+
+        REG_CMD_PARAM_H = 0x00;
+        REG_CMD_EXT_PARAM_0 = 0x80;
+
+        /* Check if early exit via 0xaafb path */
+        flash_cmd_type = G_FLASH_CMD_TYPE;
+        if ((flash_cmd_type == 0x00) && (event_flags & 0x03)) {
+            REG_CMD_EXT_PARAM_1 = 0x6D;  /* 'm' - early exit marker */
+            /* Original calls FUN_CODE_aafb here and returns */
+            /* For now, we continue to set final status */
+        } else {
+            REG_CMD_EXT_PARAM_1 = 0x65;  /* 'e' - normal marker */
+        }
+    }
+
+    /* Set final command status based on mode */
+    cmd_mode = G_CMD_MODE;
+    if (cmd_mode == 0x02) {
+        G_CMD_STATUS = 0x16;
+    } else {
+        G_CMD_STATUS = 0x12;
+    }
+}
+
+void cmd_init_and_wait_e459(void)
+{
+    /* Clear command state */
+    cmd_engine_clear();
+
+    /* Configure with cmd_trigger_params(0x0c, 0x01) */
+    cmd_trigger_params(0x0C, 0x01);
+
+    /* Additional setup */
+    helper_95af();
+
+    /* Write command parameters to E422-E425 */
+    REG_CMD_PARAM = 0x00;      /* E422 */
+    REG_CMD_STATUS = 0x00;     /* E423 */
+    REG_CMD_ISSUE = 0x16;      /* E424 */
+    REG_CMD_TAG = 0x31;        /* E425 */
+
+    /* Wait for command completion */
+    cmd_wait_completion();
+}

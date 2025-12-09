@@ -143,6 +143,22 @@
 #include "registers.h"
 #include "globals.h"
 
+/* External functions */
+extern void handler_2608(void);                       /* drivers/dma.c */
+extern void usb_get_descriptor_ptr(void);             /* drivers/usb.c */
+extern uint16_t helper_1b77(void);                    /* utils.c */
+extern uint8_t helper_1c1b(void);                     /* utils.c */
+extern void helper_1aad(uint8_t param);               /* utils.c */
+extern void usb_init_pcie_txn_state(void);            /* drivers/usb.c */
+extern void helper_1b47(void);                        /* utils.c */
+extern void usb_add_masked_counter(uint8_t value);    /* drivers/usb.c */
+extern void power_check_status(uint8_t param);        /* drivers/power.c */
+extern __xdata uint8_t *helper_16e9(uint8_t param);   /* utils.c */
+extern __xdata uint8_t *helper_16eb(uint8_t param);   /* utils.c */
+
+/* Forward declarations */
+void nvme_util_get_queue_depth(uint8_t p1, uint8_t p2);
+
 /*
  * nvme_set_usb_mode_bit - Set USB mode bit 0 of register 0x9006
  * Address: 0x1bde-0x1be7 (10 bytes)
@@ -3480,4 +3496,210 @@ uint8_t nvme_queue_count_matches_9264(uint8_t expected_count)
     }
 
     return 0;
+}
+
+
+/* ============================================================
+ * Functions moved from stubs.c
+ * ============================================================ */
+
+void nvme_util_advance_queue(void)
+{
+    uint8_t i, limit;
+
+    nvme_check_scsi_ctrl();
+
+    limit = XDATA8(0x053b);  /* Command count */
+    for (i = 0; i <= limit; i++) {
+        nvme_calc_addr_04b7();  /* Uses G_SCSI_CTRL internally */
+        if (G_USB_INDEX_COUNTER == XDATA8(0x053b)) {
+            nvme_calc_addr_04b7();
+            G_USB_INDEX_COUNTER = 0xff;
+            G_SCSI_CTRL--;
+            if (XDATA8(0x0b01) != 0) {
+                /* FUN_CODE_4eb3() - error recovery */
+                return;
+            }
+            nvme_util_get_queue_depth(1, i);
+            return;
+        }
+    }
+}
+
+void nvme_util_check_command_ready(void)
+{
+    uint8_t pending, status;
+
+    pending = REG_NVME_QUEUE_PENDING & 0x3F;
+    I_WORK_38 = pending;
+
+    /* Increment and store back */
+    I_WORK_39 = XDATA8(0xC516) + 1;
+    XDATA8(0xC516) = I_WORK_39;
+
+    /* Wait for queue ready with interrupt check */
+    while (1) {
+        status = REG_CPU_LINK_CEF3;
+        if ((status >> 3) & 1) {
+            REG_CPU_LINK_CEF3 = 8;  /* Clear interrupt */
+            handler_2608();
+        }
+
+        /* Check completion */
+        if ((REG_NVME_LINK_STATUS >> 1) & 1) {
+            break;  /* Ready */
+        }
+    }
+}
+
+uint8_t nvme_util_clear_completion(void)
+{
+    uint8_t i, status, pending;
+
+    G_STATE_FLAG_06E6 = 1;
+
+    for (i = 0; i < 0x20; i++) {
+        status = REG_NVME_LINK_STATUS;
+        if (((status >> 1) & 1) == 0) {
+            return status;
+        }
+
+        G_SYS_STATUS_PRIMARY = 0;
+        G_SYS_STATUS_SECONDARY = 0;
+
+        /* Process based on transfer flag */
+        pending = REG_NVME_QUEUE_STATUS & 0x3F;
+        I_WORK_38 = pending;
+
+        usb_get_descriptor_ptr();
+
+        REG_NVME_QUEUE_TRIGGER = 0xFF;
+    }
+
+    return 0;
+}
+
+void nvme_util_get_queue_depth(uint8_t p1, uint8_t p2)
+{
+    uint8_t param_for_aad;
+    uint8_t scsi_ctrl;
+    uint8_t temp;
+
+    /* Store parameters */
+    G_EP_DISPATCH_VAL3 = p2;   /* param_3 in ghidra */
+    G_EP_DISPATCH_VAL4 = p1;   /* param_2 in ghidra */
+
+    /* Call helper functions */
+    helper_1b77();
+
+    /* Check helper_1c1b result */
+    if (helper_1c1b() == 0) {
+        /* If helper returns 0, do buffer address pair processing */
+        usb_read_buf_addr_pair();
+        nvme_subtract_idata_16(0, 0);  /* Simplified - actual uses R6/R7 */
+    }
+
+    /* Set EP queue control */
+    nvme_set_ep_queue_ctrl_84();
+
+    /* Update queue status */
+    G_EP_QUEUE_STATUS = G_EP_DISPATCH_VAL3;
+
+    /* Select param for helper_1aad based on mode */
+    param_for_aad = (G_EP_DISPATCH_VAL4 == 1) ? 1 : 2;
+    helper_1aad(param_for_aad);
+
+    /* Initialize PCIe transaction state */
+    usb_init_pcie_txn_state();
+
+    /* Clear high bit of NVME data control */
+    REG_NVME_DATA_CTRL &= ~NVME_DATA_CTRL_BIT7;
+
+    /* Handle SCSI control state */
+    scsi_ctrl = G_SCSI_CTRL;
+    if (scsi_ctrl == 0) {
+        /* Call helper_1b47 */
+        helper_1b47();
+    } else {
+        /* Update G_EP_DISPATCH_VAL3 with device status */
+        temp = G_EP_DISPATCH_VAL3;
+        temp = temp + G_DMA_WORK_0216;
+        temp |= nvme_get_dev_status_upper();
+        G_EP_DISPATCH_VAL3 = temp;
+    }
+
+    /* Update with command param upper bits */
+    G_EP_DISPATCH_VAL3 |= nvme_get_cmd_param_upper();
+
+    /* Handle queue increment based on SCSI control */
+    if (scsi_ctrl != 0) {
+        usb_add_masked_counter(G_DMA_WORK_0216);
+        temp = scsi_ctrl - 1;  /* Simplified from FUN_CODE_4f37 */
+    } else {
+        temp = scsi_ctrl - 1;
+    }
+    (void)temp;  /* temp used for logic but function doesn't take param */
+    nvme_inc_circular_counter();
+
+    /* Power check if mode flag is 0 */
+    if (G_EP_DISPATCH_VAL4 == 0) {
+        power_check_status(G_USB_PARAM_0B00);
+    }
+}
+
+void nvme_queue_state_update(uint8_t param)
+{
+    uint8_t status;
+    uint8_t new_val;
+
+    status = G_SYS_STATUS_PRIMARY;
+    helper_16e9(status);
+
+    I_WORK_51 = G_SYS_STATUS_PRIMARY;
+    new_val = (I_WORK_51 + param) & 0x1F;
+
+    helper_16eb(status + 0x56);  /* 'V' = 0x56 */
+    G_SYS_STATUS_PRIMARY = new_val;
+}
+
+/*
+ * check_nvme_ready_e03c - Check if NVMe subsystem is ready
+ * Address: 0xe03c-0xe06a (47 bytes)
+ *
+ * Checks multiple status conditions:
+ *   - 0x0ACF must equal 0xA1 (XOR check)
+ *   - 0x0AD3 must be 0
+ *   - 0x0AD5 must equal 1
+ *   - 0x0AD1 must be 0
+ * If all pass: writes init sequence to 0x9003-0x9004, 0x9E00, returns 3
+ * If any fail: returns 5
+ */
+uint8_t check_nvme_ready_e03c(void)
+{
+    /* Check 0x0ACF == 0xA1 */
+    if (XDATA8(0x0ACF) != 0xA1) {
+        return 5;  /* Not ready */
+    }
+
+    /* Check 0x0AD3 == 0 */
+    if (XDATA8(0x0AD3) != 0) {
+        return 5;
+    }
+
+    /* Check 0x0AD5 == 1 */
+    if (XDATA8(0x0AD5) != 1) {
+        return 5;
+    }
+
+    /* Check 0x0AD1 == 0 */
+    if (XDATA8(0x0AD1) != 0) {
+        return 5;
+    }
+
+    /* All checks passed - initialize NVMe registers */
+    XDATA_REG8(0x9003) = 0x00;
+    XDATA_REG8(0x9004) = 0x01;
+    XDATA_REG8(0x9E00) = 0x00;
+
+    return 3;  /* Ready */
 }
