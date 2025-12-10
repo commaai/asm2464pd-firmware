@@ -178,9 +178,9 @@ uint8_t power_state_helper_aa26(void)
  *===========================================================================*/
 
 /* Forward declarations */
-extern void helper_96ae(void);
-extern void helper_dd0e(void);
-extern void helper_95a0(uint8_t r7);
+extern void cmd_engine_clear(void);
+extern void cmd_trigger_default(void);
+extern void cmd_error_recovery(uint8_t r7);
 
 /*
  * Helper to clear command count registers
@@ -208,7 +208,7 @@ static void clear_cmd_count_regs(void)
  * and sets up command registers at 0xE426-0xE435.
  *
  * Flow:
- *   1. Call helper_96ae() to check status
+ *   1. Call cmd_engine_clear() to check status
  *   2. If status check fails, call error handler and return
  *   3. Configure command engine based on G_CMD_MODE
  *   4. Set up LBA registers (E426-E429)
@@ -226,7 +226,7 @@ void nvme_cmd_state_handler(void)
 
     /* Call status check helper - original checks (~A | R2) == 0 */
     /* For now, assume check passes and continue */
-    helper_96ae();
+    cmd_engine_clear();
 
     /* Read command mode */
     mode = G_CMD_MODE;
@@ -331,12 +331,12 @@ void nvme_cmd_state_handler(void)
  * nvme_cmd_error_handler - Error handler for command state
  * Address: 0xab0d-0xab15 (9 bytes)
  *
- * Called when command check fails. Calls helper_dd0e and helper_95a0.
+ * Called when command check fails. Calls cmd_trigger_default and cmd_error_recovery.
  */
 void nvme_cmd_error_handler(void)
 {
-    helper_dd0e();
-    helper_95a0(0x01);
+    cmd_trigger_default();
+    cmd_error_recovery(0x01);
 }
 
 /*===========================================================================
@@ -742,9 +742,9 @@ void pcie_reg_set_bit4_a3db(uint8_t val)
  * PCIe Config Init Function (0xa3f5)
  *===========================================================================*/
 
-/* Forward declaration for helper_dd42 */
-extern void helper_dd42(uint8_t param);
-extern void helper_e7c1(uint8_t param);
+/* Forward declaration for phy_link_ctrl_update */
+extern void phy_link_ctrl_update(uint8_t param);
+extern void pcie_param_handler(uint8_t param);
 extern void dispatch_event_e0d9(uint8_t param);
 
 /*
@@ -808,8 +808,8 @@ void pcie_config_init_a3f5(void)
     }
 
     /* Call helper functions */
-    helper_dd42(0x00);
-    helper_e7c1(0x01);
+    phy_link_ctrl_update(0x00);
+    pcie_param_handler(0x01);
     dispatch_event_e0d9(0x00);
 
     /* Continue with state update - implementation follows at 0xa424+ */
@@ -1183,7 +1183,7 @@ void queue_setup_abc9(void)
     /* Queue initialization */
 }
 
-/* Note: helper_96ae, cmd_trigger_params, cmd_param_setup, scsi_state_clear, phy_set_config_bit0
+/* Note: cmd_engine_clear, cmd_trigger_params, cmd_param_setup, scsi_state_clear, phy_set_config_bit0
  * are defined in their respective driver files */
 
 /*===========================================================================

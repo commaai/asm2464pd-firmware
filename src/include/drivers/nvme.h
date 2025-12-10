@@ -166,6 +166,7 @@ void nvme_process_queue_entries(void);          /* 0x488f-0x48ff */
 void nvme_state_handler(void);                  /* 0x4784-0x47ff */
 void nvme_queue_sync(void);                     /* 0x49e9-0x4a56 */
 void nvme_queue_process_pending(void);          /* 0x3e81-0x3eff */
+void nvme_queue_state_update(uint8_t param);    /* 0x5359-0x5398 */
 /* NOTE: nvme_queue_helper (0x1196) moved to event_handler.c as nvme_cmd_status_init */
 
 /* NVMe command engine */

@@ -18,12 +18,12 @@
 #include "drivers/dma.h"
 
 /* External helper functions not yet in headers - TODO: add to proper headers */
-extern void helper_e3b7(uint8_t param);
-extern void helper_3578(uint8_t param);
-extern void helper_e396(void);
-extern void helper_d17a(void);
-extern void helper_dd42(uint8_t param);
-extern void handler_e478(void);
+extern void timer_config_update(uint8_t param);
+extern void protocol_param_handler(uint8_t param);
+extern void protocol_init_setup(void);
+extern void protocol_finalize(void);
+extern void phy_link_ctrl_update(uint8_t param);
+extern void pcie_transfer_handler(void);
 extern void pcie_link_state_init(void);
 extern void process_log_entries(uint8_t param);
 extern void pcie_stage_address(uint8_t param);
@@ -823,7 +823,7 @@ void pcie_setup_config_tlp(void)
  *   c173: jnb acc.6, 0xc17e   ; if bit 6 clear, return
  *   c176: clr a
  *   c177: mov r7, a           ; R7 = 0
- *   c178: lcall 0xd916        ; handler_d916
+ *   c178: lcall 0xd916        ; pcie_dispatch_d916
  *   c17b: lcall 0xbf8e        ; reg_clear_state_flags
  *   c17e: ret
  */
@@ -938,7 +938,7 @@ void pcie_event_handler(void)
     }
 
     /* c176-c178: clr a; mov r7, a; lcall 0xd916 */
-    handler_d916(0);
+    pcie_dispatch_d916(0);
 
     /* c17b: lcall 0xbf8e */
     reg_clear_state_flags();
@@ -2043,7 +2043,7 @@ extern uint8_t nvme_queue_clear_usb_bit0(void); /* 0xa679 */
 extern void nvme_queue_init_905x(void);         /* 0xa6ad */
 extern void nvme_queue_config_9006(uint8_t param, __xdata uint8_t *ptr); /* 0xa6c6 */
 extern void nvme_queue_set_90e3_2(void);        /* 0xa739 */
-extern uint8_t helper_a704(void);               /* 0xa704 - table lookup */
+extern uint8_t table_lookup(void);               /* 0xa704 - table lookup */
 
 /*
  * pcie_tlp_handler_b402 - Tertiary PCIe TLP handler
@@ -2142,9 +2142,9 @@ uint8_t pcie_tlp_handler_b402(void)
 
         idx = G_TLP_COUNT_0AD7;
         if (idx == 0) {
-            val = helper_a704();
+            val = table_lookup();
         } else if (idx == 1) {
-            helper_a704();
+            table_lookup();
             val = 0;
         } else {
             val = 0;
@@ -2227,8 +2227,8 @@ uint8_t pcie_tlp_handler_b402(void)
         *(__xdata uint8_t *)(0xD800 + i) = 0;
     }
 
-    *(__xdata uint8_t *)0xDE30 = 3;
-    *(__xdata uint8_t *)0xDE36 = 0;
+    REG_USB_EP_BUF_DE30 = 3;
+    REG_USB_EP_BUF_DE36 = 0;
 
     /* b5f9-b623: Final register setup */
     REG_USB_CTRL_9200 = (REG_USB_CTRL_9200 & 0xBF) | 0x40;
@@ -3098,8 +3098,8 @@ uint8_t pcie_init_write_e902(void)
 
 /* Extern declarations for helper functions */
 extern void pcie_timer_channels_init(void);
-extern void helper_9617(void);
-extern void helper_95bf(void);
+extern void interrupt_enable_bit4(void);
+extern void dma_config_write(void);
 extern void reg_modify_helper(__xdata uint8_t *reg);
 extern void timer0_reset(void);
 extern uint8_t pcie_read_link_state(void);
@@ -3272,15 +3272,15 @@ void pcie_dma_config_e330(void)
     REG_CPU_INT_CTRL = 0x02;
 
     /* Wait for DMA */
-    helper_9617();
+    interrupt_enable_bit4();
 
     /* Configure 0xCC80: set bits 0-1 */
     val = REG_CPU_CTRL_CC80;
     REG_CPU_CTRL_CC80 = val | 0x03;
 
     /* Clear DMA */
-    helper_95bf();
-    helper_9617();
+    dma_config_write();
+    interrupt_enable_bit4();
 
     /* Configure 0xCC98: set bit 2 */
     val = REG_CPU_DMA_READY;
@@ -3479,7 +3479,7 @@ void pcie_lane_config_helper(uint8_t param)
 }
 
 /*
- * helper_0412 - PCIe doorbell command trigger
+ * pcie_doorbell_trigger - PCIe doorbell command trigger
  * Address: 0xe617-0xe62e (24 bytes, Bank 0)
  *
  * Sends a command via PCIe doorbell:
@@ -3488,7 +3488,7 @@ void pcie_lane_config_helper(uint8_t param)
  *   3. Waits for busy flag to be set
  *   4. Clears the status
  */
-void helper_0412(uint8_t param)
+void pcie_doorbell_trigger(uint8_t param)
 {
     uint8_t status;
 
@@ -3610,7 +3610,7 @@ void pcie_tunnel_setup(void)
  * ============================================================ */
 
 /*
- * handler_d676 - Initialize PCIe/DMA with error halt
+ * pcie_init_error_halt - Initialize PCIe/DMA with error halt
  * Address: 0xd676-0xd701 (140 bytes)
  *
  * This function initializes DMA registers with polling and error handling.
@@ -3636,7 +3636,7 @@ void pcie_tunnel_setup(void)
  *   d6ba: sjmp 0xd6ba             ; **INFINITE LOOP - HANG**
  *   d6bc-d701: Error code determination based on R7, R5, R3
  */
-void handler_d676(void)
+void pcie_init_error_halt(void)
 {
     uint8_t val;
 
@@ -3696,11 +3696,11 @@ void handler_d676(void)
  *   e3db: movx a, @dptr      ; Read flags
  *   e3dc: jz 0xe3e3          ; Skip if zero
  *   e3de: mov r7, #0x03      ; Param = 3
- *   e3e0: lcall 0xe3b7       ; Call helper_e3b7
+ *   e3e0: lcall 0xe3b7       ; Call timer_config_update
  *   e3e3: mov dptr, #0x0aee  ; G_STATE_CHECK_0AEE
  *   e3e6: movx a, @dptr      ; Read state
  *   e3e7: mov r7, a          ; R7 = state
- *   e3e8: lcall 0x3578       ; helper_3578
+ *   e3e8: lcall 0x3578       ; protocol_param_handler
  *   e3eb: lcall 0xd810       ; dispatch_039a (usb_buffer_handler)
  *   e3ee: clr a
  *   e3ef: mov dptr, #0x07e8  ; G_SYS_FLAGS_07E8
@@ -3717,13 +3717,13 @@ void usb_state_event_handler(void)
     /* Check USB state flags */
     flags = G_USB_STATE_0B41;
     if (flags != 0) {
-        /* Call helper_e3b7 with param = 3 */
-        helper_e3b7(3);
+        /* Call timer_config_update with param = 3 */
+        timer_config_update(3);
     }
 
-    /* Read state and call helper_3578 */
+    /* Read state and call protocol_param_handler */
     flags = G_STATE_CHECK_0AEE;
-    helper_3578(flags);
+    protocol_param_handler(flags);
 
     /* Call USB buffer handler (dispatch_039a) */
     dispatch_039a();
@@ -3734,40 +3734,40 @@ void usb_state_event_handler(void)
 }
 
 /*
- * helper_e7c1 - State check and conditional call helper
+ * pcie_param_handler - State check and conditional call helper
  * Address: 0xe7c1-0xe7d3 (19 bytes)
  *
  * Disassembly:
  *   e7c1: mov a, r7            ; Get param
  *   e7c2: cjne a, #0x01, 0xe7c9 ; If param != 1, skip
- *   e7c5: lcall 0xbd14         ; Call helper_bd14
+ *   e7c5: lcall 0xbd14         ; Call state_update_bd14
  *   e7c8: ret
  *   e7c9: mov dptr, #0x0af1    ; G_STATE_FLAG_0AF1
  *   e7cc: movx a, @dptr        ; Read flag
  *   e7cd: jnb 0xe0.4, 0xe7d3   ; If bit 4 clear, skip
- *   e7d0: lcall 0xbcf2         ; Call helper_bcf2
+ *   e7d0: lcall 0xbcf2         ; Call state_sync_bcf2
  *   e7d3: ret
  *
- * If param == 1: calls helper_bd14
- * Else: if G_STATE_FLAG_0AF1 bit 4 set, calls helper_bcf2
+ * If param == 1: calls state_update_bd14
+ * Else: if G_STATE_FLAG_0AF1 bit 4 set, calls state_sync_bcf2
  */
-void helper_e7c1(uint8_t param)
+void pcie_param_handler(uint8_t param)
 {
     if (param == 0x01) {
-        /* Call helper_bd14 - state update function */
-        /* TODO: implement helper_bd14 call */
+        /* Call state_update_bd14 - state update function */
+        /* TODO: implement state_update_bd14 call */
         return;
     }
 
     /* Check G_STATE_FLAG_0AF1 bit 4 */
     if (G_STATE_FLAG_0AF1 & 0x10) {
-        /* Call helper_bcf2 - state sync function */
-        /* TODO: implement helper_bcf2 call */
+        /* Call state_sync_bcf2 - state sync function */
+        /* TODO: implement state_sync_bcf2 call */
     }
 }
 
 /*
- * helper_e6d2 - Protocol setup with 32-bit parameter
+ * protocol_setup_32bit - Protocol setup with 32-bit parameter
  * Address: 0xe6d2-0xe6e6 (21 bytes)
  *
  * Disassembly:
@@ -3781,11 +3781,11 @@ void helper_e7c1(uint8_t param)
  *   e6e3: lcall 0xd17a       ; Finalize
  *   e6e6: ret
  *
- * Calls helper_e396, then stores 0x00010080 to 0x0b1d, then calls d17a.
+ * Calls protocol_init_setup, then stores 0x00010080 to 0x0b1d, then calls d17a.
  */
-uint8_t helper_e6d2(void)
+uint8_t protocol_setup_32bit(void)
 {
-    helper_e396();
+    protocol_init_setup();
 
     /* Store 32-bit value 0x00010080 to 0x0b1d using helper_0dc5 */
     /* The DPTR is set to 0x0b1d before calling 0x0dc5 */
@@ -3795,64 +3795,64 @@ uint8_t helper_e6d2(void)
     G_DMA_WORK_0B1F = 0x80;  /* r6 */
     G_DMA_WORK_0B20 = 0x00;  /* r7 */
 
-    helper_d17a();
+    protocol_finalize();
 
     return 0;  /* Result in r7 */
 }
 
 /*
- * handler_e529 - Store param and process transfer
+ * pcie_store_param_transfer - Store param and process transfer
  * Address: 0xe529-0xe544 (28 bytes)
  *
  * Disassembly:
- *   e529: mov dptr, #0x0aa3  ; G_STATE_RESULT_0AA3
+ *   e529: mov dptr, #0x0aa3  ; G_STATE_COUNTER_HI
  *   e52c: mov a, r7          ; Get param
  *   e52d: movx @dptr, a      ; Store it
  *   e52e: clr a
  *   e52f: mov r7, a          ; R7 = 0
- *   e530: lcall 0xdd42       ; helper_dd42
- *   e533: lcall 0xe6d2       ; helper_e6d2
+ *   e530: lcall 0xdd42       ; phy_link_ctrl_update
+ *   e533: lcall 0xe6d2       ; protocol_setup_32bit
  *   e536: mov a, r7          ; Check result
  *   e537: jz 0xe544          ; Return if zero
- *   e539: mov dptr, #0x0aa3  ; G_STATE_RESULT_0AA3
+ *   e539: mov dptr, #0x0aa3  ; G_STATE_COUNTER_HI
  *   e53c: movx a, @dptr      ; Read param
  *   e53d: mov dptr, #0x7000  ; Log buffer base
  *   e540: movx @dptr, a      ; Write to log
- *   e541: lcall 0xe478       ; dispatch_0638 -> handler_e478
+ *   e541: lcall 0xe478       ; dispatch_0638 -> pcie_transfer_handler
  *   e544: ret
  *
  * Stores param, calls helper functions, and if result is non-zero,
  * writes saved param to 0x7000 and dispatches to Bank1 handler.
  */
-void handler_e529(uint8_t param)
+void pcie_store_param_transfer(uint8_t param)
 {
     uint8_t result;
 
-    /* Store param to G_STATE_RESULT_0AA3 */
-    G_STATE_RESULT_0AA3 = param;
+    /* Store param to G_STATE_COUNTER_HI */
+    G_STATE_COUNTER_HI = param;
 
-    /* Call helper_dd42 with param = 0 */
-    helper_dd42(0);
+    /* Call phy_link_ctrl_update with param = 0 */
+    phy_link_ctrl_update(0);
 
-    /* Call helper_e6d2 and get result */
-    result = helper_e6d2();
+    /* Call protocol_setup_32bit and get result */
+    result = protocol_setup_32bit();
 
     /* If result non-zero, process further */
     if (result != 0) {
         /* Read back saved param and write to flash buffer */
-        G_FLASH_BUF_BASE = G_STATE_RESULT_0AA3;
-        /* Dispatch to Bank1 handler_e478 */
-        handler_e478();  /* was: dispatch_0638 */
+        G_FLASH_BUF_BASE = G_STATE_COUNTER_HI;
+        /* Dispatch to Bank1 pcie_transfer_handler */
+        pcie_transfer_handler();  /* was: dispatch_0638 */
     }
 }
 
-void handler_e90b(void)
+void pcie_int_ctrl_link_init(void)
 {
     REG_CPU_INT_CTRL = CPU_INT_CTRL_TRIGGER;
     pcie_link_state_init();
 }
 
-void helper_e3b7(uint8_t param)
+void timer_config_update(uint8_t param)
 {
     /* Write 0x04 then 0x02 to REG_TIMER1_CSR (start timer) */
     REG_TIMER1_CSR = 0x04;
@@ -3871,7 +3871,7 @@ void helper_e3b7(uint8_t param)
 }
 
 /*
- * helper_e396 - Protocol initialization setup
+ * protocol_init_setup - Protocol initialization setup
  * Address: 0xe396-0xe3b6 (33 bytes)
  *
  * Disassembly:
@@ -3894,7 +3894,7 @@ void helper_e3b7(uint8_t param)
  *   e3b5: movx @dptr, a      ; [0x0b25] = 0x20
  *   e3b6: ret
  */
-void helper_e396(void)
+void protocol_init_setup(void)
 {
     /* Complex initialization - calls multiple sub-helpers */
     /* For now, just set up the values at the known addresses */
@@ -4294,7 +4294,7 @@ void pcie_handler_e06b(uint8_t param)
 }
 
 /*
- * helper_a704 - Table lookup helper
+ * table_lookup - Table lookup helper
  * Address: 0xa704-0xa713 (16 bytes)
  *
  * Computes DPTR = (0x0AE0:0x0AE1) + R6:R7
@@ -4314,7 +4314,7 @@ void pcie_handler_e06b(uint8_t param)
  *
  * Returns: Computed address in DPTR
  */
-uint8_t helper_a704(void)
+uint8_t table_lookup(void)
 {
     __xdata uint8_t *base_lo = (__xdata uint8_t *)0x0AE1;
     __xdata uint8_t *base_hi = (__xdata uint8_t *)0x0AE0;
@@ -4327,7 +4327,7 @@ uint8_t helper_a704(void)
     return 0;
 }
 
-void handler_e7c1(uint8_t param)
+void pcie_timer_ctrl_e7c1(uint8_t param)
 {
     if (param == 1) {
         /* Disable timer */

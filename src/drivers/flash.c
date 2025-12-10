@@ -879,7 +879,7 @@ void flash_command_handler(void)
 
 /* External helper functions declared for use in system_init_from_flash */
 extern void sys_event_dispatch_05e8(void);
-extern void sys_init_helper_bbc7(void);
+extern void sys_init_bbc7(void);
 extern void sys_timer_handler_e957(void);
 
 /*
@@ -1035,7 +1035,7 @@ set_event_flags:
     }
 
     /* Call system init helper */
-    sys_init_helper_bbc7();
+    sys_init_bbc7();
 
     /* If flash config is valid, call event dispatcher */
     if (G_FLASH_CONFIG_VALID == 1) {

@@ -59,7 +59,9 @@
 #define USB_SCSI_BUF_BASE       0x8000
 #define USB_SCSI_BUF_SIZE       0x1000
 
-// USB/SCSI buffer control registers (0x8008-0x800D)
+// USB/SCSI buffer control registers (0x8005-0x800D)
+#define REG_USB_BUF_COUNT_8005  XDATA_REG8(0x8005)  /* USB buffer count */
+#define REG_USB_BUF_MAX_8006    XDATA_REG8(0x8006)  /* USB buffer max count */
 #define REG_USB_BUF_CTRL_8008   XDATA_REG8(0x8008)  /* USB buffer control (power check: ==0x01) */
 #define REG_USB_BUF_CTRL_8009   XDATA_REG8(0x8009)  /* USB buffer control (power check: ==0x08) */
 #define REG_USB_BUF_CTRL_800A   XDATA_REG8(0x800A)  /* USB buffer control (power check: ==0x02) */
@@ -92,6 +94,7 @@
 // Core USB registers (0x9000-0x901F)
 #define REG_USB_STATUS          XDATA_REG8(0x9000)
 #define   USB_STATUS_ACTIVE       0x01  // Bit 0: USB active/pending
+#define   USB_STATUS_BIT2         0x04  // Bit 2: USB status flag
 #define   USB_STATUS_INDICATOR    0x10  // Bit 4: USB status indicator
 #define   USB_STATUS_CONNECTED    0x80  // Bit 7: USB ready/connected
 #define REG_USB_CONTROL         XDATA_REG8(0x9001)
@@ -124,6 +127,7 @@
 #define REG_USB_EP_CTRL_905D    XDATA_REG8(0x905D)  /* USB endpoint control 1 */
 #define REG_USB_EP_MGMT         XDATA_REG8(0x905E)
 #define REG_USB_EP_CTRL_905F    XDATA_REG8(0x905F)  /* USB endpoint control 2 */
+#define   USB_EP_CTRL_905F_BIT3   0x08  // Bit 3: Endpoint enable flag
 #define   USB_EP_CTRL_905F_BIT4   0x10  // Bit 4: Endpoint control flag
 #define REG_USB_INT_MASK_9090   XDATA_REG8(0x9090)  /* USB interrupt mask */
 #define   USB_INT_MASK_GLOBAL     0x80  // Bit 7: Global interrupt mask
@@ -180,6 +184,7 @@
 
 // USB control registers (0x9200-0x92BF)
 #define REG_USB_CTRL_9200       XDATA_REG8(0x9200)  /* USB control base */
+#define   USB_CTRL_9200_BIT6     0x40  // Bit 6: USB control enable flag
 #define REG_USB_CTRL_9201       XDATA_REG8(0x9201)
 #define   USB_CTRL_9201_BIT4      0x10  // Bit 4: USB control flag
 #define REG_USB_CTRL_920C       XDATA_REG8(0x920C)
@@ -340,7 +345,7 @@
 //=============================================================================
 // UART Controller (0xC000-0xC00F)
 //=============================================================================
-#define REG_UART_BASE           XDATA_REG8(0xC000)
+/* NOTE: REG_UART_BASE removed - use REG_UART_THR_RBR */
 #define REG_UART_THR_RBR        XDATA_REG8(0xC000)  // Data register (THR write, RBR read)
 #define REG_UART_THR            XDATA_REG8(0xC001)  // TX (WO)
 #define REG_UART_RBR            XDATA_REG8(0xC001)  // RX (RO)
@@ -642,6 +647,7 @@
 #define   TIMER_ENABLE_A_BIT      0x02              /* Bit 1: Timer enable */
 #define REG_TIMER_ENABLE_B      XDATA_REG8(0xCC3A)  /* Timer enable control B */
 #define   TIMER_ENABLE_B_BIT      0x02              /* Bit 1: Timer enable */
+#define   TIMER_ENABLE_B_BITS56   0x60              /* Bits 5-6: Timer extended mode */
 #define REG_TIMER_CTRL_CC3B     XDATA_REG8(0xCC3B)  /* Timer control */
 #define   TIMER_CTRL_ENABLE       0x01              /* Bit 0: Timer active */
 #define   TIMER_CTRL_START        0x02              /* Bit 1: Timer start */
@@ -657,6 +663,7 @@
 
 // CPU control registers (0xCC80-0xCC83)
 #define REG_CPU_CTRL_CC80       XDATA_REG8(0xCC80)  /* CPU control 0xCC80 */
+#define   CPU_CTRL_CC80_ENABLE   0x03  // Bits 0-1: CPU control enable mask
 #define REG_CPU_INT_CTRL        XDATA_REG8(0xCC81)
 #define   CPU_INT_CTRL_ACK       0x02  // Bit 1: Acknowledge interrupt
 #define   CPU_INT_CTRL_TRIGGER   0x04  // Bit 2: Trigger interrupt
@@ -675,6 +682,7 @@
 #define REG_CPU_DMA_INT         XDATA_REG8(0xCC91)  /* CPU DMA interrupt status */
 #define   CPU_DMA_INT_ACK        0x02  // Bit 1: Acknowledge DMA interrupt
 #define REG_CPU_DMA_READY       XDATA_REG8(0xCC98)  /* CPU DMA ready status */
+#define   CPU_DMA_READY_BIT2     0x04              /* Bit 2: DMA ready flag */
 #define REG_XFER_DMA_CFG        XDATA_REG8(0xCC99)  /* Transfer DMA config */
 #define   XFER_DMA_CFG_ACK       0x02  // Bit 1: Acknowledge config
 #define   XFER_DMA_CFG_ENABLE    0x04  // Bit 2: Config enable
@@ -850,6 +858,7 @@
 //=============================================================================
 #define REG_LINK_WIDTH_E710     XDATA_REG8(0xE710)  /* Link width status (bits 5-7) */
 #define   LINK_WIDTH_MASK         0xE0  // Bits 5-7: Link width
+#define   LINK_WIDTH_LANES_MASK   0x1F  // Bits 0-4: Lane configuration
 #define REG_LINK_STATUS_E712    XDATA_REG8(0xE712)
 #define REG_LINK_STATUS_E716    XDATA_REG8(0xE716)
 #define   LINK_STATUS_E716_MASK  0x03  // Bits 0-1: Link status

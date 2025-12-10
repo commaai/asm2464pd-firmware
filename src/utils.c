@@ -620,7 +620,7 @@ __xdata uint8_t *dptr_index_mul(__xdata uint8_t *base, uint8_t index, uint8_t el
  * Address: 0xbb4f-0xbb5d (15 bytes)
  *
  * Calculates address 0x70XX where XX = R6 + A, reads that register,
- * stores result to G_STATE_WORK_0A84, reads back and returns.
+ * stores result to G_ACTION_PARAM_0A84, reads back and returns.
  *
  * Original disassembly:
  *   bb4f: add a, r6
@@ -641,8 +641,8 @@ uint8_t reg_read_indexed_0a84(uint8_t offset, uint8_t base)
 
     ptr = (__xdata uint8_t *)(0x7000 + base + offset);
     val = *ptr;
-    G_STATE_WORK_0A84 = val;
-    return G_STATE_WORK_0A84;
+    G_ACTION_PARAM_0A84 = val;
+    return G_ACTION_PARAM_0A84;
 }
 
 /*
@@ -1038,13 +1038,13 @@ uint8_t reg_delay_param_setup(void)
  * reg_clear_state_flags - Clear multiple state work flags to 0
  * Address: 0xbf8e-0xbfa2 (21 bytes)
  *
- * Clears G_STATE_WORK_0B3D, G_STATE_WORK_0B3E, G_XFER_STATE_0AF6,
+ * Clears G_STATE_WORK_0B3D, G_STATE_CTRL_0B3E, G_XFER_STATE_0AF6,
  * and global at 0x07EE and G_TRANSFER_FLAG_0AF2.
  */
 void reg_clear_state_flags(void)
 {
     G_STATE_WORK_0B3D = 0;
-    G_STATE_WORK_0B3E = 0;
+    G_STATE_CTRL_0B3E = 0;
     G_XFER_STATE_0AF6 = 0;
     G_SYS_FLAGS_07EE = 0;
     G_TRANSFER_FLAG_0AF2 = 0;

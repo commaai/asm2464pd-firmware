@@ -2782,7 +2782,7 @@ void usb_write_ep_ctrl_by_mode(uint8_t mode)
     }
 
     /* Call helper at 0x328a */
-    /* uint8_t result = helper_328a();
+    /* uint8_t result = usb_link_status_get();
      * if (result != 1) return;
      */
 
@@ -4400,12 +4400,12 @@ uint8_t usb_check_phy_status(void)
  *   a642: inc dptr            ; 0x0adf
  *   a643: ret
  *
- * Sets G_USB_DESC_STATE = 1, G_USB_DESC_INDEX = 0
+ * Sets G_TLP_COUNT_0AD7 = 1, G_TLP_LIMIT_HI = 0
  */
 void usb_descriptor_helper_a637(void)
 {
-    G_USB_DESC_STATE_0AD7 = 0x01;
-    G_USB_DESC_INDEX_0ADE = 0x00;
+    G_TLP_COUNT_0AD7 = 0x01;
+    G_TLP_LIMIT_HI = 0x00;
 }
 
 /*
@@ -4428,7 +4428,7 @@ void usb_descriptor_helper_a637(void)
  *   7. Poll REG_XFER_READY bit 0 until set
  *   8. Increment and check G_USB_CTRL_000A
  *   9. Modify REG_USB_CTRL_924C based on count
- *   10. Read G_ENDPOINT_STATE_0051 and call helper_31e0
+ *   10. Read G_ENDPOINT_STATE_0051 and call usb_calc_dma_addr
  *   11. Process state machine with multiple register ops
  *
  * This is part of the USB endpoint data transfer handling.
@@ -4495,12 +4495,12 @@ void usb_ep_loop_180d(uint8_t param)
 
     /* Read endpoint state and call helper */
     val = G_ENDPOINT_STATE_0051;
-    /* helper_31e0(val) would be called here - processes endpoint state */
+    /* usb_calc_dma_addr(val) would be called here - processes endpoint state */
 
     /* Write I_WORK_38 to endpoint register */
     G_ENDPOINT_STATE_0051 = I_WORK_38;
 
-    /* Add 0x2F and call helper_325f for register address calculation */
+    /* Add 0x2F and call calc_addr_2f_base for register address calculation */
     /* This accesses registers at 0x00 + (I_WORK_38 + 0x2F) area */
 
     /* Write 0x22 to calculated address */

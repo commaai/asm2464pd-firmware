@@ -67,14 +67,6 @@ extern uint8_t usb_event_handler(void);
 extern void usb_reset_interface(uint8_t param);
 extern void dispatch_062e(void);
 
-/* Stub helper functions - these need to be implemented properly */
-static void FUN_CODE_1bec(void) { }
-static void FUN_CODE_1b30(uint8_t param) { (void)param; }
-static uint8_t FUN_CODE_1b8d(uint8_t param) { (void)param; return 0; }
-static uint8_t FUN_CODE_1b0b(uint8_t param) { (void)param; return 0; }
-static void FUN_CODE_1b3f(uint8_t param) { (void)param; }
-static void FUN_CODE_1c43(uint8_t param) { (void)param; }
-
 /* Protocol state codes */
 #define STATE_CODE_PAREN_OPEN   0x28    /* '(' */
 #define STATE_CODE_ASTERISK     0x2A    /* '*' */
@@ -334,84 +326,6 @@ void nvme_completion_handler(uint8_t param)
 }
 
 /*
- * scsi_core_dispatch - Core processing handler
- * Address: 0x4FF2-0x502D (60 bytes)
- *
- * Coordinates USB event processing based on input flags.
- * Bit 0 of param_2 determines the processing path.
- *
- * Parameters:
- *   param_1 - 16-bit parameter (not fully used in simplified version)
- *   param_2 - Control flags, bit 0 selects processing path
- *
- * Original disassembly (0x4ff2-0x502d):
- *   4ff2: mov a, r7
- *   4ff3: jnb 0xe0.0, 0x5009  ; if bit 0 clear, jump
- *   4ff6: clr a
- *   4ff7-4ffa: clear R4-R7
- *   4ffb: mov r0, #0x0e
- *   4ffd: lcall 0x1b20        ; usb_func_1b20
- *   5000: add a, #0x11
- *   5002: lcall 0x1b14        ; usb_func_1b14
- *   5005: add a, #0x16
- *   5007: sjmp 0x5020
- *   5009: lcall 0x1b23        ; usb_func_1b23
- *   500c: add a, #0x11
- *   500e: lcall 0x1bc3        ; usb_reset_interface
- *   5011: lcall 0x0d84        ; xdata_load_dword
- *   5014: mov r0, #0x0e
- *   5016: lcall 0x1b20
- *   5019: add a, #0x15
- *   501b: lcall 0x1b14
- *   501e: add a, #0x1b
- *   5020: lcall 0x1bc3        ; usb_reset_interface
- *   5023: movx a, @dptr
- *   5024: mov r6, a
- *   5025: inc dptr
- *   5026: movx a, @dptr
- *   5027: mov r0, #0x16
- *   5029: mov @r0, 0x06       ; store R6 to IDATA[0x16]
- *   502b: inc r0
- *   502c: mov @r0, a          ; store A to IDATA[0x17]
- *   502d: ret
- */
-void scsi_core_dispatch(uint8_t param_2)
-{
-    uint8_t result;
-    uint8_t val_hi, val_lo;
-
-    if ((param_2 & 0x01) == 0) {
-        /* Path when bit 0 is clear */
-        result = usb_func_1b20(0x0E);
-        result = usb_func_1b14(result + 0x11);
-        result = result + 0x16;
-    } else {
-        /* Path when bit 0 is set */
-        result = usb_func_1b23();
-        result = result + 0x11;
-        usb_reset_interface(result);
-
-        xdata_load_dword_noarg();
-
-        result = usb_func_1b20(0x0E);
-        result = usb_func_1b14(result + 0x15);
-        result = result + 0x1B;
-    }
-
-    /* Final interface reset */
-    usb_reset_interface(result);
-
-    /* Read 16-bit value and store to IDATA[0x16:0x17] */
-    /* This would read from DPTR set by usb_reset_interface */
-    /* For now, read from a known location */
-    val_lo = 0;  /* Would be from @DPTR */
-    val_hi = 0;  /* Would be from @DPTR+1 */
-
-    I_CORE_STATE_L = val_lo;
-    I_CORE_STATE_H = val_hi;
-}
-
-/*
  * protocol_dispatch - Protocol dispatcher
  * Address: 0x0458 (approximate)
  *
@@ -582,15 +496,15 @@ void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7)
 /*
  * Forward declarations for helpers
  */
-static void helper_50db(void);
-static void helper_5409(void);
+static void queue_status_update(void);
+static void queue_state_cleanup(void);
 
 /*
- * helper_53a7 - DMA completion handler
+ * dma_completion_handler - DMA completion handler
  * Address: 0x53a7-0x53bf (25 bytes)
  *
- * Handles DMA completion state. Calls helper_50db, then decrements
- * counter at 0x000A if > 1, otherwise clears it and calls helper_5409.
+ * Handles DMA completion state. Calls queue_status_update, then decrements
+ * counter at 0x000A if > 1, otherwise clears it and calls queue_state_cleanup.
  *
  * Original disassembly:
  *   53a7: lcall 0x50db          ; Call status update helper
@@ -609,12 +523,12 @@ static void helper_5409(void);
  *   53bc: lcall 0x5409          ; Call cleanup helper
  *   53bf: ret
  */
-void helper_53a7(void)
+void dma_completion_handler(void)
 {
     uint8_t counter;
 
     /* Call status update helper */
-    helper_50db();
+    queue_status_update();
 
     /* Read counter at 0x000A */
     counter = G_EP_CHECK_FLAG;
@@ -625,12 +539,12 @@ void helper_53a7(void)
     } else {
         /* Clear counter and call cleanup */
         G_EP_CHECK_FLAG = 0;
-        helper_5409();
+        queue_state_cleanup();
     }
 }
 
 /*
- * helper_53c0 - DMA buffer write helper
+ * dma_buffer_write - DMA buffer write helper
  * Address: 0x53c0-0x53d3 (20 bytes)
  *
  * Copies 4 bytes from IDATA[0x6f-0x72] to XDATA 0xD808-0xD80B.
@@ -655,7 +569,7 @@ void helper_53a7(void)
  *   53d2: movx @dptr, a         ; Write to 0xD80B
  *   53d3: ret
  */
-void helper_53c0(void)
+void dma_buffer_write(void)
 {
     /* Copy 4 bytes from IDATA[0x6F-0x72] to CSW residue 0xD808-0xD80B */
     /* Note: Original reads backwards from 0x72 to 0x6F */
@@ -693,7 +607,7 @@ void usb_ep_ctrl_clear(void)
 }
 
 /*
- * helper_50db - Status update and queue management helper
+ * queue_status_update - Status update and queue management helper
  * Address: 0x50db-0x5111 (55 bytes)
  *
  * Reads queue index from 0x0AF5, checks if < 0x20, then performs
@@ -713,49 +627,49 @@ void usb_ep_ctrl_clear(void)
  *   5111: ret
  */
 /*
- * helper_31d5 - Queue address calculation
+ * queue_addr_calc_internal - Queue address calculation
  * Address: 0x31d5
  * Returns DPTR computed from R7 value.
  */
-static __xdata uint8_t *helper_31d5(uint8_t idx)
+static __xdata uint8_t *queue_addr_calc_internal(uint8_t idx)
 {
     /* Computes DPTR = 0x0A2C + idx (based on typical patterns) */
     return (__xdata uint8_t *)(0x0A2C + idx);
 }
 
 /*
- * helper_31e2 - Address calculation with 0x0C base
+ * calc_addr_0c_base - Address calculation with 0x0C base
  * Address: 0x31e2
  * Takes A as index, computes DPTR
  */
-static __xdata uint8_t *helper_31e2(uint8_t idx)
+static __xdata uint8_t *calc_addr_0c_base(uint8_t idx)
 {
     /* Computes DPTR = 0x0A2C + 0x0C + idx */
     return (__xdata uint8_t *)(0x0A38 + idx);
 }
 
 /*
- * helper_325f - Address calculation with 0x2F base
+ * calc_addr_2f_base - Address calculation with 0x2F base
  * Address: 0x325f
  * Takes A as index, computes DPTR
  */
-static __xdata uint8_t *helper_325f(uint8_t idx)
+static __xdata uint8_t *calc_addr_2f_base(uint8_t idx)
 {
     /* Computes DPTR = 0x0A2C + 0x2F + idx = 0x0A5B + idx */
     return (__xdata uint8_t *)(0x0A5B + idx);
 }
 
 /*
- * helper_31e0 - Alternate address calculation
+ * usb_calc_dma_addr - Alternate address calculation
  * Address: 0x31e0
  */
-static __xdata uint8_t *helper_31e0(void)
+static __xdata uint8_t *usb_calc_dma_addr(void)
 {
     /* Returns address based on R6 */
     return (__xdata uint8_t *)0x0A2C;
 }
 
-static void helper_50db(void)
+static void queue_status_update(void)
 {
     uint8_t queue_idx;
     uint8_t val_r6, val_r5;
@@ -769,24 +683,24 @@ static void helper_50db(void)
         return;
     }
 
-    /* Call helper_31d5 with queue_idx, then clear value */
-    ptr = helper_31d5(queue_idx);
+    /* Call queue_addr_calc_internal with queue_idx, then clear value */
+    ptr = queue_addr_calc_internal(queue_idx);
     *ptr = 0;
 
-    /* Compute address: 0x0C + queue_idx, call helper_31e2 */
-    ptr = helper_31e2(0x0C + queue_idx);
+    /* Compute address: 0x0C + queue_idx, call calc_addr_0c_base */
+    ptr = calc_addr_0c_base(0x0C + queue_idx);
     val_r6 = *ptr;
 
-    /* Compute address: 0x2F + queue_idx, call helper_325f */
-    ptr = helper_325f(0x2F + queue_idx);
+    /* Compute address: 0x2F + queue_idx, call calc_addr_2f_base */
+    ptr = calc_addr_2f_base(0x2F + queue_idx);
     val_r5 = *ptr;
 
-    /* Call helper_31e0 and write val_r6 */
-    ptr = helper_31e0();
+    /* Call usb_calc_dma_addr and write val_r6 */
+    ptr = usb_calc_dma_addr();
     *ptr = val_r6;
 
-    /* Compute address: 0x2F + val_r6, call helper_325f and write val_r5 */
-    ptr = helper_325f(0x2F + val_r6);
+    /* Compute address: 0x2F + val_r6, call calc_addr_2f_base and write val_r5 */
+    ptr = calc_addr_2f_base(0x2F + val_r6);
     *ptr = val_r5;
 
     /* Check if IDATA[0x0D] == R7, if so update IDATA[0x0D] with R6 */
@@ -796,7 +710,7 @@ static void helper_50db(void)
 }
 
 /*
- * helper_5409 - Queue/state cleanup helper
+ * queue_state_cleanup - Queue/state cleanup helper
  * Address: 0x5409-0x5415 (13 bytes)
  *
  * Clears various state variables and jumps to usb_ep_ctrl_clear.
@@ -811,7 +725,7 @@ static void helper_50db(void)
  *   5414: movx @dptr, a         ; Clear 0x06E6
  *   5415: ljmp 0x039a           ; Jump to usb_ep_ctrl_clear
  */
-static void helper_5409(void)
+static void queue_state_cleanup(void)
 {
     /* Clear state variables */
     G_USB_TRANSFER_FLAG = 0;
@@ -823,7 +737,7 @@ static void helper_5409(void)
 }
 
 /*
- * helper_0206 - DMA buffer configuration helper
+ * dma_buffer_config - DMA buffer configuration helper
  * Address: 0x0206-0x02c4+ (complex)
  *
  * Sets up DMA buffer configuration based on flags in r5 and value in r7.
@@ -843,7 +757,7 @@ static void helper_5409(void)
  *   0247-0255: Clear 0xD804-0xD807, 0xD80F
  *   0256-02c4: Check r5 bit 4, further configuration based on 0x07E5 state
  */
-void helper_0206(uint8_t r5, uint8_t r7)
+void dma_buffer_config(uint8_t r5, uint8_t r7)
 {
     uint8_t val, r2, r3;
 
@@ -905,11 +819,11 @@ void helper_0206(uint8_t r5, uint8_t r7)
 }
 
 /*
- * helper_020b - DMA buffer configuration (direct entry)
+ * dma_buffer_config_direct - DMA buffer configuration (direct entry)
  * Address: 0x020b-0x02fc
  *
  * This is an alternate entry point that skips the initial (r5 & 0x06) check
- * in helper_0206. It always takes the "bits set" path which:
+ * in dma_buffer_config. It always takes the "bits set" path which:
  *   - Sets REG_DMA_CONFIG = 0xA0
  *   - Copies from G_USB_ADDR_HI_0056/G_USB_ADDR_LO_0057 to endpoint buffers
  *
@@ -923,7 +837,7 @@ void helper_0206(uint8_t r5, uint8_t r7)
  *       - bit 4 (0x10): Extended mode (D800 = 4 instead of 3)
  *   r7: DMA channel/index value (used in later processing)
  */
-void helper_020b(uint8_t r5, uint8_t r7)
+void dma_buffer_config_direct(uint8_t r5, uint8_t r7)
 {
     uint8_t r2, r3, r4;
 
@@ -991,7 +905,7 @@ void helper_020b(uint8_t r5, uint8_t r7)
 }
 
 /*
- * helper_45d0 - Transfer control helper
+ * transfer_control - Transfer control helper
  * Address: 0x45d0-0x4663+ (complex)
  *
  * Handles transfer control operations. Clears 0x044D, then computes
@@ -1010,7 +924,7 @@ void helper_020b(uint8_t r5, uint8_t r7)
  *   45dd: cjne a, #0x01, 0x45e9  ; If result != 1, skip
  *   ... (complex state machine logic)
  */
-void helper_45d0(uint8_t param)
+void transfer_control(uint8_t param)
 {
     uint8_t result;
 
@@ -1028,7 +942,7 @@ void helper_45d0(uint8_t param)
 }
 
 /*
- * helper_0421 - Register initialization for 0xE65F
+ * endpoint_config_init - Register initialization for 0xE65F
  * Address: 0x0421-0x0424 (5 bytes)
  *
  * Part of register initialization table. Sets DPTR = 0xE65F and
@@ -1040,7 +954,7 @@ void helper_45d0(uint8_t param)
  *   0421: mov dptr, #0xe65f
  *   0424: ajmp 0x0300
  */
-void helper_0421(uint8_t param)
+void endpoint_config_init(uint8_t param)
 {
     (void)param;
     /* Clear/initialize the register at 0xE65F */
@@ -1048,7 +962,7 @@ void helper_0421(uint8_t param)
 }
 
 /*
- * helper_0417 - Register initialization for 0xE62F
+ * reg_init_e62f - Register initialization for 0xE62F
  * Address: 0x0417-0x041a (5 bytes)
  *
  * Part of register initialization table. Sets DPTR = 0xE62F and
@@ -1060,7 +974,7 @@ void helper_0421(uint8_t param)
  *   0417: mov dptr, #0xe62f
  *   041a: ajmp 0x0300
  */
-void helper_0417(void)
+void reg_init_e62f(void)
 {
     /* Clear/initialize the register at 0xE62F */
     REG_DEBUG_INT_E62F = 0;
@@ -1100,19 +1014,19 @@ void helper_16f3(void)
     REG_DMA_STATUS = status;
 }
 
-/* Forward declarations for helper_3f4a dependencies (not yet in headers) */
+/* Forward declarations for transfer_status_check dependencies (not yet in headers) */
 extern void usb_func_1c5d(__xdata uint8_t *ptr);  /* 0x1c5d */
-extern uint8_t helper_466b(void);                 /* 0x466b - check state */
-extern uint8_t helper_043f(void);                 /* 0x043f - check callback */
-extern void helper_36ab(void);                    /* 0x36ab - setup transfer */
-extern void helper_04da(uint8_t param);           /* 0x04da - param setup */
-extern uint8_t helper_322e(void);                 /* 0x322e - compare helper */
-extern uint8_t helper_313f(uint8_t r0_val);       /* 0x313f - count check */
+extern uint8_t check_transfer_state(void);                 /* 0x466b - check state */
+extern uint8_t check_callback_status(void);                 /* 0x043f - check callback */
+extern void transfer_setup(void);                    /* 0x36ab - setup transfer */
+extern void param_setup(uint8_t param);           /* 0x04da - param setup */
+extern uint8_t compare_helper(void);                 /* 0x322e - compare helper */
+extern uint8_t check_idata_addr_nonzero(uint8_t r0_val);       /* 0x313f - count check */
 extern void helper_31ad(__xdata uint8_t *ptr);    /* 0x31ad - transfer helper */
 extern void scsi_completion_handler(void);        /* 0x5216 */
 
 /*
- * helper_3f4a - Initial status check for state_action_dispatch
+ * transfer_status_check - Initial status check for state_action_dispatch
  * Address: 0x3f4a-0x40d8 (~400 bytes)
  *
  * This is a complex status check function with multiple return values:
@@ -1124,7 +1038,7 @@ extern void scsi_completion_handler(void);        /* 0x5216 */
  *
  * Called at the start of state_action_dispatch to check if the action can proceed.
  */
-uint8_t helper_3f4a(void)
+uint8_t transfer_status_check(void)
 {
     uint8_t status;
     uint8_t val_06e5, val_044b;
@@ -1169,8 +1083,8 @@ uint8_t helper_3f4a(void)
 
     /* 0x3f82: Check G_XFER_STATE_0AF6 */
     if (G_XFER_STATE_0AF6 == 0) {
-        /* 0x3f88: Call helper_466b */
-        status = helper_466b();
+        /* 0x3f88: Call check_transfer_state */
+        status = check_transfer_state();
         if (status != 0) {
             return 0x0B;  /* Return 11 */
         }
@@ -1188,11 +1102,11 @@ uint8_t helper_3f4a(void)
             if (G_POWER_INIT_FLAG == 0) {
                 /* Check 0xB480 bit 0 */
                 if (!(REG_TUNNEL_LINK_CTRL & TUNNEL_LINK_UP)) {
-                    helper_04da(2);
+                    param_setup(2);
                 }
 
-                /* 0x4004: Call helper_36ab */
-                helper_36ab();
+                /* 0x4004: Call transfer_setup */
+                transfer_setup();
 
                 /* Check 0x0AF8 again */
                 if (G_POWER_INIT_FLAG != 0) {
@@ -1208,8 +1122,8 @@ uint8_t helper_3f4a(void)
         goto check_044c;
     }
 
-    /* 0x3f9e: Call helper_043f */
-    status = helper_043f();
+    /* 0x3f9e: Call check_callback_status */
+    status = check_callback_status();
     if (status == 0) {
         /* Jump to 0x3fda - return 0 */
         protocol_setup_params(0, 0x3A, 2);
@@ -1252,7 +1166,7 @@ check_044c:
 }
 
 /*
- * helper_1d1d - Setup helper for state_action_dispatch
+ * state_dispatch_setup - Setup helper for state_action_dispatch
  * Address: 0x1d1d-0x1d23 (7 bytes)
  *
  * Sets USB transfer flag to 1 to indicate transfer active.
@@ -1263,13 +1177,13 @@ check_044c:
  *   1d22: movx @dptr, a        ; Write 1
  *   1d23: ret
  */
-void helper_1d1d(void)
+void state_dispatch_setup(void)
 {
     G_USB_TRANSFER_FLAG = 1;
 }
 
 /*
- * helper_1c9f - Core processing and buffer setup
+ * core_process_buffer - Core processing and buffer setup
  * Address: 0x1c9f-0x1cad (15 bytes)
  *
  * Calls scsi_core_dispatch with param=0, then calls buf_base_config to
@@ -1287,7 +1201,7 @@ void helper_1d1d(void)
  *   1cac: orl a, r4            ; A = R4 | R5
  *   1cad: ret
  */
-uint8_t helper_1c9f(void)
+uint8_t core_process_buffer(void)
 {
     /* Call core handler with param=0 */
     scsi_core_dispatch(0);
@@ -1300,7 +1214,7 @@ uint8_t helper_1c9f(void)
 }
 
 /*
- * helper_4f77 - Processing helper with state comparison
+ * state_processing_helper - Processing helper with state comparison
  * Address: 0x4f77-0x4fb5 (63 bytes)
  *
  * Takes a parameter (0 or 0x80) based on action code bit 1.
@@ -1319,17 +1233,17 @@ uint8_t helper_1c9f(void)
  *   4fa7: else call 0x1b7e, setb c, call 0x0d22
  *   4fb3: return 0 if carry set, else return 1
  */
-void helper_4f77(uint8_t param)
+void state_processing_helper(uint8_t param)
 {
     uint8_t stored_param;
     uint8_t state_val;
 
     /* Store param to 0x0A84 */
-    G_STATE_WORK_0A84 = param;
+    G_ACTION_PARAM_0A84 = param;
 
     /* Read IDATA[0x16:0x17] and compare */
     /* The actual comparison logic is complex, involving subtract_16 */
-    stored_param = G_STATE_WORK_0A84;
+    stored_param = G_ACTION_PARAM_0A84;
 
     /* Check if param matches state at 0x0AF3 */
     state_val = G_XFER_STATE_0AF3;
@@ -1362,12 +1276,12 @@ uint8_t helper_11a2(uint8_t param)
 }
 
 /*
- * helper_5359 - Buffer setup
+ * buffer_setup - Buffer setup
  * Address: 0x5359
  *
  * Sets up buffer configuration for transfers.
  */
-void helper_5359(uint8_t param)
+void buffer_setup(uint8_t param)
 {
     (void)param;  /* Currently unused */
     /* TODO: Implement buffer setup from 0x5359 */
@@ -1397,12 +1311,12 @@ void helper_1cc8(void)
 }
 
 /*
- * helper_1c22 - Carry flag helper
+ * carry_flag_check - Carry flag helper
  * Address: 0x1c22
  *
  * Helper that returns carry flag state for comparison operations.
  */
-void helper_1c22(void)
+void carry_flag_check(void)
 {
     /*
      * Based on 0x1c22-0x1c29:
@@ -1422,7 +1336,7 @@ void helper_1c22(void)
 }
 
 /*
- * helper_1b9a - Table lookup helper
+ * table_lookup_1b9a - Table lookup helper
  * Address: 0x1b9a-0x1ba4 (11 bytes)
  *
  * Looks up value from table at 0x054E, using val * 0x14 as offset.
@@ -1435,7 +1349,7 @@ void helper_1c22(void)
  *   1ba3: movx a, @dptr       ; Read from computed address
  *   1ba4: ret
  */
-static uint8_t helper_1b9a(uint8_t val)
+static uint8_t table_lookup_1b9a(uint8_t val)
 {
     uint16_t addr;
     __xdata uint8_t *ptr;
@@ -1484,7 +1398,7 @@ static uint8_t param_stub(uint8_t val)
  * - Reads G_SYS_STATUS_PRIMARY (0x0464), sets base = 0xA0 or 0xA8
  * - Writes base address to G_BUF_BASE_HI/LO (0x021A-0x021B)
  * - Reads G_SYS_STATUS_SECONDARY (0x0465)
- * - Computes index via helper_1b9a and stores to G_DMA_WORK_0216
+ * - Computes index via table_lookup_1b9a and stores to G_DMA_WORK_0216
  * - Computes table entry at 0x054C + (index * 20)
  * - Writes buffer address to G_BUF_ADDR_HI/LO (0x0218-0x0219)
  * - Computes another value via param_stub and stores to 0x0217
@@ -1529,7 +1443,7 @@ void buf_base_config(void)
 
     /* Read secondary status and compute address offset */
     index = G_SYS_STATUS_SECONDARY;
-    offset = helper_1b9a(index);
+    offset = table_lookup_1b9a(index);
     G_DMA_WORK_0216 = offset;
 
     /* Compute table entry: 0x054C + (index * 0x14) */
@@ -1572,13 +1486,13 @@ void transfer_helper_1709(void)
 }
 
 /*
- * helper_466b - Check transfer state
+ * check_transfer_state - Check transfer state
  * Address: 0x466b
  *
  * Returns non-zero if transfer is busy/in-progress, 0 if idle.
- * Called from helper_3f4a when G_XFER_STATE_0AF6 == 0.
+ * Called from transfer_status_check when G_XFER_STATE_0AF6 == 0.
  */
-uint8_t helper_466b(void)
+uint8_t check_transfer_state(void)
 {
     uint8_t val;
 
@@ -1607,37 +1521,37 @@ uint8_t helper_466b(void)
 }
 
 /*
- * helper_043f - Check callback/operation status
+ * check_callback_status - Check callback/operation status
  * Address: 0x043f
  *
  * Performs callback status check.
  * Returns non-zero on success, 0 on failure.
  */
-uint8_t helper_043f(void)
+uint8_t check_callback_status(void)
 {
     /* TODO: Implement callback check from 0x043f */
     return 1;  /* Default: success */
 }
 
 /*
- * helper_36ab - Setup transfer operation
+ * transfer_setup - Setup transfer operation
  * Address: 0x36ab
  *
  * Initializes transfer state and parameters.
- * Called during transfer setup in helper_3f4a.
+ * Called during transfer setup in transfer_status_check.
  */
-void helper_36ab(void)
+void transfer_setup(void)
 {
     /* TODO: Implement transfer setup from 0x36ab */
 }
 
 /*
- * helper_04da - Parameter setup
+ * param_setup - Parameter setup
  * Address: 0x04da
  *
  * Takes a parameter and performs state/parameter setup.
  */
-void helper_04da(uint8_t param)
+void param_setup(uint8_t param)
 {
     uint8_t val;
 
@@ -1663,20 +1577,20 @@ void helper_04da(uint8_t param)
 }
 
 /*
- * helper_322e - Compare helper
+ * compare_helper - Compare helper
  * Address: 0x322e
  *
  * Compares values and returns carry flag result.
  * Returns 1 if carry set (comparison failed), 0 if clear (success).
  */
-uint8_t helper_322e(void)
+uint8_t compare_helper(void)
 {
     /* TODO: Implement compare logic from 0x322e */
     return 0;  /* Default: comparison OK */
 }
 
 /*
- * helper_313f - Check if 32-bit value at IDATA address is non-zero
+ * check_idata_addr_nonzero - Check if 32-bit value at IDATA address is non-zero
  * Address: 0x313f-0x3146 (8 bytes)
  *
  * Original disassembly:
@@ -1687,7 +1601,7 @@ uint8_t helper_322e(void)
  *   3145: orl a, r7
  *   3146: ret             ; Returns non-zero if any byte is non-zero
  */
-uint8_t helper_313f(uint8_t r0_val)
+uint8_t check_idata_addr_nonzero(uint8_t r0_val)
 {
     __idata uint8_t *ptr = (__idata uint8_t *)r0_val;
     return ptr[0] | ptr[1] | ptr[2] | ptr[3];
@@ -1721,7 +1635,7 @@ void helper_31ad(__xdata uint8_t *ptr)
 }
 
 /*
- * helper_3147 - Copy USB status registers to D804-D807
+ * usb_status_copy_to_buffer - Copy USB status registers to D804-D807
  * Address: 0x3147-0x3167 (33 bytes)
  *
  * Copies 4 bytes from 0x911F-0x9122 to 0xD804-0xD807.
@@ -1746,7 +1660,7 @@ void helper_31ad(__xdata uint8_t *ptr)
  *   3166: movx @dptr, a
  *   3167: ret
  */
-void helper_3147(void)
+void usb_status_copy_to_buffer(void)
 {
     /* Copy USB status 0x911F-0x9122 to CSW tag 0xD804-0xD807 */
     USB_CSW->tag0 = REG_CBW_TAG_0;
@@ -1792,7 +1706,7 @@ void helper_3168(void)
 }
 
 /*
- * helper_3181 - Read 2 bytes from USB status register
+ * usb_read_stat_ext - Read 2 bytes from USB status register
  * Address: 0x3181-0x3188 (8 bytes)
  *
  * Reads two bytes from 0x910D-0x910E into R6 and A.
@@ -1806,7 +1720,7 @@ void helper_3168(void)
  *   3187: movx a, @dptr      ; A = [0x910E]
  *   3188: ret
  */
-uint16_t helper_3181(void)
+uint16_t usb_read_stat_ext(void)
 {
     uint8_t lo, hi;
 
@@ -1838,7 +1752,7 @@ __xdata uint8_t *helper_31c3(uint8_t idx)
 }
 
 /*
- * helper_31ce - Read, mask with 0x7F, OR with 0x80, and write back
+ * set_ptr_bit7 - Read, mask with 0x7F, OR with 0x80, and write back
  * Address: 0x31ce-0x31d4 (7 bytes)
  *
  * Reads value at DPTR, clears bit 7, sets bit 7, writes back.
@@ -1851,7 +1765,7 @@ __xdata uint8_t *helper_31c3(uint8_t idx)
  *   31d3: movx @dptr, a
  *   31d4: ret
  */
-void helper_31ce(__xdata uint8_t *ptr)
+void set_ptr_bit7(__xdata uint8_t *ptr)
 {
     uint8_t val = *ptr;
     val = (val & 0x7F) | 0x80;  /* Clear bit 7, then set bit 7 */
@@ -1859,7 +1773,7 @@ void helper_31ce(__xdata uint8_t *ptr)
 }
 
 /*
- * helper_31d5 - Calculate queue address 0x0108 + idx
+ * queue_addr_calc_internal - Calculate queue address 0x0108 + idx
  * Address: 0x31d5-0x31df (11 bytes)
  *
  * Computes DPTR = 0x0108 + R7 (index).
@@ -1873,13 +1787,13 @@ void helper_31ce(__xdata uint8_t *ptr)
  *   31dd: mov dph, a
  *   31df: ret
  */
-__xdata uint8_t *helper_31d5_queue(uint8_t idx)
+__xdata uint8_t *queue_addr_calc(uint8_t idx)
 {
     return (__xdata uint8_t *)(0x0108 + idx);
 }
 
 /*
- * helper_31e0 - Add 0x0C to index and compute address
+ * usb_calc_dma_addr - Add 0x0C to index and compute address
  * Address: 0x31e0-0x31e9 (10 bytes)
  *
  * Computes DPTR = 0x000C + A.
@@ -1892,7 +1806,7 @@ __xdata uint8_t *helper_31d5_queue(uint8_t idx)
  *   31e7: mov dph, a
  *   31e9: ret
  */
-__xdata uint8_t *helper_31e0_addr(uint8_t idx)
+__xdata uint8_t *calc_addr_from_index(uint8_t idx)
 {
     return (__xdata uint8_t *)(0x000C + idx);
 }
@@ -1924,7 +1838,7 @@ uint8_t helper_31ea(__xdata uint8_t *ptr)
 }
 
 /*
- * helper_36ab_impl - Transfer setup handler
+ * transfer_setup_impl - Transfer setup handler
  * Address: 0x36ab-0x37c2 (~280 bytes)
  *
  * Configures SCSI/DMA registers for transfer operations.
@@ -1933,7 +1847,7 @@ uint8_t helper_31ea(__xdata uint8_t *ptr)
  * This is the main transfer setup function that prepares the
  * SCSI buffer and DMA engine for data transfers.
  */
-void helper_36ab_impl(void)
+void transfer_setup_impl(void)
 {
     uint8_t val;
 
@@ -2060,7 +1974,7 @@ void dma_transfer_state_dispatch(uint8_t param)
     /* This calls dma_complex_transfer internally */
 
     /* Read 0x0AA3 and OR with 0x80, write to DMA ctrl register */
-    state_val = G_STATE_RESULT_0AA3;
+    state_val = G_STATE_COUNTER_HI;
     state_val |= 0x80;
     REG_DMA_CTRL = state_val;  /* DMA ctrl register */
 
@@ -2159,8 +2073,8 @@ uint8_t dma_queue_action_handler(uint8_t param_1, uint8_t param_2, uint8_t actio
     /* 0x2814: Store action code to 0x0A83 */
     G_ACTION_CODE_0A83 = action_code;
 
-    /* 0x2819: Call helper_3f4a to check if we can proceed */
-    result = helper_3f4a();
+    /* 0x2819: Call transfer_status_check to check if we can proceed */
+    result = transfer_status_check();
     I_WORK_3A = result;
 
     /* 0x2820: Check result */
@@ -2419,14 +2333,14 @@ void cmd_queue_status_handler(uint8_t param_1)
     interface_ready_check(0x00, 0x32, 0x05);
 
     /* Copy system work byte to state work */
-    G_STATE_WORK_0A84 = G_STATE_WORK_002D;
+    G_ACTION_PARAM_0A84 = G_STATE_WORK_002D;
 
     /* Clear counter variables */
     G_STATE_CTRL_0B3F = 0;
     G_STATE_WORK_0A86 = 0;
 
     /* Main processing loop */
-    work_val = G_STATE_WORK_0A84;
+    work_val = G_ACTION_PARAM_0A84;
     while (work_val != 0x22) {  /* Loop until '"' (0x22) */
         /* Get next queue entry */
         cmd_entry = buf_read_offset_08(work_val);
@@ -2434,7 +2348,7 @@ void cmd_queue_status_handler(uint8_t param_1)
 
         if ((cmd_entry & 0x7F) == 0x60) {
             /* Command code 0x60 - special processing */
-            work_val = G_STATE_WORK_0A84;
+            work_val = G_ACTION_PARAM_0A84;
             buf_read_offset_3e(work_val);
 
             /* Update counter */
@@ -2443,7 +2357,7 @@ void cmd_queue_status_handler(uint8_t param_1)
 
         } else if ((cmd_entry & 0x7F) == 0x74 || (cmd_entry & 0x7F) == 0x75) {
             /* Command codes 0x74/0x75 - process command */
-            work_val = G_STATE_WORK_0A84;
+            work_val = G_ACTION_PARAM_0A84;
             buf_read_offset_3e(work_val);
             addr_calc_high_borrow();
 
@@ -2455,7 +2369,7 @@ void cmd_queue_status_handler(uint8_t param_1)
         /* Advance to next entry */
         queue_buf_addr_high();
         work_val = G_STATE_WORK_0A85;
-        G_STATE_WORK_0A84 = work_val;
+        G_ACTION_PARAM_0A84 = work_val;
     }
 
     /* Clear error flag */
@@ -2535,279 +2449,7 @@ void cmd_queue_status_handler(uint8_t param_1)
     REG_SCSI_DMA_PARAM0 = 0;
 }
 
-/*
- * scsi_dma_queue_setup - SCSI DMA queue parameter setup
- * Address: 0x2F67-0x2F7F
- *
- * Sets up SCSI DMA parameters and advances the queue index.
- * Called from scsi_dma_transfer_state to prepare DMA transfers.
- */
-void scsi_dma_queue_setup(uint8_t param_1)
-{
-    /* Combine I_WORK_3A with parameter and store to CE01 */
-    REG_SCSI_DMA_PARAM = I_WORK_3A | param_1;
-
-    /* Set DMA control to mode 3 */
-    REG_SCSI_DMA_CTRL = 0x03;
-
-    /* Increment and mask queue index (5-bit wrap) */
-    I_WORK_3A = (I_WORK_3A + 1) & 0x1F;
-
-    /* Call power status check with new index */
-    power_check_status(I_WORK_3A);
-}
-
-/*
- * scsi_dma_transfer_state - SCSI DMA transfer state machine
- * Address: 0x2DB7-0x2F66
- *
- * Handles SCSI DMA transfers based on transfer ready status.
- * Manages queue state and coordinates with NVMe subsystem.
- */
-void scsi_dma_transfer_state(void)
-{
-    uint8_t ready_status;
-    uint8_t status_6c;
-    uint8_t bit_flag;
-
-    /* Clear transfer state flag */
-    G_XFER_STATE_0AF6 = 0;
-
-    /* Copy endpoint index from IDATA 0x0D to I_WORK_3C */
-    I_WORK_3C = I_QUEUE_IDX;
-
-    /* Read transfer ready status and extract bit 2 */
-    ready_status = REG_XFER_READY;
-    bit_flag = (ready_status >> 2) & 0x01;
-
-    /* Read status CE6C and check bit 7 */
-    status_6c = REG_XFER_STATUS_CE6C;
-
-    if (status_6c & 0x80) {
-        /* Bit 7 set - transfer ready path */
-        uint8_t tag_val;
-        uint8_t work_val;
-
-        /* Read tag from CE3A and store to I_WORK_3B */
-        tag_val = REG_SCSI_DMA_TAG_CE3A;
-        I_WORK_3B = tag_val;
-
-        /* Write tag to DMA status register (CE6E) */
-        REG_SCSI_DMA_STATUS = tag_val;
-
-        if (bit_flag) {
-            /* Bit 2 of CE89 is set - NVMe address calculation path */
-            REG_SCSI_DMA_CTRL = 0x01;
-
-            /* Calculate address offset: 0x94 + I_WORK_3B */
-            nvme_calc_addr_01xx(0x94 + I_WORK_3B);
-
-            /* Clear DMA control */
-            REG_SCSI_DMA_CTRL = 0;
-
-            /* Set flag at 0x07EA */
-            G_XFER_FLAG_07EA = 1;
-
-            /* Clear counter at computed XDATA offset (0x0171 + I_WORK_3C) */
-            {
-                __xdata uint8_t *counter_ptr;
-                uint16_t addr = 0x0071 + I_WORK_3C;
-                if (addr >= 0x0100) {
-                    counter_ptr = (__xdata uint8_t *)addr;
-                } else {
-                    counter_ptr = (__xdata uint8_t *)(0x0100 + addr);
-                }
-                *counter_ptr = 0;
-            }
-        } else {
-            /* Bit 2 not set - status primary path */
-            uint8_t saved_status;
-            uint8_t param;
-
-            saved_status = G_SYS_STATUS_PRIMARY;
-            FUN_CODE_1bec();
-            I_WORK_3A = G_SYS_STATUS_PRIMARY;
-
-            /* Calculate parameter based on primary status */
-            param = 0;
-            if (saved_status == 0x01) {
-                param = 0x40;
-            }
-
-            /* Call queue parameter setup */
-            scsi_dma_queue_setup(param);
-
-            nvme_get_config_offset();
-            G_SYS_STATUS_PRIMARY = I_WORK_3A;
-            G_STATE_FLAG_06E6 = 1;
-        }
-
-        /* Store I_WORK_3B at computed XDATA offset (0x0059 + I_WORK_3C) */
-        {
-            __xdata uint8_t *ptr1 = (__xdata uint8_t *)(0x0059 + I_WORK_3C);
-            *ptr1 = I_WORK_3B;
-        }
-
-        /* Set flag at computed XDATA offset (0x007C + I_WORK_3C) */
-        {
-            __xdata uint8_t *ptr2 = (__xdata uint8_t *)(0x007C + I_WORK_3C);
-            *ptr2 = 1;
-        }
-
-        /* Set flag at computed XDATA offset (0x009F + I_WORK_3C) */
-        {
-            __xdata uint8_t *ptr3 = (__xdata uint8_t *)(0x009F + I_WORK_3C);
-            *ptr3 = 1;
-        }
-
-        /* Set G_NVME_QUEUE_READY and determine final value */
-        G_NVME_QUEUE_READY = 1;
-        work_val = 0x60;
-        if (bit_flag) {
-            work_val = 0x74;
-        }
-
-        /* Call helper 0x1B30 with I_WORK_3C + 8 and store result */
-        FUN_CODE_1b30(I_WORK_3C + 8);
-        G_NVME_QUEUE_READY = work_val;
-
-        /* Calculate IDATA offset and update endpoint index */
-        nvme_calc_idata_offset();
-        I_QUEUE_IDX = G_NVME_QUEUE_READY;
-    } else {
-        /* Bit 7 not set - check/setup path */
-        uint8_t check_result;
-
-        check_result = scsi_dma_transfer_process(0x01);
-
-        if (!check_result) {
-            /* Check failed - set log flag and compare counters */
-            uint8_t count_9f;
-            uint8_t count_71;
-
-            G_LOG_INIT_044D = 1;
-
-            /* Read counter from 0x009F + I_WORK_3C */
-            count_9f = FUN_CODE_1b8d(0x9F + I_WORK_3C);
-
-            /* Read counter from 0x0071 + I_WORK_3C */
-            count_71 = FUN_CODE_1b0b(0x71 + I_WORK_3C);
-
-            if (count_71 < count_9f) {
-                /* count_71 < count_9f - set high bit */
-                FUN_CODE_1b30(I_WORK_3C + 8);
-                {
-                    __xdata uint8_t *flag_ptr = (__xdata uint8_t *)0x044D;
-                    *flag_ptr = *flag_ptr | 0x80;
-                }
-            } else {
-                /* count_71 >= count_9f - set to 0xC3 */
-                FUN_CODE_1b30(I_WORK_3C + 8);
-                {
-                    __xdata uint8_t *flag_ptr = (__xdata uint8_t *)0x044D;
-                    *flag_ptr = 0xC3;
-                }
-            }
-            return;
-        }
-
-        /* Check passed - proceed with setup */
-        {
-            uint8_t helper_val;
-            uint8_t work_val2;
-            uint8_t nvme_param;
-            uint8_t counter_val;
-            uint8_t new_val;
-
-            helper_val = G_STATE_HELPER_41;
-            REG_SCSI_DMA_CFG_CE36 = helper_val;
-
-            if (!bit_flag) {
-                /* Bit 2 not set - call external function and save result */
-                nvme_queue_state_update(0x01);
-                I_WORK_3A = 0x01;  /* Result placeholder */
-            }
-
-            /* Call helper with computed offset and read result */
-            FUN_CODE_1b3f(I_WORK_3C + 0x4E);
-            I_WORK_3D = REG_SCSI_DMA_CFG_CE36;
-
-            /* Combine NVMe param with I_WORK_3D and store to CE3A */
-            nvme_param = G_NVME_PARAM_053A;
-            REG_SCSI_DMA_TAG_CE3A = nvme_param | I_WORK_3D;
-
-            if (bit_flag) {
-                /* Bit 2 set - NVMe address path */
-                REG_SCSI_DMA_CTRL = 0x01;
-                nvme_calc_addr_01xx(I_WORK_3D + 0x94);
-                REG_SCSI_DMA_CTRL = G_NVME_PARAM_053A;
-                G_XFER_FLAG_07EA = 1;
-            } else {
-                /* Bit 2 not set - queue setup path */
-                uint8_t saved_status;
-                uint8_t param;
-
-                saved_status = G_SYS_STATUS_PRIMARY;
-                param = 0;
-                if (saved_status == 0x01) {
-                    param = 0x40;
-                }
-
-                scsi_dma_queue_setup(param);
-                G_STATE_FLAG_06E6 = 1;
-            }
-
-            /* Set work value based on bit flag */
-            work_val2 = 0x60;
-            if (bit_flag) {
-                work_val2 = 0x74;
-            }
-
-            /* Call helper and store work value */
-            FUN_CODE_1b30(I_WORK_3C + 8);
-            G_XFER_FLAG_07EA = work_val2;
-
-            /* Read counter from 0x0071 + I_WORK_3C, decrement and store */
-            counter_val = FUN_CODE_1b0b(0x71 + I_WORK_3C);
-            counter_val--;
-            G_XFER_FLAG_07EA = counter_val;
-
-            if (counter_val == 0) {
-                /* Counter hit zero - finalize setup */
-                nvme_calc_idata_offset();
-                I_QUEUE_IDX = G_XFER_FLAG_07EA;
-                new_val = usb_get_ep_config_indexed();
-                FUN_CODE_1c43(new_val + I_WORK_3D);
-            } else {
-                /* Counter not zero - update queue entry */
-                new_val = usb_get_ep_config_indexed();
-                new_val = (new_val + I_WORK_3D) & 0x1F;
-
-                FUN_CODE_1b3f(I_WORK_3C + 0x4E);
-                G_XFER_FLAG_07EA = new_val;
-
-                FUN_CODE_1b3f(I_WORK_3C + 0x4E);
-                if (G_XFER_FLAG_07EA == 0) {
-                    nvme_add_to_global_053a();
-                }
-
-                FUN_CODE_1b30(I_WORK_3C + 8);
-                G_XFER_FLAG_07EA = G_XFER_FLAG_07EA | 0x80;
-            }
-
-            /* Clear queue ready flag */
-            G_NVME_QUEUE_READY = 0;
-
-            /* Check bit 6 of CE60 and set log flag if set */
-            if (REG_XFER_STATUS_CE60 & XFER_STATUS_BIT6) {
-                G_LOG_INIT_044D = 1;
-            }
-        }
-    }
-
-    /* Call transfer flag setup */
-    usb_set_transfer_flag();
-}
+/* NOTE: scsi_dma_queue_setup and scsi_dma_transfer_state moved to scsi.c */
 
 /*===========================================================================
  * BANK 1 EVENT HANDLERS
@@ -2868,13 +2510,13 @@ void event_queue_process_e762(void)
 
     /* Read state counters */
     val_aa3 = G_STATE_COUNTER_HI;
-    val_aa2 = *(__xdata uint8_t *)0x0AA2;
+    val_aa2 = G_STATE_PARAM_0AA2;
 
     /* Event processing loop - simplified */
-    count = *(__xdata uint8_t *)0x0AA5;
+    count = G_STATE_COUNTER_0AA5;
     if (count < 0x20) {
         /* Increment event counter */
-        *(__xdata uint8_t *)0x0AA5 = count + 1;
+        G_STATE_COUNTER_0AA5 = count + 1;
     }
 }
 
@@ -2907,41 +2549,6 @@ extern void parse_descriptor(uint8_t param);   /* 0x04da */
 extern void usb_state_setup_4c98(void);        /* 0x4c98 */
 extern uint8_t mul_add_index_0dd1(uint8_t base, uint8_t mult);       /* 0x0dd1 */
 extern void usb_helper_51ef(void);             /* 0x51ef */
-extern void usb_helper_5112(void);             /* 0x5112 */
-
-/*
- * helper_3212 - SCSI DMA tag setup
- * Address: 0x3212-0x3225 (20 bytes)
- *
- * Sets up DPTR from index calculation.
- * param_idx is loop index, param_reg is target register (0xCE8A typically).
- *
- * Original disassembly:
- *   3212: mov dpl, r7
- *   3214: mov dph, r6
- *   3216: clr a
- *   3217: subb a, 0x39      ; A = 0 - IDATA[0x39]
- *   3219: add a, 0x38       ; A = A + IDATA[0x38] = loop_idx - max_count
- *   321b: push 0x82         ; save DPL
- *   321d: push 0x83         ; save DPH
- *   321f: mov dpl, a        ; DPL = index
- *   3221: clr a
- *   3222: addc a, #0x8a     ; DPH = 0x8A (could be 0x8B if carry)
- *   3224: mov dph, a
- *   3225: ret
- */
-void scsi_dma_tag_setup_3212(uint8_t idx, uint16_t reg_addr)
-{
-    /* Calculate negative index: idx - max */
-    int8_t neg_idx = (int8_t)I_WORK_38 - (int8_t)I_WORK_39;
-
-    /* Set up SCSI DMA index register */
-    /* This sets up an index for DMA tag operations */
-    (void)idx;
-    (void)reg_addr;
-    (void)neg_idx;
-    /* The actual DMA setup is done by the hardware based on the index */
-}
 
 /*
  * helper_313a - Check if 32-bit value at IDATA[0x6B] is zero
@@ -3059,13 +2666,13 @@ void usb_ep_loop_3419(void)
     tag_val = REG_SCSI_TAG_VALUE;
     G_USB_WORK_009F = tag_val;
 
-    /* Call helper_5359 */
+    /* Call buffer_setup */
     usb_param = G_USB_WORK_009F;
-    helper_5359(usb_param);
+    buffer_setup(usb_param);
 
     /* Store result to G_USB_PARAM_0B00 and 0x012B */
     G_USB_PARAM_0B00 = usb_param;
-    *(__xdata uint8_t *)0x012B = usb_param;
+    G_WORK_012B = usb_param;
 
     /* Compare with 0x0AFF and determine loop count */
     val = G_XFER_RETRY_CNT;  /* 0x0AFF */
@@ -3137,8 +2744,8 @@ void usb_ep_loop_3419(void)
     G_INTERFACE_READY_0B2F = 0;  /* 0x0B2F */
     G_IO_CMD_TYPE = 0;           /* 0x0001 */
 
-    /* Call helper_3147 - copy USB status to buffer */
-    helper_3147();
+    /* Call usb_status_copy_to_buffer - copy USB status to buffer */
+    usb_status_copy_to_buffer();
 
     /* Clear buffer transfer start */
     G_BUF_XFER_START = 0;  /* 0xD80C */
@@ -3153,12 +2760,12 @@ void usb_ep_loop_3419(void)
     val = REG_XFER_READY;
     if (val & 0x04) {
         /* Bit 2 set */
-        *(__xdata uint8_t *)0x0108 = 0x30;
+        G_USB_INIT_STATE_0108 = 0x30;
         I_STATE_6A = 4;
         G_XFER_FLAG_07EA = 1;
     } else {
         /* Bit 2 clear */
-        *(__xdata uint8_t *)0x0108 = 0x20;
+        G_USB_INIT_STATE_0108 = 0x20;
         I_STATE_6A = 3;
     }
     return;
@@ -3179,7 +2786,7 @@ abort_path:
 }
 
 /*
- * helper_3bcd - DMA state transfer handler
+ * dma_state_transfer - DMA state transfer handler
  * Address: 0x3bcd-0x3cb7 (~235 bytes)
  *
  * Handles DMA state transitions and queue processing.
@@ -3190,7 +2797,7 @@ abort_path:
  *
  * Returns: Value from G_STATE_COUNTER_0AA5 (0x0AA5)
  */
-uint8_t helper_3bcd(uint8_t param)
+uint8_t dma_state_transfer(uint8_t param)
 {
     uint8_t val;
     uint8_t status;
@@ -3198,8 +2805,8 @@ uint8_t helper_3bcd(uint8_t param)
     /* Store param to G_STATE_COUNTER_HI */
     G_STATE_COUNTER_HI = param;
 
-    /* Call helper_5359 with param 1 */
-    helper_5359(0x01);
+    /* Call buffer_setup with param 1 */
+    buffer_setup(0x01);
 
     /* DMA transfer operations */
     /* (Simplified - actual implementation has complex DMA transfer logic) */
@@ -3213,12 +2820,12 @@ uint8_t helper_3bcd(uint8_t param)
     power_check_status(val);
 
     /* Clear state variables */
-    *(__xdata uint8_t *)0x00E2 = 0;
-    *(__xdata uint8_t *)0x0105 = 0;
-    *(__xdata uint8_t *)0x0128 = 0;
-    *(__xdata uint8_t *)0x00BF = 1;
-    *(__xdata uint8_t *)0x04D7 = 0;
-    *(__xdata uint8_t *)0x04F7 = 0;
+    G_LOOP_STATE_00E2 = 0;
+    G_USB_STATE_0105 = 0;
+    G_WORK_0128 = 0;
+    G_USB_MODE_FLAG_00BF = 1;
+    G_STATE_FLAG_04D7 = 0;
+    G_STATE_FLAG_04F7 = 0;
     G_STATE_COUNTER_0AA5 = 0x80;
 
     /* State processing loop (simplified) */
@@ -3229,13 +2836,13 @@ uint8_t helper_3bcd(uint8_t param)
             break;
         }
 
-        val = *(__xdata uint8_t *)0x00E2;
+        val = G_LOOP_STATE_00E2;
     } while (val != 0x01);
 
     /* Check completion flags */
-    val = *(__xdata uint8_t *)0x04D7;
+    val = G_STATE_FLAG_04D7;
     if (val == 0) {
-        val = *(__xdata uint8_t *)0x04F7;
+        val = G_STATE_FLAG_04F7;
         if (val == 0) {
             G_STATE_COUNTER_0AA5 = 0;
         }
@@ -3306,7 +2913,7 @@ void helper_3cb8(uint8_t state_code)
 }
 
 /*
- * helper_3130 - Set bit 0 of USB EP0 config register
+ * usb_ep0_set_bit0 - Set bit 0 of USB EP0 config register
  * Address: 0x3130-0x3139 (10 bytes)
  *
  * This helper function sets bit 0 of register 0x9006 (REG_USB_EP0_CONFIG).
@@ -3321,7 +2928,7 @@ void helper_3cb8(uint8_t state_code)
  *   3138: movx @dptr, a
  *   3139: ret
  */
-void helper_3130(void)
+void usb_ep0_set_bit0(void)
 {
     uint8_t val;
 
@@ -3392,7 +2999,7 @@ __xdata uint8_t *helper_3226(uint8_t addr_low, uint8_t addr_high)
  * the USB signal register 0x90A1 to signal operation complete.
  *
  * Original disassembly:
- *   3219: lcall 0x53c0       ; helper_53c0
+ *   3219: lcall 0x53c0       ; dma_buffer_write
  *   321c: mov dptr, #0x90a1
  *   321f: mov a, #0x01
  *   3221: movx @dptr, a
@@ -3400,7 +3007,7 @@ __xdata uint8_t *helper_3226(uint8_t addr_low, uint8_t addr_high)
  */
 void nvme_call_and_signal_3219(void)
 {
-    helper_53c0();
+    dma_buffer_write();
     REG_USB_SIGNAL_90A1 = 0x01;
 }
 
@@ -3548,7 +3155,7 @@ uint32_t xdata_read_0a7e_329f(void)
  *   - XDATA[0x0002] - command byte (for dispatch within state 0x02)
  *
  * State dispatch table:
- *   - State != 0x02: goto default_handler (calls helper_312a, helper_31ce)
+ *   - State != 0x02: goto default_handler (calls usb_ep0_config_set, set_ptr_bit7)
  *   - State 0x02, cmd 0xE3 or 0xFB: complex DMA/buffer handling
  *   - State 0x02, cmd 0xF9 or 0xE1: USB transaction mode handling
  *   - State 0x02, other cmd: goto default_handler
@@ -3565,10 +3172,10 @@ void protocol_state_dispatcher_32a5(void)
     uint32_t val_6b, val_6f, sub_result;
 
     /* External function declarations */
-    extern void helper_312a(void);
-    extern void helper_31ce(void);
-    extern uint16_t helper_3181(void);
-    extern uint8_t helper_313d(void);
+    extern void usb_ep0_config_set(void);
+    extern void set_ptr_bit7(void);
+    extern uint16_t usb_read_stat_ext(void);
+    extern uint8_t check_idata_32bit_nonzero(void);
     extern void scsi_mode_clear(void);
     extern void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7);
     extern void dispatch_04a3(void);
@@ -3613,7 +3220,7 @@ case_f9_e1:
              ((uint32_t)dword_6b[2] << 16) | ((uint32_t)dword_6b[3] << 24);
 
     /* Get USB status (16-bit) and extend to 32-bit */
-    usb_status = helper_3181();
+    usb_status = usb_read_stat_ext();
 
     /* sub32: val_6b = val_6b - usb_status */
     sub_result = val_6b - (uint32_t)usb_status;
@@ -3625,7 +3232,7 @@ case_f9_e1:
     dword_6b[3] = (sub_result >> 24) & 0xFF;
 
     /* Check if IDATA[0x6B] is non-zero */
-    if (helper_313d() != 0) {
+    if (check_idata_32bit_nonzero() != 0) {
         goto common_exit_d8;
     }
 
@@ -3640,7 +3247,7 @@ case_e3_fb:
              ((uint32_t)dword_6b[2] << 16) | ((uint32_t)dword_6b[3] << 24);
 
     /* Get USB status (16-bit) and extend to 32-bit */
-    usb_status = helper_3181();
+    usb_status = usb_read_stat_ext();
 
     /* sub32: val_6b = val_6b - usb_status */
     sub_result = val_6b - (uint32_t)usb_status;
@@ -3660,8 +3267,8 @@ case_e3_fb:
     link_status = usb_link_status_read_328a();
 
     if (link_status == 0x01) {
-        /* Status == 1: Check R6 (from helper_3181) < 2 */
-        usb_status = helper_3181();
+        /* Status == 1: Check R6 (from usb_read_stat_ext) < 2 */
+        usb_status = usb_read_stat_ext();
         if ((usb_status >> 8) < 2) {
             /* R6 < 2: Clear IDATA[0x6B] to zero */
             dword_6b[0] = 0;
@@ -3671,7 +3278,7 @@ case_e3_fb:
         }
     } else {
         /* Status != 1: Check R6 < 4 */
-        usb_status = helper_3181();
+        usb_status = usb_read_stat_ext();
         if ((usb_status >> 8) < 4) {
             /* R6 < 4: Clear IDATA[0x6B] to zero */
             dword_6b[0] = 0;
@@ -3685,7 +3292,7 @@ path_330b_alt:
     /* Read REG 0xD80C and check value */
     if (REG_USB_EP_CSW_STATUS == 0x01) {
         /* D80C == 1: Check IDATA[0x6B] non-zero */
-        if (helper_313d() == 0) {
+        if (check_idata_32bit_nonzero() == 0) {
             goto common_exit_e8;
         }
         goto common_exit_d8;
@@ -3718,13 +3325,13 @@ path_330b_alt:
     /* Call dispatch_04a8 - simplified: always take the R7==0 path */
     dispatch_04a8();
 
-    /* Simplified: Call protocol_setup_params(0, 3, 3), check helper_313d */
+    /* Simplified: Call protocol_setup_params(0, 3, 3), check check_idata_32bit_nonzero */
     protocol_setup_params(0, 0x03, 0x03);
-    if (helper_313d() == 0) {
+    if (check_idata_32bit_nonzero() == 0) {
         goto path_33dc;
     }
-    /* helper_313d non-zero: Complex add path */
-    usb_status = helper_3181();
+    /* check_idata_32bit_nonzero non-zero: Complex add path */
+    usb_status = usb_read_stat_ext();
     val_6b = (uint32_t)dword_6b[0] | ((uint32_t)dword_6b[1] << 8) |
              ((uint32_t)dword_6b[2] << 16) | ((uint32_t)dword_6b[3] << 24);
     val_6b += (uint32_t)(usb_status & 0xFF);
@@ -3735,8 +3342,8 @@ path_330b_alt:
     goto common_exit_d8;
 
 path_33dc:
-    /* 0x33dc: Read helper_3181, store low byte to IDATA[0x6F] as 32-bit */
-    usb_status = helper_3181();
+    /* 0x33dc: Read usb_read_stat_ext, store low byte to IDATA[0x6F] as 32-bit */
+    usb_status = usb_read_stat_ext();
     dword_6f[0] = usb_status & 0xFF;
     dword_6f[1] = 0;
     dword_6f[2] = 0;
@@ -3770,8 +3377,8 @@ common_exit_e8:
 
 default_handler:
     /* 0x33ff: Default handler path */
-    helper_312a();
-    helper_31ce();
+    usb_ep0_config_set();
+    set_ptr_bit7();
 
     /* Check REG 0x9000 bit 0 */
     if (REG_USB_STATUS & USB_STATUS_ACTIVE) {
@@ -3805,7 +3412,7 @@ uint8_t core_state_check(uint8_t param)
 }
 
 /*
- * helper_328a - Get USB link status (low 2 bits)
+ * usb_link_status_get - Get USB link status (low 2 bits)
  * Address: 0x328a-0x3290 (7 bytes)
  *
  * Disassembly:
@@ -3817,13 +3424,13 @@ uint8_t core_state_check(uint8_t param)
  * Returns: REG_USB_LINK_STATUS & 0x03
  * These bits typically indicate USB link speed/state.
  */
-uint8_t helper_328a(void)
+uint8_t usb_link_status_get(void)
 {
     return REG_USB_LINK_STATUS & 0x03;
 }
 
 /*
- * helper_3298 - Get DMA status high bits
+ * dma_status_get_high - Get DMA status high bits
  * Address: 0x3298-0x329e (7 bytes)
  *
  * Disassembly:
@@ -3835,12 +3442,12 @@ uint8_t helper_328a(void)
  * Returns: REG_DMA_STATUS3 & 0xF8
  * These are the upper 5 bits of DMA status register 3.
  */
-uint8_t helper_3298(void)
+uint8_t dma_status_get_high(void)
 {
     return REG_DMA_STATUS3 & 0xF8;
 }
 
-void helper_3578(uint8_t param)
+void protocol_param_handler(uint8_t param)
 {
     uint8_t status;
 
@@ -3883,7 +3490,7 @@ uint8_t protocol_compare_32bit(void)
 }
 
 /*
- * helper_dd42 - State update based on param and 0x0af1 flag
+ * phy_link_ctrl_update - State update based on param and 0x0af1 flag
  * Address: 0xdd42-0xdd77 (54 bytes)
  *
  * Disassembly:
@@ -3920,7 +3527,7 @@ uint8_t protocol_compare_32bit(void)
  * Based on param value, writes specific values to REG 0xe7e3
  * if bit 5 of G_STATE_FLAG_0AF1 is set.
  */
-void helper_dd42(uint8_t param)
+void phy_link_ctrl_update(uint8_t param)
 {
     uint8_t flag = G_STATE_FLAG_0AF1;
 
@@ -3956,13 +3563,13 @@ void helper_dd42(uint8_t param)
 }
 
 /*
- * helper_d17a - Protocol finalization
+ * protocol_finalize - Protocol finalization
  * Address: 0xd17a-0xd196 (29 bytes, first return path)
  *
  * Calls multiple sub-helpers and returns a status value in r7.
  * Returns 0 on success, non-zero otherwise.
  */
-void helper_d17a(void)
+void protocol_finalize(void)
 {
     /* Complex finalization - calls multiple sub-helpers */
     /* Stub implementation */
@@ -4010,14 +3617,14 @@ void wait_status_loop(void)
 }
 
 /*
- * helper_3279 - Extend 16-bit value in R6:A to 32-bit value
+ * extend_16_to_32 - Extend 16-bit value in R6:A to 32-bit value
  * Address: 0x3279-0x327f (7 bytes)
  *
- * Takes the 16-bit value from helper_3181() (R6=high, A=low)
+ * Takes the 16-bit value from usb_read_stat_ext() (R6=high, A=low)
  * and extends it to a 32-bit value (R0:R1:R2:R3 = 0:0:R6:A)
  *
  * In C, this function is effectively a no-op since the 32-bit
- * result is used implicitly with the 16-bit input from helper_3181.
+ * result is used implicitly with the 16-bit input from usb_read_stat_ext.
  *
  * Original disassembly:
  *   3279: mov r3, a         ; R3 = A (low byte)
@@ -4027,16 +3634,16 @@ void wait_status_loop(void)
  *   327e: mov r0, a         ; R0 = 0
  *   327f: ret
  */
-void helper_3279(void)
+void extend_16_to_32(void)
 {
     /* In assembly this extends R6:A to R0:R1:R2:R3 (32-bit)
      * In C, this is a no-op - the extension happens implicitly
-     * when the 16-bit return from helper_3181() is used as 32-bit
+     * when the 16-bit return from usb_read_stat_ext() is used as 32-bit
      */
 }
 
 /*
- * helper_313d - Check if 32-bit value at IDATA[0x6B] is non-zero
+ * check_idata_32bit_nonzero - Check if 32-bit value at IDATA[0x6B] is non-zero
  * Address: 0x313d-0x3146 (10 bytes)
  *
  * Reads the 32-bit value from IDATA starting at address 0x6B
@@ -4054,75 +3661,48 @@ void helper_3279(void)
  *
  * Returns: non-zero if the 32-bit value is non-zero, 0 otherwise
  */
-uint8_t helper_313d(void)
+uint8_t check_idata_32bit_nonzero(void)
 {
     __idata uint8_t *ptr = (__idata uint8_t *)0x6B;
     return ptr[0] | ptr[1] | ptr[2] | ptr[3];
 }
 
-/*
- * helper_96ae - Clear command engine and return status
- * Address: 0x96ae-0x96b6 (9 bytes)
- *
- * Saves R7/R6 to R3/R2, calls helper_e73a to clear command registers,
- * then returns the original R7 value.
- *
- * Original disassembly:
- *   96ae: mov r3, 0x07     ; R3 = R7
- *   96b0: mov r2, 0x06     ; R2 = R6
- *   96b2: lcall 0xe73a     ; Call helper_e73a (clear 0xE420-0xE43F)
- *   96b5: mov a, r3        ; A = R3 (original R7)
- *   96b6: ret
- *
- * Note: R7/R6 parameters and return value currently ignored in callers.
- */
-void helper_96ae(void)
-{
-    /* Clear command engine registers */
-    cmd_engine_clear();
-}
+/* NOTE: cmd_engine_clear (0x96ae) is defined in cmd.c */
+/* NOTE: cmd_trigger_default (0xdd0e) is defined in cmd.c */
 
-/* helper_dd0e - Address: 0xdd0e
- * Sets R5=1, R7=0x0f and falls through to cmd_trigger_params
- */
-void helper_dd0e(void)
-{
-    cmd_trigger_params(0x0F, 0x01);
-}
-
-/* helper_95a0 - Address: 0x95a0
+/* cmd_error_recovery - Address: 0x95a0
  * Command error recovery helper
  * Sets R5=2, calls cmd_param_setup, writes to E424/E425/07C4
  */
-void helper_95a0(uint8_t r7)
+void cmd_error_recovery(uint8_t r7)
 {
     (void)r7;
     /* Stub - should call cmd_param_setup(r7, 0x02) and write to cmd regs */
 }
 
 /*
- * helper_312a - Setup and set USB EP0 config bit 0
+ * usb_ep0_config_set - Setup and set USB EP0 config bit 0
  * Address: 0x312a-0x3139 (16 bytes)
  *
  * Writes 0x01 to XDATA 0x0AF2 (setting a flag), then falls through
- * to helper_3130 which sets bit 0 of REG_USB_EP0_CONFIG (0x9006).
+ * to usb_ep0_set_bit0 which sets bit 0 of REG_USB_EP0_CONFIG (0x9006).
  *
  * Original disassembly:
  *   312a: mov dptr, #0x0af2
  *   312d: mov a, #0x01
  *   312f: movx @dptr, a
- *   3130: mov dptr, #0x9006   (falls through to helper_3130)
+ *   3130: mov dptr, #0x9006   (falls through to usb_ep0_set_bit0)
  *   3133: movx a, @dptr
  *   3134: anl a, #0xfe
  *   3136: orl a, #0x01
  *   3138: movx @dptr, a
  *   3139: ret
  */
-void helper_312a(void)
+void usb_ep0_config_set(void)
 {
-    extern void helper_3130(void);
+    extern void usb_ep0_set_bit0(void);
     XDATA_VAR8(0x0AF2) = 0x01;
-    helper_3130();
+    usb_ep0_set_bit0();
 }
 
 void helper_dbbb(void)
@@ -4130,10 +3710,10 @@ void helper_dbbb(void)
     /* Stub */
 }
 
-/* helper_3e81 - USB status handler
+/* usb_status_handler - USB status handler
  * Address: 0x3e81
  */
-void helper_3e81(void)
+void usb_status_handler(void)
 {
     uint8_t pending;
     uint8_t counter;
@@ -4148,7 +3728,7 @@ void helper_3e81(void)
 }
 
 /*
- * helper_9617 - Set interrupt enable bit 4
+ * interrupt_enable_bit4 - Set interrupt enable bit 4
  * Address: 0x9617-0x9620 (10 bytes)
  *
  * Sets bit 4 of REG_INT_ENABLE (0xC801).
@@ -4161,7 +3741,7 @@ void helper_3e81(void)
  *   961f: movx @dptr, a      ; Write back
  *   9620: ret
  */
-void helper_9617(void)
+void interrupt_enable_bit4(void)
 {
     uint8_t val = REG_INT_ENABLE;
     val = (val & ~0x10) | 0x10;  /* Set bit 4 */
@@ -4169,7 +3749,7 @@ void helper_9617(void)
 }
 
 /*
- * helper_95bf - DMA config write sequence
+ * dma_config_write - DMA config write sequence
  * Address: 0x95bf-0x95c8 (10 bytes)
  *
  * Writes 0x04 then 0x02 to REG_XFER_DMA_CFG (0xCC99).
@@ -4183,17 +3763,17 @@ void helper_9617(void)
  *   95c7: movx @dptr, a      ; Write 0x02
  *   95c8: ret
  */
-void helper_95bf(void)
+void dma_config_write(void)
 {
     REG_XFER_DMA_CFG = 0x04;
     REG_XFER_DMA_CFG = 0x02;
 }
 
 /*
- * helper_95e1 - Config helper with two params
+ * config_helper_dual - Config helper with two params
  * Address: 0x95e1
  */
-void helper_95e1(uint8_t r7, uint8_t r5)
+void config_helper_dual(uint8_t r7, uint8_t r5)
 {
     (void)r7;
     (void)r5;

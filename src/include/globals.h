@@ -347,8 +347,8 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_STATE_COUNTER_0AA5    XDATA_VAR8(0x0AA5)  /* State counter byte 2 */
 #define G_LOG_PROCESSED_INDEX   XDATA_VAR8(0x0AA1)  /* Current processed log index */
 #define G_STATE_PARAM_0AA2      XDATA_VAR8(0x0AA2)  /* State machine parameter */
-#define G_STATE_RESULT_0AA3     XDATA_VAR8(0x0AA3)  /* State machine result */
-#define G_STATE_WORK_0A84       XDATA_VAR8(0x0A84)  /* State work variable */
+/* NOTE: G_STATE_RESULT_0AA3 removed - use G_STATE_COUNTER_HI (same address) */
+/* NOTE: G_STATE_WORK_0A84 removed - use G_ACTION_PARAM_0A84 (same address) */
 /* TLP handler state variables (also used for flash operations) */
 #define G_TLP_COUNT_HI          XDATA_VAR8(0x0AA8)  /* TLP transfer count high byte */
 #define G_TLP_COUNT_LO          XDATA_VAR8(0x0AA9)  /* TLP transfer count low byte */
@@ -401,7 +401,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_USB_PARAM_0B00        XDATA_VAR8(0x0B00)  /* USB parameter storage */
 #define G_USB_INIT_0B01         XDATA_VAR8(0x0B01)  /* USB init state flag */
 #define G_PCIE_WORK_0B12        XDATA_VAR8(0x0B12)  /* PCIe work variable */
-#define G_TLP_PENDING_0B21      XDATA_VAR8(0x0B21)  /* TLP pending count / DMA control */
+/* NOTE: G_TLP_PENDING_0B21 removed - use G_DMA_WORK_0B21 (same address) */
 #define G_USB_TRANSFER_FLAG     XDATA_VAR8(0x0B2E)  /* USB transfer flag */
 #define G_INTERFACE_READY_0B2F  XDATA_VAR8(0x0B2F)  /* Interface ready flag */
 #define G_STATE_0B39            XDATA_VAR8(0x0B39)  /* State control 0x0B39 */
@@ -411,6 +411,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_BUFFER_STATE_0AA6     XDATA_VAR8(0x0AA6)  /* Buffer state flags */
 #define G_BUFFER_STATE_0AA7     XDATA_VAR8(0x0AA7)  /* Buffer state control */
 #define G_STATE_CTRL_0B3E       XDATA_VAR8(0x0B3E)  /* State control 0x0B3E */
+/* NOTE: G_STATE_WORK_0B3E removed - use G_STATE_CTRL_0B3E (same address) */
 #define G_STATE_CTRL_0B3F       XDATA_VAR8(0x0B3F)  /* State control 0x0B3F */
 #define G_DMA_ENDPOINT_0578     XDATA_VAR8(0x0578)  /* DMA endpoint control */
 #define G_XFER_STATE_0AF3       XDATA_VAR8(0x0AF3)  /* Transfer state / direction (bit 7) */
@@ -422,7 +423,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_STATE_WORK_0A85       XDATA_VAR8(0x0A85)  /* State machine temp storage */
 #define G_STATE_WORK_0A86       XDATA_VAR8(0x0A86)  /* State machine counter */
 #define G_STATE_WORK_0B3D       XDATA_VAR8(0x0B3D)  /* State machine flag 0B3D */
-#define G_STATE_WORK_0B3E       XDATA_VAR8(0x0B3E)  /* State machine flag 0B3E */
+/* G_STATE_WORK_0B3E removed - use G_STATE_CTRL_0B3E */
 #define G_STATE_WORK_002D       XDATA_VAR8(0x002D)  /* System work byte 0x2D */
 
 //=============================================================================
@@ -470,8 +471,8 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_LINK_STATE_0AD1       XDATA_VAR8(0x0AD1)  /* Link state counter */
 #define G_USB_DESC_FLAG_0ACD    XDATA_VAR8(0x0ACD)  /* USB descriptor flag */
 #define G_USB_DESC_MODE_0ACE    XDATA_VAR8(0x0ACE)  /* USB descriptor mode */
-#define G_USB_DESC_STATE_0AD7   XDATA_VAR8(0x0AD7)  /* USB descriptor state (shares with TLP) */
-#define G_USB_DESC_INDEX_0ADE   XDATA_VAR8(0x0ADE)  /* USB descriptor index (shares with TLP) */
+/* NOTE: G_USB_DESC_STATE_0AD7 removed - use G_TLP_COUNT_0AD7 (same address) */
+/* NOTE: G_USB_DESC_INDEX_0ADE removed - use G_TLP_LIMIT_HI (same address) */
 #define G_LINK_STATE_0AD2       XDATA_VAR8(0x0AD2)  /* Link state flag */
 #define G_TLP_MODE_0AD3         XDATA_VAR8(0x0AD3)  /* TLP mode flag */
 #define G_TLP_ADDR_OFFSET_HI    XDATA_VAR8(0x0AD5)  /* TLP address offset high */
@@ -505,8 +506,8 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 //=============================================================================
 #define G_CMD_SLOT_INDEX        XDATA_VAR8(0x07B7)  /* Command slot index (3-bit) */
 #define G_CMD_PENDING_07BB      XDATA_VAR8(0x07BB)  /* Command pending flag */
-#define G_CMD_STATE_07BC        XDATA_VAR8(0x07BC)  /* Command state (0-3) */
-#define G_CMD_OP_COUNTER        XDATA_VAR8(0x07BD)  /* Command operation counter */
+/* NOTE: G_CMD_STATE_07BC removed - use G_FLASH_CMD_TYPE (same address) */
+/* NOTE: G_CMD_OP_COUNTER removed - use G_FLASH_OP_COUNTER (same address) */
 #define G_CMD_ADDR_HI           XDATA_VAR8(0x07BF)  /* Computed slot address high */
 #define G_CMD_ADDR_LO           XDATA_VAR8(0x07C0)  /* Computed slot address low */
 #define G_CMD_SLOT_C1           XDATA_VAR8(0x07C1)  /* Slot index for address calc */

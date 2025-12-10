@@ -405,15 +405,15 @@ void state_add_offset_0x0e(uint8_t *lo, uint8_t *hi)
  */
 
 /* External functions called by state_action_dispatch */
-extern uint8_t helper_3f4a(void);  /* 0x3f4a - Returns status */
-extern void helper_1d1d(void);     /* 0x1d1d - Setup helper */
-extern uint8_t helper_1c9f(void);  /* 0x1c9f - Check status, returns NZ on success */
-extern void helper_4f77(uint8_t param);  /* 0x4f77 - Processing helper */
+extern uint8_t transfer_status_check(void);  /* 0x3f4a - Returns status */
+extern void state_dispatch_setup(void);     /* 0x1d1d - Setup helper */
+extern uint8_t core_process_buffer(void);  /* 0x1c9f - Check status, returns NZ on success */
+extern void state_processing_helper(uint8_t param);  /* 0x4f77 - Processing helper */
 extern uint8_t helper_11a2(uint8_t param);  /* 0x11a2 - Transfer helper, returns status */
-extern void helper_5359(uint8_t param);     /* 0x5359 - Buffer setup */
+extern void buffer_setup(uint8_t param);     /* 0x5359 - Buffer setup */
 extern uint8_t helper_1cd4(void);  /* 0x1cd4 - Returns status with bit 1 flag */
 extern void helper_1cc8(void);     /* 0x1cc8 - Register setup */
-extern void helper_1c22(void);     /* 0x1c22 - Carry flag helper */
+extern void carry_flag_check(void);     /* 0x1c22 - Carry flag helper */
 extern uint8_t get_ep_config_indexed(void);  /* 0x1646 - Get endpoint config value */
 extern void addr_setup_0059(uint8_t offset);  /* 0x1755 - Set up address pointer */
 extern void mem_write_via_ptr(uint8_t value);   /* 0x159f - Write value via pointer */
@@ -424,7 +424,7 @@ extern void mem_write_via_ptr(uint8_t value);   /* 0x159f - Write value via poin
  *
  * This is a complex state machine dispatcher that:
  * 1. Stores action_code to 0x0A83
- * 2. Calls helper_3f4a to get initial status
+ * 2. Calls transfer_status_check to get initial status
  * 3. Based on status and flags, performs various state operations
  * 4. Returns status codes: 0 (success), 1, 3, 4, 5, or 0x80 (error/pending)
  *
@@ -447,7 +447,7 @@ uint8_t state_action_dispatch(uint8_t action_code)
     G_ACTION_CODE_0A83 = action_code;
 
     /* Call initial status check - returns 0 on failure */
-    status = helper_3f4a();
+    status = transfer_status_check();
     *(__idata uint8_t *)0x3b = status;
 
     /* If status is 0, return immediately */
@@ -456,22 +456,22 @@ uint8_t state_action_dispatch(uint8_t action_code)
     }
 
     /* Setup helper */
-    helper_1d1d();
+    state_dispatch_setup();
 
     /* Read back action code and check bit 1 */
     action_flags = G_ACTION_CODE_0A83;
     if (!(action_flags & ACTION_CODE_EXTENDED)) {
         /* Bit 1 not set - write 1 to 0x07EA */
-        *(__xdata uint8_t *)0x07EA = 0x01;
+        G_XFER_FLAG_07EA = 0x01;
     }
 
     /* Call status check helper */
-    status = helper_1c9f();
+    status = core_process_buffer();
     if (status == 0) {
         return 5;  /* ret at 0x2c11 with r7=5 */
     }
 
-    /* Write R4:R5 to 0xC426:0xC427 (from helper_1c9f) */
+    /* Write R4:R5 to 0xC426:0xC427 (from core_process_buffer) */
     /* Read 4 bytes from 0xC4CC using helper_0d84 */
     /* Store to IDATA 0x09, then to IDATA 0x6B-0x6E */
     /* Call math_sub32 to compute */
@@ -487,7 +487,7 @@ uint8_t state_action_dispatch(uint8_t action_code)
     }
 
     /* Call 4f77 with status parameter */
-    helper_4f77(status);
+    state_processing_helper(status);
 
     /* If helper returns 0 */
     action_flags = G_ACTION_CODE_0A83;
@@ -783,7 +783,7 @@ uint8_t usb_func_1b14(uint8_t param)
     dst[3] = src[3];
 
     /* Return value at 0x0009 (like usb_func_1b23) */
-    return *(__xdata uint8_t *)0x0009;
+    return G_BOOT_STATUS_0009;
 }
 
 /*
@@ -815,7 +815,7 @@ uint8_t usb_func_1b20(uint8_t param)
     (void)dst;
 
     /* Return the value at 0x0009 (like usb_func_1b23) */
-    return *(__xdata uint8_t *)0x0009;
+    return G_BOOT_STATUS_0009;
 }
 
 /*
@@ -834,7 +834,7 @@ uint8_t usb_func_1b20(uint8_t param)
 uint8_t usb_func_1b23(void)
 {
     /* Read the third byte of the 3-byte value at 0x0007 */
-    return *(__xdata uint8_t *)0x0009;
+    return G_BOOT_STATUS_0009;
 }
 
 /*
@@ -909,20 +909,20 @@ void usb_mode_config_d07f(uint8_t param)
     /* d08a: Write 0xFF to various registers via helper_bb47 */
     /* These calls write 0xFF then read back with mask operations */
     /* 0xC430, 0xC440, 0x9096, 0x9097 all get 0xFF */
-    *(__xdata uint8_t *)0xC430 = 0xFF;
-    *(__xdata uint8_t *)0xC440 = 0xFF;
-    *(__xdata uint8_t *)0x9096 = 0xFF;
-    *(__xdata uint8_t *)0x9097 = 0xFF;
+    REG_NVME_CMD_PRP1 = 0xFF;
+    REG_NVME_QUEUE_CTRL = 0xFF;
+    REG_USB_EP_READY = 0xFF;
+    REG_USB_EP_CTRL_9097 = 0xFF;
 
     /* d0a3: Write 3 to 0x9098 */
-    *(__xdata uint8_t *)0x9098 = 3;
+    REG_USB_EP_MODE_9098 = 3;
 
     /* d0a6: Write IDATA[0x3E] (0xFF or 0) via helper_bb44 */
     /* This writes to a register based on the mode */
 
     /* d0ab: More register writes */
-    *(__xdata uint8_t *)0xC448 = 0xFF;
-    *(__xdata uint8_t *)0x9011 = 0xFF;
+    REG_NVME_INIT_CTRL2 = 0xFF;
+    REG_USB_DATA_H = 0xFF;
 
     /* d0ba: Set mode based on param */
     if (param == 0) {
@@ -956,17 +956,17 @@ void nvme_queue_config_e214(void)
     uint8_t val;
 
     /* e214: Clear bit 3 of 0xC428 */
-    val = *(__xdata uint8_t *)0xC428;
-    *(__xdata uint8_t *)0xC428 = val & 0xF7;
+    val = REG_NVME_QUEUE_CFG;
+    REG_NVME_QUEUE_CFG = val & 0xF7;
 
     /* e21b: Call helpers for 0xC473 setup */
     /* These are register config helpers */
     /* helper_bba8, helper_bbaf, helper_bb7e, helper_bb47 */
 
     /* e22a: Read 0xC473, clear bit 5, set bit 5, write back via helper_bb6d */
-    val = *(__xdata uint8_t *)0xC473;
+    val = REG_NVME_LINK_PARAM;
     val = (val & 0xDF) | 0x20;
-    *(__xdata uint8_t *)0xC473 = val;
+    REG_NVME_LINK_PARAM = val;
 
     /* e235: Call helper_bb37 - additional cleanup */
 }
@@ -984,8 +984,8 @@ void power_init_complete_e8ef(uint8_t param)
 {
     (void)param;
     /* e8ef: Write 4 then 2 to 0xCC11 */
-    *(__xdata uint8_t *)0xCC11 = 4;
-    *(__xdata uint8_t *)0xCC11 = 2;
+    REG_TIMER0_CSR = 4;
+    REG_TIMER0_CSR = 2;
 }
 
 /*
@@ -993,24 +993,24 @@ void power_init_complete_e8ef(uint8_t param)
  */
 
 /*
- * helper_1687 - Get queue entry DPTR from G_SYS_STATUS_PRIMARY
+ * get_queue_entry_ptr - Get queue entry DPTR from G_SYS_STATUS_PRIMARY
  * Address: 0x1687-0x1695 (15 bytes)
  *
  * Computes DPTR = 0x045A + G_SYS_STATUS_PRIMARY
  */
-static __xdata uint8_t *helper_1687(void)
+static __xdata uint8_t *get_queue_entry_ptr(void)
 {
     uint8_t val = G_SYS_STATUS_PRIMARY;
     return (__xdata uint8_t *)(0x045A + val);
 }
 
 /*
- * helper_16de - Get queue data DPTR from IDATA[0x53]
+ * get_queue_data_ptr - Get queue data DPTR from IDATA[0x53]
  * Address: 0x16de-0x16e8 (11 bytes)
  *
  * Computes DPTR = 0x0466 + IDATA[0x53]
  */
-static __xdata uint8_t *helper_16de(uint8_t idx)
+static __xdata uint8_t *get_queue_data_ptr(uint8_t idx)
 {
     return (__xdata uint8_t *)(0x0466 + idx);
 }
@@ -1026,37 +1026,37 @@ static void helper_1633(void)
 }
 
 /*
- * helper_15d0 - Get address 0x009F + IDATA[0x52]
+ * get_addr_9f_offset - Get address 0x009F + IDATA[0x52]
  * Address: 0x15d0-0x15db (12 bytes)
  */
-static __xdata uint8_t *helper_15d0(uint8_t idx)
+static __xdata uint8_t *get_addr_9f_offset(uint8_t idx)
 {
     return (__xdata uint8_t *)(0x009F + idx);
 }
 
 /*
- * helper_179d - Get address 0x00C2 + IDATA[0x52]
+ * get_addr_c2_offset - Get address 0x00C2 + IDATA[0x52]
  * Address: 0x179d-0x17a8 (12 bytes)
  */
-static __xdata uint8_t *helper_179d(uint8_t idx)
+static __xdata uint8_t *get_addr_c2_offset(uint8_t idx)
 {
     return (__xdata uint8_t *)(0x00C2 + idx);
 }
 
 /*
- * helper_1696 - Get address 0x04B7 + IDATA[0x55]
+ * get_addr_4b7_offset - Get address 0x04B7 + IDATA[0x55]
  * Address: 0x1696-0x16a1 (12 bytes)
  */
-static __xdata uint8_t *helper_1696(uint8_t idx)
+static __xdata uint8_t *get_addr_4b7_offset(uint8_t idx)
 {
     return (__xdata uint8_t *)(0x04B7 + idx);
 }
 
 /*
- * helper_15c3 - Read from 0x00C2 + offset, return DPTR to 0x009F + offset
+ * read_queue_offset - Read from 0x00C2 + offset, return DPTR to 0x009F + offset
  * Address: 0x15c3-0x15db
  */
-static uint8_t helper_15c3(uint8_t idx)
+static uint8_t read_queue_offset(uint8_t idx)
 {
     /* Reads 0x00C2 + idx, sets DPTR to 0x009F + idx */
     return *(__xdata uint8_t *)(0x00C2 + idx);
@@ -1072,54 +1072,54 @@ static __xdata uint8_t *helper_15bb(uint8_t idx)
 }
 
 /*
- * handler_280a - Queue processing helper
+ * queue_processing_helper - Queue processing helper
  * Address: 0x280a-0x2813 (10 bytes)
  *
  * Calls protocol_setup_params with r3=3, r5=0x47, r7=0x0b
  */
 extern void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7);
 
-static void handler_280a(void)
+static void queue_processing_helper(void)
 {
     protocol_setup_params(0x03, 0x47, 0x0B);
 }
 
 /*
- * helper_53a7 - Setup DMA/buffer configuration
+ * dma_completion_handler - Setup DMA/buffer configuration
  * Address: 0x53a7
  */
-extern void helper_53a7(void);
+extern void dma_completion_handler(void);
 
 /*
- * helper_53c0 - Alternate DMA/buffer configuration
+ * dma_buffer_write - Alternate DMA/buffer configuration
  * Address: 0x53c0
  */
-extern void helper_53c0(void);
+extern void dma_buffer_write(void);
 
 /*
- * helper_0206 - Generic helper function
+ * dma_buffer_config - Generic helper function
  * Address: 0x0206
  */
-extern void helper_0206(uint8_t r5, uint8_t r7);
+extern void dma_buffer_config(uint8_t r5, uint8_t r7);
 
 /*
- * helper_020b - DMA buffer configuration (direct entry)
+ * dma_buffer_config_direct - DMA buffer configuration (direct entry)
  * Address: 0x020b
- * Alternate entry point to helper_0206 that skips initial check
+ * Alternate entry point to dma_buffer_config that skips initial check
  */
-extern void helper_020b(uint8_t r5, uint8_t r7);
+extern void dma_buffer_config_direct(uint8_t r5, uint8_t r7);
 
 /*
- * helper_45d0 - Transfer control helper
+ * transfer_control - Transfer control helper
  * Address: 0x45d0
  */
-extern void helper_45d0(uint8_t param);
+extern void transfer_control(uint8_t param);
 
 /*
- * helper_0421 - Endpoint configuration
+ * endpoint_config_init - Endpoint configuration
  * Address: 0x0421
  */
-extern void helper_0421(uint8_t param);
+extern void endpoint_config_init(uint8_t param);
 
 /*
  * dma_interrupt_handler - DMA/buffer queue state handler
@@ -1156,12 +1156,12 @@ void dma_queue_state_handler(void)
 
 handler_loop:
     /* Get entry index from 0x045A + G_SYS_STATUS_PRIMARY */
-    ptr = helper_1687();
+    ptr = get_queue_entry_ptr();
     entry_idx = *ptr;
     *i_entry_idx = entry_idx;
 
-    /* Get buffer state value from helper_16de and store */
-    ptr = helper_16de(entry_idx);
+    /* Get buffer state value from get_queue_data_ptr and store */
+    ptr = get_queue_data_ptr(entry_idx);
     G_BUFFER_STATE_0AA7 = *ptr;
 
     /* Check G_SYS_STATUS_PRIMARY */
@@ -1231,7 +1231,7 @@ handler_loop:
     *i_buf_flags = buf_flags;
 
     /* Check for IDATA flag result */
-    ptr = helper_15d0(*i_queue_hi);
+    ptr = get_addr_9f_offset(*i_queue_hi);
 
     if (*ptr == 0x01) {
         /* Check bit 4 of buf_flags */
@@ -1239,13 +1239,13 @@ handler_loop:
             r7 = 1;
             goto handler_final_check;
         }
-        /* Call helper_179d and write 1 */
-        ptr = helper_179d(*i_queue_hi);
+        /* Call get_addr_c2_offset and write 1 */
+        ptr = get_addr_c2_offset(*i_queue_hi);
         *ptr = 0x01;
         goto handler_final_check;
     } else {
-        /* Different path - increment via helper_179d */
-        ptr = helper_179d(*i_queue_hi);
+        /* Different path - increment via get_addr_c2_offset */
+        ptr = get_addr_c2_offset(*i_queue_hi);
         (*ptr)++;
 
         /* Read from 0x00E5 + queue_hi to temp */
@@ -1263,9 +1263,9 @@ handler_loop:
                 /* Write endpoint 0x0578 */
                 G_DMA_ENDPOINT_0578 = *i_queue_lo;
 
-                /* Call helper_15c3 and compare */
-                uint8_t r6_val = helper_15c3(*i_queue_hi);
-                ptr = helper_15d0(*i_queue_hi);
+                /* Call read_queue_offset and compare */
+                uint8_t r6_val = read_queue_offset(*i_queue_hi);
+                ptr = get_addr_9f_offset(*i_queue_hi);
                 if (*ptr != r6_val) {
                     r7 = 1;
                     goto handler_final_check;
@@ -1277,17 +1277,17 @@ handler_loop:
                     *i_loop_cnt = 0;
 
                     while (*i_loop_cnt < 0x20) {
-                        ptr = helper_1696(*i_loop_cnt);
+                        ptr = get_addr_4b7_offset(*i_loop_cnt);
                         if (*ptr == 0xFF) {
-                            /* Write queue_lo to helper_1696 slot */
-                            ptr = helper_1696(*i_loop_cnt);
+                            /* Write queue_lo to get_addr_4b7_offset slot */
+                            ptr = get_addr_4b7_offset(*i_loop_cnt);
                             *ptr = *i_queue_lo;
 
                             /* Write loop_cnt to 0x053B */
                             G_NVME_STATE_053B = *i_loop_cnt;
 
-                            /* Compare with helper_15c3 */
-                            uint8_t r6_val = helper_15c3(*i_queue_hi);
+                            /* Compare with read_queue_offset */
+                            uint8_t r6_val = read_queue_offset(*i_queue_hi);
                             if (*i_loop_cnt >= r6_val) {
                                 goto handler_final_check;
                             }
@@ -1299,9 +1299,9 @@ handler_loop:
                         (*i_loop_cnt)++;
                     }
                 } else {
-                    /* Call helper_15c3 and compare */
-                    uint8_t r6_val = helper_15c3(*i_queue_hi);
-                    ptr = helper_15d0(*i_queue_hi);
+                    /* Call read_queue_offset and compare */
+                    uint8_t r6_val = read_queue_offset(*i_queue_hi);
+                    ptr = get_addr_9f_offset(*i_queue_hi);
                     if (*ptr != r6_val) {
                         r7 = 1;
                         goto handler_final_check;
@@ -1328,14 +1328,14 @@ handler_final_check:
             /* Write to 0x0AF5 */
             G_EP_DISPATCH_OFFSET = *i_queue_hi;
 
-            /* Call helper_53a7 */
-            helper_53a7();
+            /* Call dma_completion_handler */
+            dma_completion_handler();
         } else {
-            /* Call handler_280a */
-            handler_280a();
+            /* Call queue_processing_helper */
+            queue_processing_helper();
 
-            /* Clear r5, set r7 = queue_hi, call helper_0206 */
-            helper_0206(0, *i_queue_hi);
+            /* Clear r5, set r7 = queue_hi, call dma_buffer_config */
+            dma_buffer_config(0, *i_queue_hi);
         }
 
         /* Write 0xFF to 0x0171 + queue_hi slot */
@@ -1349,11 +1349,11 @@ handler_final_check:
         /* Bit 6 not set - check IDATA[0x6A] == 4 */
         if (*i_state_6a == 0x04) {
             if (G_BUFFER_STATE_0AA6 != 0) {
-                handler_280a();
+                queue_processing_helper();
             }
 
-            /* Call helper_53c0 */
-            helper_53c0();
+            /* Call dma_buffer_write */
+            dma_buffer_write();
 
             /* Write 0x01 to 0x90A1 (USB signal) */
             REG_USB_SIGNAL_90A1 = 0x01;
@@ -1366,7 +1366,7 @@ handler_final_check:
 
             /* Loop while loop_cnt < G_NVME_STATE_053B */
             while (*i_loop_cnt < G_NVME_STATE_053B) {
-                ptr = helper_1696(*i_loop_cnt);
+                ptr = get_addr_4b7_offset(*i_loop_cnt);
                 *ptr = 0xFF;
                 (*i_loop_cnt)++;
             }
@@ -1375,7 +1375,7 @@ handler_final_check:
 
     /* Check bit 2 of buf_flags */
     if (*i_buf_flags & 0x04) {
-        helper_45d0(*i_queue_hi);
+        transfer_control(*i_queue_hi);
     }
 
 handler_advance:
@@ -1397,16 +1397,16 @@ handler_epilogue:
     sys_status = G_SYS_STATUS_PRIMARY;
     ptr = (__xdata uint8_t *)(0x045A + sys_status);
     if (*ptr != *i_entry_idx) {
-        /* Call helper_0421 with entry_idx */
-        helper_0421(*i_entry_idx);
+        /* Call endpoint_config_init with entry_idx */
+        endpoint_config_init(*i_entry_idx);
 
         /* Update pointer with new entry */
-        ptr = helper_1687();
+        ptr = get_queue_entry_ptr();
         *ptr = *i_entry_idx;
 
         /* Update buffer state from 0AA7 */
         uint8_t r6_val = G_BUFFER_STATE_0AA7;
-        ptr = helper_16de(*i_entry_idx);
+        ptr = get_queue_data_ptr(*i_entry_idx);
         *ptr = r6_val;
     }
 }
@@ -1588,8 +1588,8 @@ void reg_set_bit1_bbaf(__xdata uint8_t *addr)
 
 /* External declarations for called functions */
 extern void dispatch_057f(void);                 /* dispatch.c */
-extern void helper_dd42(uint8_t param);          /* cmd.c - 0xdd42 */
-extern void handler_e7c1(uint8_t param);         /* via dispatch */
+extern void phy_link_ctrl_update(uint8_t param);          /* cmd.c - 0xdd42 */
+extern void pcie_param_handler(uint8_t param);         /* via dispatch */
 
 /*
  * power_state_handler - Handle system state transitions
@@ -1599,7 +1599,7 @@ extern void handler_e7c1(uint8_t param);         /* via dispatch */
  * and system state, performs appropriate actions based on state.
  *
  * State machine:
- *   - If G_EVENT_CTRL_09FA == 4: call handler_dd42(4), handler_e7c1(0)
+ *   - If G_EVENT_CTRL_09FA == 4: call handler_dd42(4), pcie_param_handler(0)
  *   - If G_SYSTEM_STATE_0AE2 == 1: call dispatch_057f, set bit 6 of 0x92E1,
  *                                  clear bit 6 of power status
  *   - If G_SYSTEM_STATE_0AE2 == 2: clear bit 1 of PHY control 0x91C0
@@ -1615,7 +1615,7 @@ extern void handler_e7c1(uint8_t param);         /* via dispatch */
  *   ca16: lcall 0xdd42        ; handler_dd42(4)
  *   ca19: clr a
  *   ca1a: mov r7, a
- *   ca1b: lcall 0xe7c1        ; handler_e7c1(0)
+ *   ca1b: lcall 0xe7c1        ; pcie_param_handler(0)
  *   ca1e: mov dptr, #0x0ae2   ; G_SYSTEM_STATE_0AE2
  *   ...
  *   ca70: ret
@@ -1626,8 +1626,8 @@ void power_state_handler(void)
 
     /* Check event control for state 4 */
     if (G_EVENT_CTRL_09FA == 4) {
-        helper_dd42(4);
-        handler_e7c1(0);
+        phy_link_ctrl_update(4);
+        pcie_param_handler(0);
     }
 
     /* Handle system state transitions */
@@ -2543,7 +2543,7 @@ extern void usb_ep_loop_3419(void);              /* 0x3419 */
 extern void dma_interrupt_handler(void);                  /* 0x2608 - link event handler (dma.c) */
 extern void nvme_completion_handler(uint8_t param);         /* 0x3adb - CEF2 handler (protocol.c) */
 extern void scsi_csw_ext_build(void);                   /* 0x488f - queue processor */
-extern void helper_3e81(void);                   /* 0x3e81 - USB status handler */
+extern void usb_status_handler(void);                   /* 0x3e81 - USB status handler */
 extern void nvme_queue_cfg_by_state(void);                   /* 0x4784 - link status handler */
 extern void nvme_queue_index_update(void);                   /* 0x49e9 - USB control handler */
 
@@ -2665,7 +2665,7 @@ void usb_state_handler_isr_1006(void)
         /* Check REG_NVME_LINK_STATUS (0xC520) bit 0 */
         val = REG_NVME_LINK_STATUS;
         if (val & 0x01) {  /* Bit 0 set */
-            helper_3e81();
+            usb_status_handler();
         }
 
         /* Check REG_NVME_LINK_STATUS bit 1 */

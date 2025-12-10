@@ -50,11 +50,11 @@ void jump_bank_1(uint16_t reg_addr);            /* 0x0311-0x0321 */
 
 /* Named dispatch handlers */
 void phy_power_config_handler(void);            /* 0x0206-0x024a */
-void handler_bf8e(void);                        /* dispatch to 0xbf8e */
-void handler_d916(uint8_t param);               /* dispatch to 0xd916 - param in R7 */
-void handler_e6fc(void);                        /* dispatch to 0xe6fc */
-void handler_e91d(void);                        /* dispatch to 0xe91d */
-void handler_e96c(void);                        /* dispatch to 0xe96c */
+void buffer_dispatch_bf8e(void);                /* dispatch to 0xbf8e */
+void pcie_dispatch_d916(uint8_t param);         /* dispatch to 0xd916 - param in R7 */
+void pcie_dispatch_e6fc(void);                  /* dispatch to 0xe6fc */
+void pcie_dispatch_e91d(void);                  /* dispatch to 0xe91d */
+void pcie_dispatch_e96c(void);                  /* dispatch to 0xe96c */
 void handler_0327_usb_power_init(void);         /* 0x0327-0x032a */
 void handler_039a_buffer_dispatch(void);        /* 0x039a-0x039e -> 0xd810 */
 void usb_poll_wait(void);                       /* 0x0395-0x0399 */

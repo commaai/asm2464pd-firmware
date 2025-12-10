@@ -18,7 +18,7 @@ extern void usb_mode_config_d07f(uint8_t param);     /* event_handler.c */
 extern void nvme_queue_config_e214(void);            /* nvme.c */
 extern void delay_short_e89d(void);                  /* utils.c */
 extern void pcie_clear_address_regs(void);           /* pcie.c - 0x9a9c */
-extern void helper_e3b7(uint8_t param);              /* timer.c - 0xe3b7 */
+extern void timer_config_update(uint8_t param);              /* timer.c - 0xe3b7 */
 
 /*
  * power_set_suspended - Set power status suspended bit (bit 6)
@@ -990,7 +990,7 @@ void power_phy_init_config_cb37(void)
  * Address: 0xc9fa-0xca0c (19 bytes)
  *
  * Checks bit 1 of event control (0x09FA), and if set, checks USB state
- * (0x0B41). If both conditions are met, calls helper_e3b7 with param 1.
+ * (0x0B41). If both conditions are met, calls timer_config_update with param 1.
  *
  * Original disassembly:
  *   c9fa: mov dptr, #0x09fa   ; Event control
@@ -1011,7 +1011,7 @@ void power_check_event_ctrl_c9fa(void)
     if (event_ctrl & 0x02) {
         /* Check if USB state is non-zero */
         if (G_USB_STATE_0B41 != 0) {
-            helper_e3b7(1);
+            timer_config_update(1);
         }
     }
 }

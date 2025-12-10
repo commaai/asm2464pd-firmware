@@ -913,7 +913,7 @@ void main_polling_handler(void)
     G_STATE_FLAG_06E6 = 1;
 
     dispatch_0435();               /* 0x0435 -> Bank0:0xD127 */
-    handler_bf8e();                /* 0x0340 -> Bank0:0xBF8E (tail call) */
+    buffer_dispatch_bf8e();        /* 0x0340 -> Bank0:0xBF8E (tail call) */
 }
 
 
@@ -928,7 +928,7 @@ void main_polling_handler(void)
 
 /* Forward declarations for functions defined in this file */
 void sys_event_dispatch_05e8(void);
-void sys_init_helper_bbc7(void);
+void sys_init_bbc7(void);
 void sys_timer_handler_e957(void);
 
 /* ============================================================
@@ -988,7 +988,7 @@ void sys_event_dispatch_05e8(void)
 }
 
 /*
- * sys_init_helper_bbc7 - System init helper
+ * sys_init_bbc7 - System init helper
  * Address: 0xbbc7-0xbbc9 (3 bytes)
  *
  * From ghidra.c (line 16491):
@@ -997,7 +997,7 @@ void sys_event_dispatch_05e8(void)
  * Writes to XDATA register with specific parameters.
  * WARNING: Ghidra shows this as infinite loop / no return.
  */
-void sys_init_helper_bbc7(void)
+void sys_init_bbc7(void)
 {
     /* Write configuration to register area */
     /* Parameters: 0, 0x12, 0x0b, 1 suggest:

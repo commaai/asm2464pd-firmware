@@ -177,17 +177,17 @@ uint8_t cmd_combine_lba_alt(uint8_t val)
  * cmd_set_op_counter - Set operation counter
  * Address: 0x965d-0x9663 (7 bytes)
  *
- * Sets G_CMD_OP_COUNTER to 0x05.
+ * Sets G_FLASH_OP_COUNTER to 0x05.
  *
  * Original disassembly:
- *   965d: mov dptr, #0x07bd   ; G_CMD_OP_COUNTER
+ *   965d: mov dptr, #0x07bd   ; G_FLASH_OP_COUNTER
  *   9660: mov a, #0x05
  *   9662: movx @dptr, a
  *   9663: ret
  */
 void cmd_set_op_counter(void)
 {
-    G_CMD_OP_COUNTER = 0x05;
+    G_FLASH_OP_COUNTER = 0x05;
 }
 
 /*
@@ -705,17 +705,17 @@ void cmd_clear_cc88_cc8a(void)
  * cmd_check_op_counter - Check if op counter equals 5
  * Address: 0x962e-0x9634 (7 bytes)
  *
- * Reads G_CMD_OP_COUNTER, XORs with 5 (returns 0 if equal).
+ * Reads G_FLASH_OP_COUNTER, XORs with 5 (returns 0 if equal).
  *
  * Original disassembly:
- *   962e: mov dptr, #0x07bd   ; G_CMD_OP_COUNTER
+ *   962e: mov dptr, #0x07bd   ; G_FLASH_OP_COUNTER
  *   9631: movx a, @dptr
  *   9632: xrl a, #0x05        ; A = counter ^ 5
  *   9634: ret                 ; Z flag set if counter == 5
  */
 uint8_t cmd_check_op_counter(void)
 {
-    return G_CMD_OP_COUNTER ^ 0x05;  /* Returns 0 if counter == 5 */
+    return G_FLASH_OP_COUNTER ^ 0x05;  /* Returns 0 if counter == 5 */
 }
 
 /*
@@ -851,10 +851,10 @@ uint8_t cmd_read_indexed(uint8_t hi, uint8_t lo)
  * cmd_set_op_counter_1 - Set operation counter to 1
  * Address: 0x9684-0x968e (11 bytes)
  *
- * Sets G_CMD_OP_COUNTER = 1, returns R7:R6 = 0x189C.
+ * Sets G_FLASH_OP_COUNTER = 1, returns R7:R6 = 0x189C.
  *
  * Original disassembly:
- *   9684: mov dptr, #0x07bd   ; G_CMD_OP_COUNTER
+ *   9684: mov dptr, #0x07bd   ; G_FLASH_OP_COUNTER
  *   9687: mov a, #0x01
  *   9689: movx @dptr, a       ; OP_COUNTER = 1
  *   968a: mov r7, #0x9c
@@ -863,7 +863,7 @@ uint8_t cmd_read_indexed(uint8_t hi, uint8_t lo)
  */
 uint16_t cmd_set_op_counter_1(void)
 {
-    G_CMD_OP_COUNTER = 0x01;
+    G_FLASH_OP_COUNTER = 0x01;
     return 0x189C;  /* Returns R6:R7 as 16-bit value */
 }
 
@@ -871,10 +871,10 @@ uint16_t cmd_set_op_counter_1(void)
  * cmd_wait_and_store_counter - Wait for completion and store counter
  * Address: 0x969d-0x96a5 (9 bytes)
  *
- * Stores A to G_CMD_OP_COUNTER, calls cmd_wait_completion, returns R7.
+ * Stores A to G_FLASH_OP_COUNTER, calls cmd_wait_completion, returns R7.
  *
  * Original disassembly:
- *   969d: mov dptr, #0x07bd   ; G_CMD_OP_COUNTER
+ *   969d: mov dptr, #0x07bd   ; G_FLASH_OP_COUNTER
  *   96a0: movx @dptr, a       ; Store A
  *   96a1: lcall 0xe1c6        ; cmd_wait_completion
  *   96a4: mov a, r7           ; Get result
@@ -882,7 +882,7 @@ uint16_t cmd_set_op_counter_1(void)
  */
 uint8_t cmd_wait_and_store_counter(uint8_t counter)
 {
-    G_CMD_OP_COUNTER = counter;
+    G_FLASH_OP_COUNTER = counter;
     return cmd_wait_completion();
 }
 
@@ -1584,14 +1584,14 @@ loop_977c:
 
     /* 0x97a2-0x97b3: Compare values and update 0x0A60 */
     r7_val = G_EP_CFG_0A60;
-    temp = *(__xdata uint8_t *)0x8006;  /* Read max count */
+    temp = REG_USB_BUF_MAX_8006;  /* Read max count */
     if (temp >= r7_val) {
         /* Update max if current > stored */
         G_EP_CFG_0A60 = temp;
     }
 
     /* 0x97b4-0x97c7: Read 0x8005, extract bits, store to 0x0A5D */
-    temp = *(__xdata uint8_t *)0x8005;
+    temp = REG_USB_BUF_COUNT_8005;
     G_EP_CFG_0A5D = temp & 0x03;
 
     /* Extract bits 3-7 >> 3 = bits 3-4 -> 0-1 */
@@ -1784,7 +1784,7 @@ loop_98c8:
     }
 
     /* Non-zero path: read 0x05A6, do table lookup */
-    temp = *(__xdata uint8_t *)0x05A6;
+    temp = G_PCIE_TXN_COUNT_LO;
     pcie_store_r6_to_05a6(temp);
 
     *(__idata uint8_t *)0x26 = 0x0F;

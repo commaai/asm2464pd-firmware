@@ -15,13 +15,13 @@
 #include "drivers/timer.h"
 
 /* External protocol/state functions from app layer */
-extern void helper_dd42(uint8_t param);
+extern void phy_link_ctrl_update(uint8_t param);
 extern void system_state_update(void);
 extern uint8_t pcie_read_status_a334(void);
 extern void scsi_decrement_pending(void);
 extern void scsi_csw_write_residue(void);
 extern void scsi_buffer_threshold_config(uint8_t slot);
-extern void helper_0421(uint8_t slot);
+extern void endpoint_config_init(uint8_t slot);
 
 /* Forward declarations */
 void dma_set_scsi_param3(void);
@@ -1544,7 +1544,7 @@ handle_match_end:
         return;
     }
 
-    helper_0421(I_WORK_53);
+    endpoint_config_init(I_WORK_53);
     ptr = (__xdata uint8_t *)transfer_get_ep_queue_addr();
     *ptr = I_WORK_53;
     r6 = G_BUFFER_STATE_0AA7;
@@ -1782,7 +1782,7 @@ void transfer_continuation_d996(void)
  *   cec6: lcall 0xe8ef         ; pcie_trigger_cc11_e8ef
  *   cec9: clr a
  *   ceca: mov r7, a            ; r7 = 0
- *   cecb: lcall 0xdd42         ; helper_dd42(0)
+ *   cecb: lcall 0xdd42         ; phy_link_ctrl_update(0)
  *   cece: ljmp 0xd996          ; Tail call to continuation
  */
 void dma_poll_complete(void)
@@ -1821,7 +1821,7 @@ void dma_poll_complete(void)
     pcie_trigger_cc11_e8ef();
 
     /* Call state handler with param 0 */
-    helper_dd42(0);
+    phy_link_ctrl_update(0);
 
     /* Continue with transfer completion (tail call) */
     transfer_continuation_d996();
@@ -1878,7 +1878,7 @@ void dma_poll_link_ready(void)
     pcie_trigger_cc11_e8ef();
 
     /* Update state to 0 */
-    helper_dd42(0);
+    phy_link_ctrl_update(0);
 
     /* Tail call to state handler */
     system_state_update();

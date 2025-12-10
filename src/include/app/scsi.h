@@ -80,6 +80,12 @@ uint8_t scsi_dma_dispatch_helper(void);         /* 0x4d44-0x4d91 */
 void scsi_dma_config_4a57(void);                /* 0x4a57-0x4abe */
 void scsi_dma_init_4be6(void);                  /* 0x4be6-0x4c3f */
 uint8_t scsi_dma_transfer_process(uint8_t param);   /* 0x4e25-0x4e6c */
+void scsi_dma_queue_setup(uint8_t param);       /* 0x2F67-0x2F7F */
+void scsi_dma_transfer_state(void);             /* 0x2DB7-0x2F66 */
+void scsi_dma_tag_setup_3212(uint8_t idx, uint16_t reg_addr);  /* 0x3212-0x3225 */
+
+/* SCSI core dispatch */
+void scsi_core_dispatch(uint8_t param);         /* 0x4FF2-0x502D */
 
 /* SCSI command processing */
 void scsi_command_dispatch(uint8_t flag, uint8_t param);    /* 0x4532-0x45cf */

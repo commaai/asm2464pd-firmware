@@ -152,8 +152,8 @@ void dispatch_0336(void) { jump_bank_0(0xBF0F); }
 /* 0x033B: Target 0xCF7F - handler_cf7f */
 void dispatch_033b(void) { jump_bank_0(0xCF7F); }
 
-/* 0x0340: Target 0xBF8E - handler_bf8e */
-void handler_bf8e(void) { jump_bank_0(0xBF8E); }  /* was: dispatch_0340 */
+/* 0x0340: Target 0xBF8E - buffer_dispatch_bf8e */
+void buffer_dispatch_bf8e(void) { jump_bank_0(0xBF8E); }  /* was: dispatch_0340 */
 
 /* 0x0345: Target 0x9C2B - nvme_queue_handler */
 void dispatch_0345(void) { jump_bank_0(0x9C2B); }
@@ -209,8 +209,8 @@ void dispatch_0395(void) { jump_bank_0(0xDA8F); }
 /* 0x039A: Target 0xD810 - usb_buffer_handler */
 void dispatch_039a(void) { jump_bank_0(0xD810); }
 
-/* 0x039F: Target 0xD916 - handler_d916 */
-void handler_d916(uint8_t param) { (void)param; jump_bank_0(0xD916); }  /* was: dispatch_039f */
+/* 0x039F: Target 0xD916 - pcie_dispatch_d916 */
+void pcie_dispatch_d916(uint8_t param) { (void)param; jump_bank_0(0xD916); }  /* was: dispatch_039f */
 
 /* 0x03A4: Target 0xCB37 - power_ctrl_cb37 */
 void dispatch_03a4(void) { jump_bank_0(0xCB37); }
@@ -324,8 +324,8 @@ void dispatch_0444(void) { jump_bank_0(0xA840); }
 /* 0x0449: Target 0xDD78 - handler_dd78 */
 void dispatch_0449(void) { jump_bank_0(0xDD78); }
 
-/* 0x044E: Target 0xE91D - handler_e91d */
-void handler_e91d(void) { jump_bank_0(0xE91D); }  /* was: dispatch_044e */
+/* 0x044E: Target 0xE91D - pcie_dispatch_e91d */
+void pcie_dispatch_e91d(void) { jump_bank_0(0xE91D); }  /* was: dispatch_044e */
 
 /* 0x0453: Target 0xE902 - handler_e902 */
 void dispatch_0453(void) { jump_bank_0(0xE902); }
@@ -396,7 +396,7 @@ void dispatch_04c1(void) { jump_bank_0(0xBE02); }
 /* 0x04C6: Target 0xDBF5 - handler_dbf5 */
 void dispatch_04c6(void) { jump_bank_0(0xDBF5); }
 
-/* 0x04CB: Target 0xE7C1 - handler_e7c1 */
+/* 0x04CB: Target 0xE7C1 - pcie_param_handler */
 void dispatch_04cb(void) { jump_bank_0(0xE7C1); }
 
 /* 0x04D0: Target 0xCE79 - timer_link_handler */
@@ -421,8 +421,8 @@ void dispatch_04e4(void) { jump_bank_0(0xE2EC); }
 /* 0x04E9: Target 0xE8E4 - handler_e8e4 */
 void dispatch_04e9(void) { jump_bank_0(0xE8E4); }
 
-/* 0x04EE: Target 0xE6FC - handler_e6fc */
-void handler_e6fc(void) { jump_bank_0(0xE6FC); }  /* was: dispatch_04ee */
+/* 0x04EE: Target 0xE6FC - pcie_dispatch_e6fc */
+void pcie_dispatch_e6fc(void) { jump_bank_0(0xE6FC); }  /* was: dispatch_04ee */
 
 /* 0x04F3: Target 0x8A89 - handler_8a89 */
 void dispatch_04f3(void) { jump_bank_0(0x8A89); }
@@ -430,8 +430,8 @@ void dispatch_04f3(void) { jump_bank_0(0x8A89); }
 /* 0x04F8: Target 0xDE16 - handler_de16 */
 void dispatch_04f8(void) { jump_bank_0(0xDE16); }
 
-/* 0x04FD: Target 0xE96C - handler_e96c (stub) */
-void handler_e96c(void) { jump_bank_0(0xE96C); }  /* was: dispatch_04fd */
+/* 0x04FD: Target 0xE96C - pcie_dispatch_e96c (stub) */
+void pcie_dispatch_e96c(void) { jump_bank_0(0xE96C); }  /* was: dispatch_04fd */
 
 /* 0x0502: Target 0xD7CD - handler_d7cd */
 void dispatch_0502(void) { jump_bank_0(0xD7CD); }
@@ -463,8 +463,8 @@ void dispatch_052a(void) { jump_bank_0(0xE961); }
 /* 0x052F: Target 0xAF5E - debug_output_handler */
 void dispatch_052f(void) { jump_bank_0(0xAF5E); }
 
-/* 0x0534: Target 0xD6BC - handler_d6bc */
-void handler_d6bc(void) { jump_bank_0(0xD6BC); }  /* was: dispatch_0534 */
+/* 0x0534: Target 0xD6BC - scsi_dispatch_d6bc */
+void scsi_dispatch_d6bc(void) { jump_bank_0(0xD6BC); }  /* was: dispatch_0534 */
 
 /* 0x0539: Target 0xE963 - handler_e963 (stub) */
 void dispatch_0539(void) { jump_bank_0(0xE963); }
@@ -619,8 +619,8 @@ void dispatch_062e(void) { jump_bank_1(0xE374); }
 /* 0x0633: Target Bank1:0xE396 (file 0x16396) - handler_e396 */
 void dispatch_0633(void) { jump_bank_1(0xE396); }
 
-/* 0x0638: Target Bank1:0xE478 (file 0x16478) - handler_e478 */
-void handler_e478(void) { jump_bank_1(0xE478); }  /* was: dispatch_0638 */
+/* 0x0638: Target Bank1:0xE478 (file 0x16478) - pcie_transfer_handler */
+void pcie_transfer_handler(void) { jump_bank_1(0xE478); }  /* was: dispatch_0638 */
 
 /* 0x063D: Target Bank1:0xE496 (file 0x16496) - handler_e496 */
 void dispatch_063d(void) { jump_bank_1(0xE496); }

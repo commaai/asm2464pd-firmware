@@ -846,7 +846,7 @@ void nvme_set_usb_ep_ctrl_bit2(__xdata uint8_t *ptr)
 }
 
 /* External helper from protocol.c */
-extern void helper_53c0(void);
+extern void dma_buffer_write(void);
 
 /*
  * nvme_call_and_signal - Call function and signal via 0x90A1
@@ -865,7 +865,7 @@ extern void helper_53c0(void);
 void nvme_call_and_signal(void)
 {
     /* Call DMA buffer write helper */
-    helper_53c0();
+    dma_buffer_write();
 
     /* Set the signal register */
     REG_USB_SIGNAL_90A1 = 0x01;
@@ -1914,13 +1914,12 @@ void nvme_queue_sync(void)
     *queue_idx = REG_NVME_QUEUE_INDEX;
     REG_NVME_QUEUE_INDEX = 0xFF;
 
-    /* Read sync reference from 0x009F */
-    sync_ref = *(__xdata uint8_t *)0x009F;
+    /* Read sync reference from G_USB_WORK_009F */
+    sync_ref = G_USB_WORK_009F;
 
-    /* Increment queue counter at 0x0517 */
-    ptr = (__xdata uint8_t *)0x0517;
-    (*ptr)++;
-    counter_val = *ptr;
+    /* Increment queue counter at G_EP_INIT_0517 */
+    G_EP_INIT_0517++;
+    counter_val = G_EP_INIT_0517;
 
     /* If counter doesn't match reference, skip main processing */
     if (counter_val != sync_ref) {
@@ -1929,8 +1928,8 @@ void nvme_queue_sync(void)
 
     /* Main processing loop - check init state and process */
     while (1) {
-        sync_ref = *(__xdata uint8_t *)0x00C2;  /* G_INIT_STATE_00C2 */
-        counter_val = *(__xdata uint8_t *)0x0517;
+        sync_ref = G_INIT_STATE_00C2;
+        counter_val = G_EP_INIT_0517;
 
         if (counter_val != sync_ref) {
             /* Check G_INIT_STATE_00E5 */
@@ -2644,8 +2643,8 @@ uint8_t nvme_queue_get_e710_masked(void)
     extern void uart_wait_tx_ready(void);
     uint8_t val;
     uart_wait_tx_ready();
-    val = *(__xdata uint8_t *)0xE710;
-    return val & 0xE0;
+    val = REG_LINK_WIDTH_E710;
+    return val & LINK_WIDTH_MASK;
 }
 
 /*
@@ -2728,7 +2727,7 @@ uint8_t nvme_queue_clear_usb_bit0(void)
 {
     uint8_t val = REG_USB_STATUS;
     REG_USB_STATUS = val & 0xFE;
-    val = *(__xdata uint8_t *)0x924C;
+    val = REG_USB_CTRL_924C;
     return val & 0xFE;
 }
 
@@ -2758,10 +2757,10 @@ void nvme_queue_set_9092(uint8_t param)
  */
 void nvme_queue_init_9e16(void)
 {
-    *(__xdata uint8_t *)0x9E16 = 0x40;
-    *(__xdata uint8_t *)0x9E17 = 0;
-    *(__xdata uint8_t *)0x9E1D = 0x40;
-    *(__xdata uint8_t *)0x9E1E = 0;
+    REG_USB_CTRL_BUF_9E16 = 0x40;
+    REG_USB_CTRL_BUF_9E17 = 0;
+    REG_USB_CTRL_BUF_9E1D = 0x40;
+    REG_USB_CTRL_BUF_9E1E = 0;
 }
 
 /*
@@ -2771,12 +2770,12 @@ void nvme_queue_init_9e16(void)
 void nvme_queue_init_905x(void)
 {
     uint8_t val;
-    val = *(__xdata uint8_t *)0x905F;
-    *(__xdata uint8_t *)0x905F = val & 0xFE;
-    val = *(__xdata uint8_t *)0x905D;
-    *(__xdata uint8_t *)0x905D = val & 0xFE;
-    *(__xdata uint8_t *)0x90E3 = 1;
-    *(__xdata uint8_t *)0x90A0 = 1;
+    val = REG_USB_EP_CTRL_905F;
+    REG_USB_EP_CTRL_905F = val & 0xFE;
+    val = REG_USB_EP_CTRL_905D;
+    REG_USB_EP_CTRL_905D = val & 0xFE;
+    REG_USB_EP_STATUS_90E3 = 1;
+    REG_USB_CTRL_90A0 = 1;
 }
 
 /*
@@ -2813,7 +2812,7 @@ uint8_t nvme_queue_calc_0ae0_0ae1(uint8_t param)
  */
 uint8_t nvme_queue_get_e302_shift(void)
 {
-    uint8_t val = *(__xdata uint8_t *)0xE302;
+    uint8_t val = REG_PHY_MODE_E302;
     return ((val & 0x30) >> 4) - 2;
 }
 
@@ -2860,7 +2859,7 @@ void nvme_queue_set_bit0_ptr(__xdata uint8_t *ptr)
  */
 uint8_t nvme_queue_get_9090_mask(void)
 {
-    uint8_t val = *(__xdata uint8_t *)0x9090;
+    uint8_t val = REG_USB_INT_MASK_9090;
     return val & 0x7F;
 }
 
@@ -2870,7 +2869,7 @@ uint8_t nvme_queue_get_9090_mask(void)
  */
 void nvme_queue_set_90e3_2(void)
 {
-    *(__xdata uint8_t *)0x90E3 = 2;
+    REG_USB_EP_STATUS_90E3 = 2;
 }
 
 /*===========================================================================
@@ -3064,9 +3063,9 @@ void nvme_pcie_store_b851(uint8_t param, __xdata uint8_t *ptr)
 void nvme_pcie_handler_b8b9(void)
 {
     extern void usb_state_event_handler(void);
-    extern void handler_e529(uint8_t param);
-    extern void handler_d676(void);
-    extern void handler_e90b(void);
+    extern void pcie_store_param_transfer(uint8_t param);
+    extern void pcie_init_error_halt(void);
+    extern void pcie_int_ctrl_link_init(void);
     extern void pcie_link_state_init(void);
     extern void timer_event_init(void);
     extern void protocol_state_dispatch(void);
@@ -3087,11 +3086,11 @@ void nvme_pcie_handler_b8b9(void)
         if (cmd == 0x0E || cmd == 0x0D) {
             REG_CPU_INT_CTRL = CPU_INT_CTRL_ACK;
             if (G_FLASH_CMD_TYPE != 0) {
-                handler_e529(0x3B);
+                pcie_store_param_transfer(0x3B);
             }
-            handler_d676();
+            pcie_init_error_halt();
         } else {
-            handler_e90b();
+            pcie_int_ctrl_link_init();
             REG_CPU_INT_CTRL = CPU_INT_CTRL_ACK;
         }
     }
@@ -3108,10 +3107,10 @@ void nvme_pcie_handler_b8b9(void)
     if ((val >> 1) & 1) {
         uint8_t cmd = G_FLASH_CMD_TYPE;
         if (cmd == 2) {
-            handler_e529(0x3C);
+            pcie_store_param_transfer(0x3C);
             pcie_link_state_init();
         } else if (cmd == 3) {
-            handler_e529(0xFF);
+            pcie_store_param_transfer(0xFF);
         } else {
             timer_event_init();
             G_WORK_CC99 = 2;
@@ -3122,7 +3121,7 @@ void nvme_pcie_handler_b8b9(void)
     val = G_WORK_CCD9;
     if ((val >> 1) & 1) {
         G_WORK_CCD9 = 2;
-        *(__xdata uint8_t *)0x0719 = 2;
+        G_STATE_FLAG_0719 = 2;
     }
 
     /* Check CCF9 */
@@ -3279,15 +3278,15 @@ uint8_t nvme_queue_count_matches_9264(uint8_t expected_count)
     }
 
     /* Check command type at XDATA[0x0002] */
-    cmd = *(__xdata uint8_t *)0x0002;
+    cmd = G_IO_CMD_STATE;
     if (cmd == 0x12) {
         /* Command 0x12: set flag and return 1 */
-        *(__xdata uint8_t *)0x044C = 1;
+        G_LOG_ACTIVE_044C = 1;
         return 1;
     } else if (cmd == 0x00) {
         /* Command 0x00: check counter threshold */
         if (G_STATE_0B39 >= 0x14) {
-            *(__xdata uint8_t *)0x044C = 1;
+            G_LOG_ACTIVE_044C = 1;
             return 1;
         }
     }

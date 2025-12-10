@@ -171,6 +171,7 @@ void usb_init_pcie_txn_state(void);                     /* 0x1d43-0x1d70 */
 void usb_xfer_ctrl_init(void);                          /* 0x1a00-0x1aac */
 void usb_ep_queue_init(uint8_t param);                  /* 0x1aad-0x1af6 */
 void usb_reset_interface_full(void);                    /* 0x1878-0x18ff */
+void usb_reset_interface(uint8_t param);                /* event_handler.c - sets up DPTR */
 
 /* USB data operations */
 void usb_xdata_copy_with_offset(uint8_t addr_lo, uint8_t addr_hi);  /* 0x1b14-0x1b2a */

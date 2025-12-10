@@ -25,7 +25,7 @@
  */
 
 /* External helper functions */
-extern void helper_95e1(uint8_t r7, uint8_t r5);
+extern void config_helper_dual(uint8_t r7, uint8_t r5);
 
 /*
  * timer_idle_timeout_handler - Handle idle timeout events
@@ -611,7 +611,7 @@ void timer_event_init(void)
     cmd_engine_clear();
 
     /* Call config function with r7=0x10, r5=0 */
-    helper_95e1(0x10, 0);
+    config_helper_dual(0x10, 0);
 
     /* Wait for completion */
     cmd_wait_completion();
