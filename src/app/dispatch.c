@@ -24,6 +24,7 @@
  * 0x04DF-0x0650: Event/interrupt dispatch stubs
  */
 
+#include "app/dispatch.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"
@@ -288,16 +289,16 @@ void dispatch_040d(void) { jump_bank_1(0xDBE7); }
  *===========================================================================*/
 
 /* 0x0412: Target 0xE617 - handler_e617 */
-void dispatch_0412(void) { jump_bank_0(0xE617); }
+void dispatch_0412(uint8_t param) { (void)param; jump_bank_0(0xE617); }
 
 /* 0x0417: Target 0xE62F - handler_e62f */
 void dispatch_0417(void) { jump_bank_0(0xE62F); }
 
 /* 0x041C: Target 0xE647 - handler_e647 */
-void dispatch_041c(void) { jump_bank_0(0xE647); }
+void dispatch_041c(uint8_t param) { (void)param; jump_bank_0(0xE647); }
 
 /* 0x0421: Target 0xE65F - handler_e65f */
-void dispatch_0421(void) { jump_bank_0(0xE65F); }
+void dispatch_0421(uint8_t param) { (void)param; jump_bank_0(0xE65F); }
 
 /* 0x0426: Target 0xE762 (Bank 0) - Note: different from handler_e762 in Bank 1! */
 void dispatch_0426(void) { jump_bank_0(0xE762); }

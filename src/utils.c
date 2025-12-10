@@ -6,6 +6,7 @@
  * internal RAM (IDATA) and external RAM (XDATA).
  */
 
+#include "utils.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

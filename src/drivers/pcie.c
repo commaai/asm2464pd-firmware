@@ -4,6 +4,7 @@
  * See drivers/pcie.h for hardware documentation.
  */
 
+#include "drivers/pcie.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

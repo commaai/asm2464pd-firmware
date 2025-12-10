@@ -4,6 +4,7 @@
  * See drivers/cmd.h for hardware documentation.
  */
 
+#include "drivers/cmd.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

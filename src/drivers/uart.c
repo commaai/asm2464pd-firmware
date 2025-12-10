@@ -4,6 +4,7 @@
  * See drivers/uart.h for hardware documentation.
  */
 
+#include "drivers/uart.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

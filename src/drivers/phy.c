@@ -4,6 +4,7 @@
  * See drivers/phy.h for hardware documentation.
  */
 
+#include "drivers/phy.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

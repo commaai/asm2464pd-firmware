@@ -4,6 +4,7 @@
  * See drivers/flash.h for hardware documentation.
  */
 
+#include "drivers/flash.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

@@ -4,6 +4,7 @@
  * See drivers/usb.h for hardware documentation.
  */
 
+#include "drivers/usb.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

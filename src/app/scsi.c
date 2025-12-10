@@ -7,6 +7,7 @@
  * Address range: 0x4013-0x5765 (various functions)
  */
 
+#include "app/scsi.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

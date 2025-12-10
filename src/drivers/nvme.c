@@ -4,6 +4,7 @@
  * See drivers/nvme.h for hardware documentation.
  */
 
+#include "drivers/nvme.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

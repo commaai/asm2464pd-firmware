@@ -4,6 +4,7 @@
  * See drivers/timer.h for hardware documentation.
  */
 
+#include "drivers/timer.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

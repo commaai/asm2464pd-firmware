@@ -4,6 +4,7 @@
  * See drivers/power.h for hardware documentation.
  */
 
+#include "drivers/power.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"

@@ -4,6 +4,7 @@
  * See drivers/dma.h for hardware documentation.
  */
 
+#include "drivers/dma.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"
