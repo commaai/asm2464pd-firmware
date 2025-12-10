@@ -675,7 +675,7 @@ void timer_wait(uint8_t timeout_lo, uint8_t timeout_hi, uint8_t mode)
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * Timer Configuration Functions
  * ============================================================ */
 
 /*

@@ -1,5 +1,52 @@
 /*
- * scsi.h - SCSI/USB Mass Storage protocol declarations
+ * scsi.h - SCSI/USB Mass Storage Protocol
+ *
+ * The SCSI subsystem implements the USB Mass Storage Class (MSC) protocol
+ * using Bulk-Only Transport (BOT). It receives SCSI commands from the USB
+ * host and translates them to NVMe operations on the connected storage.
+ *
+ * USB MASS STORAGE PROTOCOL:
+ *   Host → CBW (Command Block Wrapper) → Device
+ *   Host ↔ Data Phase (IN or OUT)      ↔ Device
+ *   Host ← CSW (Command Status Wrapper) ← Device
+ *
+ * CBW STRUCTURE (31 bytes):
+ *   Signature: "USBC" (0x43425355)
+ *   Tag: Host-assigned transaction ID
+ *   DataTransferLength: Expected data bytes
+ *   Flags: Direction (0x80 = IN, 0x00 = OUT)
+ *   LUN: Logical Unit Number
+ *   CBWCBLength: Command block length (6-16)
+ *   CBWCB[16]: SCSI Command Descriptor Block
+ *
+ * CSW STRUCTURE (13 bytes):
+ *   Signature: "USBS" (0x53425355)
+ *   Tag: Matches CBW tag
+ *   DataResidue: Difference between expected and actual
+ *   Status: 0x00=Passed, 0x01=Failed, 0x02=Phase Error
+ *
+ * SUPPORTED SCSI COMMANDS:
+ *   0x00: TEST UNIT READY
+ *   0x03: REQUEST SENSE
+ *   0x12: INQUIRY
+ *   0x1A: MODE SENSE(6)
+ *   0x25: READ CAPACITY(10)
+ *   0x28: READ(10)
+ *   0x2A: WRITE(10)
+ *   0x35: SYNCHRONIZE CACHE
+ *   0xA0: REPORT LUNS
+ *
+ * STATE MACHINE:
+ *   scsi_state_dispatch() drives the main state machine:
+ *   IDLE → CBW_RECEIVED → DATA_PHASE → CSW_PENDING → IDLE
+ *
+ * DMA INTEGRATION:
+ *   scsi_dma_* functions coordinate bulk data transfers between
+ *   USB endpoints and internal buffers for NVMe translation.
+ *
+ * SLOT/TAG MANAGEMENT:
+ *   Multiple commands can be queued using slots. Each slot tracks
+ *   command state, allowing pipelined operation for better throughput.
  */
 #ifndef _SCSI_H_
 #define _SCSI_H_

@@ -1,5 +1,43 @@
 /*
- * dispatch.h - Bank switching and dispatch declarations
+ * dispatch.h - Bank Switching and Code Dispatch
+ *
+ * The dispatch subsystem handles code bank switching for the 8051's
+ * limited 64KB address space. The ASM2464PD firmware exceeds 64KB,
+ * requiring runtime bank switching to access code in different banks.
+ *
+ * 8051 ADDRESS SPACE LAYOUT:
+ *   0x0000-0x7FFF: Common code (always visible)
+ *   0x8000-0xFFFF: Banked region (switched between Bank 0/1)
+ *
+ * BANK MAPPING:
+ *   Bank 0: Physical 0x08000-0x0FFFF → Logical 0x8000-0xFFFF
+ *   Bank 1: Physical 0x10000-0x17FFF → Logical 0x8000-0xFFFF
+ *
+ * DISPATCH MECHANISM:
+ *   Functions in the banked region cannot be called directly from
+ *   code in a different bank. Instead, dispatch stubs in the common
+ *   region (0x0000-0x7FFF) handle bank switching:
+ *
+ *   1. Caller invokes dispatch_XXXX() in common code
+ *   2. Dispatch stub switches to target bank
+ *   3. Stub jumps to actual function in banked region
+ *   4. Function returns through stub, restoring original bank
+ *
+ * DISPATCH STUB FORMAT:
+ *   Each stub is 5 bytes at fixed addresses (0x0206, 0x0322, etc.)
+ *   containing bank switch + jump instructions.
+ *
+ * BANK JUMP FUNCTIONS:
+ *   jump_bank_0(addr): Switch to Bank 0, jump to addr
+ *   jump_bank_1(addr): Switch to Bank 1, jump to addr
+ *
+ * USAGE:
+ *   To call function at 0x10XXX (Bank 1, logical 0x8XXX):
+ *   - Use corresponding dispatch_XXXX() stub
+ *   - Or use jump_bank_1(0x8XXX) directly
+ *
+ * NOTE: The numbered dispatch_XXXX functions are stubs whose
+ * target functions have not yet been fully reverse-engineered.
  */
 #ifndef _DISPATCH_H_
 #define _DISPATCH_H_

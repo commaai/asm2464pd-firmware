@@ -728,8 +728,6 @@ void usb_set_nvme_ctrl_bit7(__xdata uint8_t *ptr)
  * DMA/Transfer Utility Functions
  *===========================================================================*/
 
-/* dma_clear_dword moved to dma.c - use dma_clear_dword_at instead */
-
 /*
  * usb_get_sys_status_offset - Get system status with offset
  * Address: 0x1743-0x1751 (15 bytes)
@@ -4528,7 +4526,7 @@ uint8_t usb_check_phy_status(void)
 }
 
 /*===========================================================================
- * USB Descriptor and Endpoint Functions (moved from stubs.c)
+ * USB Descriptor and Endpoint Functions
  *===========================================================================*/
 
 /*
@@ -4690,7 +4688,7 @@ void usb_ep_loop_180d(uint8_t param)
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * USB Descriptor Buffer Operations
  * ============================================================ */
 
 /*

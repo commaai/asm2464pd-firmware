@@ -1,5 +1,45 @@
 /*
- * flash.h - Flash driver declarations
+ * flash.h - SPI Flash Driver
+ *
+ * The flash subsystem manages the external SPI flash memory used for
+ * firmware storage, configuration data, and runtime parameters. The
+ * ASM2464PD boots from this flash and can update it at runtime.
+ *
+ * FLASH MEMORY MAP (typical):
+ *   0x000000-0x00FFFF: Bank 0 firmware (64KB)
+ *   0x010000-0x01FFFF: Bank 1 firmware (64KB)
+ *   0x020000-0x02FFFF: Configuration data
+ *   0x030000+: Reserved/User data
+ *
+ * SPI PROTOCOL:
+ *   The driver implements standard SPI flash commands:
+ *   - Read (0x03): Sequential read from address
+ *   - Page Program (0x02): Write up to 256 bytes
+ *   - Sector Erase (0x20): Erase 4KB sector
+ *   - Write Enable (0x06): Required before write/erase
+ *   - Read Status (0x05): Check busy/write-enable flags
+ *
+ * FLASH OPERATIONS:
+ *   Read:  flash_read(addr, len) → data in buffer
+ *   Write: flash_write_enable() → flash_write_page(addr, len)
+ *   Erase: flash_write_enable() → flash_erase_sector(addr)
+ *
+ * BUFFER ACCESS:
+ *   Flash data is transferred through an internal buffer. Use
+ *   flash_get_buffer_byte() and flash_set_buffer_byte() to
+ *   access the buffer contents.
+ *
+ * MATH UTILITIES:
+ *   flash_div8/flash_mod8: 8-bit division/modulo (8051 lacks
+ *   hardware divide instruction)
+ *
+ * USAGE:
+ *   flash_read(0x1000, 16);           // Read 16 bytes from 0x1000
+ *   uint8_t b = flash_get_buffer_byte(0);  // Get first byte
+ *
+ *   flash_write_enable();
+ *   flash_set_buffer_byte(0, 0xAB);
+ *   flash_write_page(0x2000, 1);      // Write 1 byte to 0x2000
  */
 #ifndef _FLASH_H_
 #define _FLASH_H_

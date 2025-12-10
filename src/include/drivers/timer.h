@@ -1,5 +1,44 @@
 /*
- * timer.h - Timer driver declarations
+ * timer.h - Timer and System Event Driver
+ *
+ * The timer subsystem provides periodic interrupts for system scheduling,
+ * timeout handling, and event-driven processing. It uses the 8051's
+ * Timer 0 and Timer 1 hardware peripherals.
+ *
+ * TIMER ARCHITECTURE:
+ *   Timer 0 (T0) - System tick and timeout handling
+ *   Timer 1 (T1) - Auxiliary timing (UART baud rate, etc.)
+ *
+ * INTERRUPT HANDLING:
+ *   Timer 0 ISR (vector 1) processes:
+ *   - System event dispatch
+ *   - Idle timeout detection
+ *   - PCIe link monitoring
+ *   - NVMe completion polling
+ *   - Debug output scheduling
+ *
+ * EVENT SYSTEM:
+ *   The timer drives a cooperative event system where handlers are
+ *   called based on system state flags. This provides pseudo-threading
+ *   without a full RTOS.
+ *
+ *   Event Handlers:
+ *   - timer_idle_timeout_handler(): Detect host inactivity
+ *   - timer_pcie_link_event(): PCIe link state changes
+ *   - timer_nvme_completion(): Poll NVMe completion queues
+ *   - timer_uart_debug_output(): Periodic debug messages
+ *
+ * KEY REGISTERS (8051 SFRs):
+ *   TH0/TL0: Timer 0 counter
+ *   TH1/TL1: Timer 1 counter
+ *   TMOD: Timer mode configuration
+ *   TCON: Timer control and flags
+ *
+ * USAGE:
+ *   1. timer_event_init() - Initialize timer subsystem
+ *   2. Timer 0 ISR runs automatically on interrupt
+ *   3. timer_wait() - Blocking delay with timeout
+ *   4. system_timer_handler() - Process pending events
  */
 #ifndef _TIMER_H_
 #define _TIMER_H_

@@ -1448,7 +1448,7 @@ void table_search_dispatch(void) __naked
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * PCIe Transaction Helper Functions
  * ============================================================ */
 
 /*

@@ -801,8 +801,6 @@ loop_end:
  *   -> File offset = 0xE911 + 0x8000 = 0x16911
  */
 
-/* jump_bank_0() and jump_bank_1() moved to app/dispatch.c */
-
 /*
  * reg_set_bit_0 - Set bit 0 of a register
  * Address: 0x5418-0x541e (7 bytes)
@@ -844,10 +842,6 @@ void reg_set_bit_0_cpu_exec(void)
  * These are dispatch stubs that set DPTR and call jump_bank_0
  * or jump_bank_1
  *===========================================================================*/
-
-/* timer_link_status_handler() moved to drivers/timer.c */
-
-/* phy_config_link_params() moved to drivers/phy.c */
 
 /*
  * reserved_stub_handler - Placeholder/Reserved handler
@@ -934,25 +928,6 @@ void main_polling_handler(void)
 }
 
 
-/* event_state_handler() moved to app/event_handler.c */
-/* error_state_config() moved to app/event_handler.c */
-
-/* phy_register_config() moved to drivers/phy.c */
-
-/* flash_command_handler() moved to drivers/flash.c */
-
-/* usb_buffer_dispatch() moved to drivers/usb.c */
-
-/* system_interrupt_handler() moved to drivers/timer.c */
-
-/* pcie_nvme_event_handler() moved to drivers/pcie.c */
-/* pcie_error_dispatch() moved to drivers/pcie.c */
-/* pcie_event_bit5_handler() moved to drivers/pcie.c */
-/* pcie_timer_bit4_handler() moved to drivers/pcie.c */
-/* system_timer_handler() moved to drivers/timer.c */
-
-/* All ISRs (ext0_isr, ext1_isr, timer1_isr, serial_isr) moved to src/interrupt.c */
-
 /*===========================================================================
  * BANK 1 SYSTEM INITIALIZATION
  *
@@ -967,11 +942,8 @@ void sys_event_dispatch_05e8(void);
 void sys_init_helper_bbc7(void);
 void sys_timer_handler_e957(void);
 
-/* system_init_from_flash() moved to drivers/flash.c */
-
-
 /* ============================================================
- * Functions moved from stubs.c
+ * Dispatch Handler Implementations
  * ============================================================ */
 
 /*

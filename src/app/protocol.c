@@ -3708,7 +3708,7 @@ default_handler:
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * Core State Management Functions
  * ============================================================ */
 
 /*

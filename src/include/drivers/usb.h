@@ -1,5 +1,45 @@
 /*
- * usb.h - USB driver declarations
+ * usb.h - USB Interface Driver
+ *
+ * The USB subsystem handles the host-side interface for the ASM2464PD
+ * USB4/Thunderbolt to NVMe bridge. It implements USB Mass Storage Class
+ * using the Bulk-Only Transport (BOT) protocol to expose NVMe drives
+ * as SCSI devices to the host.
+ *
+ * HARDWARE CAPABILITIES:
+ *   - USB 3.2 Gen2x2 (20 Gbps) support
+ *   - USB4/Thunderbolt 3/4 tunneling
+ *   - 8 configurable endpoints (EP0-EP7)
+ *   - Hardware DMA for bulk transfers
+ *
+ * DATA FLOW:
+ *   USB Host <---> USB Controller <---> Endpoint Buffers <---> DMA Engine
+ *                       |                      |
+ *                       v                      v
+ *               Status Registers         SCSI/NVMe Translation
+ *
+ * ENDPOINT ARCHITECTURE:
+ *   EP0: Control endpoint (enumeration, class requests)
+ *   EP1-EP2: Bulk IN/OUT for Mass Storage data
+ *   EP3-EP7: Reserved for additional interfaces
+ *
+ * KEY REGISTERS (0x9000-0x91FF):
+ *   0x9000: USB_STATUS      - Main status (bit 0: activity, bit 7: connected)
+ *   0x9006: USB_EP0_CONFIG  - EP0 mode configuration
+ *   0x9093: USB_EP_CFG1     - Endpoint configuration
+ *   0x9118: USB_EP_STATUS   - Endpoint status bitmap (8 endpoints)
+ *
+ * ENDPOINT DISPATCH:
+ *   The dispatch loop (usb_ep_dispatch_loop) polls endpoint status and
+ *   calls handlers for endpoints needing service. Priority is determined
+ *   by a lookup table at CODE address 0x5A6A that maps status bits to
+ *   endpoint indices.
+ *
+ * USAGE:
+ *   1. usb_enable() - Initialize USB controller and load config
+ *   2. usb_setup_endpoint() - Configure endpoints for Mass Storage
+ *   3. usb_ep_dispatch_loop() - Main processing loop (called from interrupt)
+ *   4. usb_buffer_handler() - Handle completed DMA transfers
  */
 #ifndef _USB_H_
 #define _USB_H_
@@ -115,7 +155,7 @@ void usb_store_idata_16_17(uint8_t hi, uint8_t lo);
 void usb_add_index_counter(uint8_t val);
 uint8_t usb_check_signature(__xdata uint8_t *ptr);
 
-/* USB DMA */
+/* USB DMA integration */
 void usb_dma_transfer_setup(uint8_t mode, uint8_t size, uint8_t flags);
 void usb_scsi_dma_check_init(uint8_t param);
 
@@ -127,7 +167,7 @@ uint8_t usb_set_xfer_mode_check_ctrl(uint8_t val, uint8_t compare);
 /* USB buffer dispatch */
 void usb_buffer_dispatch(void);
 
-/* USB descriptor and speed */
+/* USB descriptor handling */
 void usb_get_descriptor_length(uint8_t param);
 void usb_convert_speed(uint8_t param);
 

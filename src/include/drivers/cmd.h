@@ -1,5 +1,46 @@
 /*
- * cmd.h - Command engine driver declarations
+ * cmd.h - Hardware Command Engine Driver
+ *
+ * The command engine is a hardware accelerator that handles low-level
+ * command sequencing and synchronization between the USB, PCIe, and
+ * NVMe subsystems. It provides atomic command issue/completion tracking.
+ *
+ * COMMAND ENGINE ARCHITECTURE:
+ *   Software → cmd_write_issue_bits() → Hardware Sequencer
+ *                                              ↓
+ *   Software ← cmd_wait_completion() ← Completion Status
+ *
+ * COMMAND FLOW:
+ *   1. Check busy status (cmd_check_busy)
+ *   2. Configure command parameters
+ *   3. Issue command (cmd_start_trigger)
+ *   4. Wait for completion (cmd_wait_completion)
+ *   5. Read result/status
+ *
+ * KEY REGISTERS:
+ *   0xCC88: Command engine status/control
+ *   0xCC89: Command state register
+ *     - 0x01: Read operation
+ *     - 0x02: Write operation
+ *   0xCC8A: Command auxiliary register
+ *   0xC801: Interrupt control (bit 4: command complete)
+ *
+ * LBA HANDLING:
+ *   The command engine includes helpers for LBA (Logical Block Address)
+ *   manipulation used in SCSI-to-NVMe translation:
+ *   - cmd_combine_lba_param(): Combine bytes into LBA
+ *   - cmd_extract_bit5/bits67(): Extract command type bits
+ *
+ * SLOT MANAGEMENT:
+ *   Commands are tracked via slots that maintain state across
+ *   asynchronous operations. Slot addresses are calculated
+ *   dynamically based on current queue depth.
+ *
+ * USAGE:
+ *   1. cmd_engine_clear() - Reset command engine state
+ *   2. cmd_setup_with_params() - Configure command
+ *   3. cmd_start_trigger() - Execute command
+ *   4. cmd_wait_completion() - Block until done
  */
 #ifndef _CMD_H_
 #define _CMD_H_

@@ -83,7 +83,7 @@ extern void usb_mode_config_d07f(uint8_t param);     /* event_handler.c */
 extern void nvme_queue_config_e214(void);            /* nvme.c */
 extern void delay_short_e89d(void);                  /* utils.c */
 extern void pcie_clear_address_regs(void);           /* pcie.c - 0x9a9c */
-extern void helper_e3b7(uint8_t param);              /* stubs.c - 0xe3b7 */
+extern void helper_e3b7(uint8_t param);              /* timer.c - 0xe3b7 */
 
 /*
  * power_set_suspended - Set power status suspended bit (bit 6)
@@ -1104,7 +1104,7 @@ void power_reset_sys_state_c9ef(void)
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * Power Configuration Functions
  * ============================================================ */
 
 void power_config_d630(uint8_t param)

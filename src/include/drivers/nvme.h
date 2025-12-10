@@ -1,5 +1,44 @@
 /*
- * nvme.h - NVMe driver declarations
+ * nvme.h - NVMe Command and Queue Management
+ *
+ * The NVMe subsystem handles command construction, queue management, and
+ * completion processing for NVMe storage devices connected via the PCIe
+ * bridge. It translates SCSI commands from the USB Mass Storage layer
+ * into NVMe commands.
+ *
+ * COMMAND FLOW:
+ *   SCSI Command → nvme_build_cmd() → Submission Queue → NVMe Controller
+ *                                                              ↓
+ *   SCSI Status  ← nvme_check_completion() ← Completion Queue ←
+ *
+ * QUEUE ARCHITECTURE:
+ *   - Admin Queue (QID 0): Controller management commands
+ *   - I/O Queues (QID 1+): Read/Write/Flush commands
+ *   - Hardware doorbells trigger queue processing
+ *   - Circular buffer implementation with head/tail pointers
+ *
+ * SCSI-TO-NVME TRANSLATION:
+ *   SCSI READ(10/12/16)  → NVMe Read command
+ *   SCSI WRITE(10/12/16) → NVMe Write command
+ *   SCSI SYNC CACHE      → NVMe Flush command
+ *   SCSI INQUIRY         → NVMe Identify (cached)
+ *   SCSI READ CAPACITY   → From Identify Namespace data
+ *
+ * KEY DATA STRUCTURES (IDATA):
+ *   0x09-0x0D: Current command parameters
+ *   0x16-0x17: Transfer length (16-bit)
+ *   0x6B-0x6F: Queue state variables
+ *
+ * KEY REGISTERS:
+ *   0xCC88-0xCC8A: Command engine control
+ *   0xCC89: Command state (bit patterns control flow)
+ *   0xE400-0xE42F: NVMe command configuration
+ *
+ * USAGE:
+ *   1. nvme_init_registers() - Initialize NVMe subsystem
+ *   2. nvme_build_cmd() - Construct NVMe command from SCSI
+ *   3. nvme_submit_cmd() - Submit to hardware queue
+ *   4. nvme_check_completion() - Poll/process completions
  */
 #ifndef _NVME_H_
 #define _NVME_H_

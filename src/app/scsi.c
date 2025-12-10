@@ -2516,7 +2516,7 @@ void scsi_loop_process_573b(void)
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * SCSI Control Array Functions
  * ============================================================ */
 
 /*

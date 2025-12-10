@@ -3498,7 +3498,7 @@ uint8_t nvme_queue_count_matches_9264(uint8_t expected_count)
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * NVMe Queue Utility Functions
  * ============================================================ */
 
 void nvme_util_advance_queue(void)

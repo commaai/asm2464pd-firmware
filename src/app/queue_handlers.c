@@ -1185,7 +1185,7 @@ void queue_setup_abc9(void)
 }
 
 /* Note: helper_96ae, cmd_trigger_params, cmd_param_setup, scsi_state_clear, phy_set_config_bit0
- * are defined in stubs.c */
+ * are defined in their respective driver files */
 
 /*===========================================================================
  * PCIe Register Read Functions (0xa2ff-0xa32f)
@@ -1279,7 +1279,7 @@ void state_clear_all_bfc4(uint8_t val)
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * Queue Buffer Address Functions
  * ============================================================ */
 
 /*

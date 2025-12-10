@@ -56,12 +56,12 @@
 #include "registers.h"
 #include "globals.h"
 
-/* External helper functions from stubs.c */
+/* External helper functions */
 extern uint8_t get_ep_config_indexed(void);
 extern void addr_setup_0059(uint8_t offset);
 extern void mem_write_via_ptr(uint8_t value);
 
-/* External functions for moved stubs */
+/* External functions */
 extern uint8_t pcie_read_ctrl_b402(void);
 extern void pcie_lane_disable_e8a9(uint8_t param);
 extern void timer_phy_config_e57d(uint8_t param);
@@ -1588,7 +1588,7 @@ void reg_set_bit1_bbaf(__xdata uint8_t *addr)
 
 /* External declarations for called functions */
 extern void dispatch_057f(void);                 /* dispatch.c */
-extern void helper_dd42(uint8_t param);          /* stubs.c */
+extern void helper_dd42(uint8_t param);          /* cmd.c - 0xdd42 */
 extern void handler_e7c1(uint8_t param);         /* via dispatch */
 
 /*
@@ -2699,7 +2699,7 @@ void usb_state_handler_isr_1006(void)
 }
 
 /* ============================================================
- * Functions moved from stubs.c
+ * State Update Functions
  * ============================================================ */
 
 /*

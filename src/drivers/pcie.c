@@ -3179,10 +3179,10 @@ uint8_t pcie_init_write_e902(void)
 }
 
 /*===========================================================================
- * Bank 1 PCIe Handler Functions (moved from stubs.c)
+ * Bank 1 PCIe Handler Functions
  *===========================================================================*/
 
-/* Extern declarations for helper stubs still in stubs.c */
+/* Extern declarations for helper functions */
 extern void pcie_timer_channels_init(void);
 extern void helper_9617(void);
 extern void helper_95bf(void);
@@ -3692,7 +3692,7 @@ void pcie_tunnel_setup(void)
 }
 
 /* ============================================================
- * Functions moved from stubs.c
+ * PCIe Initialization and Error Handling
  * ============================================================ */
 
 /*

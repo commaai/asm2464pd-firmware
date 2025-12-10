@@ -1,5 +1,48 @@
 /*
- * power.h - Power management driver declarations
+ * power.h - Power Management Driver
+ *
+ * The power management subsystem controls device power states, clock
+ * gating, and suspend/resume handling for the ASM2464PD bridge. It
+ * coordinates power transitions between USB, PCIe, and internal blocks.
+ *
+ * POWER STATES:
+ *   Active (D0):    Full operation, all clocks running
+ *   Idle:           Reduced activity, some clocks gated
+ *   Suspended (D3): Minimal power, wake-on-event capability
+ *
+ * USB POWER STATES:
+ *   U0: Active operation
+ *   U1: Standby (fast exit latency)
+ *   U2: Sleep (longer exit latency)
+ *   U3: Suspend (lowest power, host-initiated wake)
+ *
+ * PCIE POWER STATES:
+ *   L0:  Active
+ *   L0s: Standby (fast recovery)
+ *   L1:  Low power idle
+ *   L2:  Auxiliary power only
+ *
+ * STATE MACHINE:
+ *   power_state_machine_d02a() implements the main power state
+ *   transitions, coordinating between USB and PCIe link states.
+ *
+ * CLOCK CONTROL:
+ *   - power_enable_clocks(): Enable peripheral clocks
+ *   - power_disable_clocks(): Gate unused clocks
+ *   - Clock domains: USB, PCIe, DMA, CPU
+ *
+ * SUSPEND/RESUME:
+ *   - power_set_suspended(): Enter low-power state
+ *   - power_clear_suspended(): Wake and restore operation
+ *   - Event flags trigger wake from suspend
+ *
+ * USAGE:
+ *   power_config_init();          // Initialize power subsystem
+ *   power_enable_clocks();        // Enable all clocks
+ *   // ... normal operation ...
+ *   power_set_suspended();        // Enter suspend
+ *   // ... wake event ...
+ *   power_clear_suspended();      // Resume operation
  */
 #ifndef _POWER_H_
 #define _POWER_H_

@@ -340,7 +340,7 @@ void phy_register_config(void)
  *===========================================================================*/
 
 /* Forward declarations for helpers */
-extern void pcie_lane_config_helper(uint8_t); /* 0xc089 - in stubs.c */
+extern void pcie_lane_config_helper(uint8_t); /* 0xc089 */
 
 /*
  * pcie_save_ctrl_state - Save PCIe control bit 1 state

@@ -335,8 +335,6 @@ void dispatch_0458(void) { jump_bank_0(0xE77A); }
 /* 0x045D: Target 0xC00D - pcie_tunnel_enable (defined in pcie.c) */
 void dispatch_045d(void) { jump_bank_0(0xC00D); }
 
-/* pcie_tunnel_setup - moved to pcie.c */
-
 /* 0x0467: Target 0xE57D - handler_e57d */
 void dispatch_0467(void) { jump_bank_0(0xE57D); }
 
@@ -637,7 +635,7 @@ void dispatch_064c(void) { jump_bank_1(0xE5CB); }
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * Dispatch Event Handler Implementations
  * ============================================================ */
 
 /*

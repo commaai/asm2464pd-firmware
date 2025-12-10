@@ -262,7 +262,7 @@ uint8_t buf_check_transfer_pending(void)
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * Buffer Address Calculation Functions
  * ============================================================ */
 
 /*

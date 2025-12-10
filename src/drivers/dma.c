@@ -1477,7 +1477,6 @@ void dma_wait_complete(void)
  *   16b6: ret
  *
  * Writes param to REG_SCSI_DMA_STATUS_L, then writes param+1 to same location.
- * Moved from stubs.c.
  */
 void transfer_func_16b0(uint8_t param)
 {
@@ -1735,7 +1734,7 @@ handle_match_end:
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * DMA Transfer Helper Functions
  * ============================================================ */
 
 /*

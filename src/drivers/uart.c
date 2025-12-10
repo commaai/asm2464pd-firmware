@@ -431,7 +431,7 @@ void delay_function(void)
 }
 
 /*===========================================================================
- * UART Log Buffer Functions (moved from stubs.c)
+ * UART Log Buffer Functions
  *===========================================================================*/
 
 /*
@@ -511,7 +511,7 @@ uint8_t uart_write_daff(void)
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * UART Low-level Functions
  * ============================================================ */
 
 /*

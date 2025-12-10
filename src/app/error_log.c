@@ -431,7 +431,7 @@ void error_handler_system_timer(void)
 
 
 /* ============================================================
- * Functions moved from stubs.c
+ * Log Processing Functions
  * ============================================================ */
 
 void process_log_entries(uint8_t param)

@@ -1,5 +1,46 @@
 /*
- * dma.h - DMA driver declarations
+ * dma.h - DMA Engine Driver
+ *
+ * The DMA engine provides high-speed data transfer between USB endpoints,
+ * NVMe buffers, and internal SRAM without CPU intervention. It supports
+ * both scatter-gather operations and contiguous transfers.
+ *
+ * DMA ARCHITECTURE:
+ *   USB Endpoint Buffers <---> DMA Engine <---> NVMe Data Buffers
+ *                                  ↓
+ *                          SCSI Data Buffers
+ *
+ * CHANNEL CONFIGURATION:
+ *   - Multiple DMA channels for concurrent operations
+ *   - Per-channel source/destination addressing
+ *   - Configurable transfer sizes and burst modes
+ *   - Interrupt on completion support
+ *
+ * TRANSFER MODES:
+ *   - USB RX: Host → USB Controller → DMA → Internal Buffer
+ *   - USB TX: Internal Buffer → DMA → USB Controller → Host
+ *   - NVMe: PCIe TLP data ↔ Internal buffers
+ *
+ * KEY REGISTERS (0xCE00-0xCEFF):
+ *   0xCE6E: SCSI DMA control register
+ *   0xCE96: DMA status/completion flags
+ *
+ * SCSI BUFFER MANAGEMENT:
+ *   The DMA engine maintains SCSI command/data buffers used during
+ *   USB Mass Storage operations. Buffer addresses are calculated
+ *   dynamically based on endpoint configuration.
+ *
+ * ADDRESS SPACES:
+ *   0x0000-0x00FF: Endpoint queue descriptors
+ *   0x0100-0x01FF: Transfer work areas
+ *   0x0400-0x04FF: DMA configuration tables
+ *   0x0A00-0x0AFF: SCSI buffer management
+ *
+ * USAGE:
+ *   1. dma_config_channel() - Configure DMA channel parameters
+ *   2. dma_setup_transfer() - Set source, dest, length
+ *   3. dma_start_transfer() - Begin DMA operation
+ *   4. dma_wait_complete() or dma_poll_complete() - Wait for completion
  */
 #ifndef _DMA_H_
 #define _DMA_H_
