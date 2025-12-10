@@ -843,7 +843,7 @@ uint8_t reg_nibble_swap_store(__xdata uint8_t *reg)
  */
 uint8_t reg_read_bank_1235(void)
 {
-    return XDATA_REG8(0x1235);
+    return REG_BANK_1235;
 }
 
 /*
@@ -852,7 +852,7 @@ uint8_t reg_read_bank_1235(void)
  */
 uint8_t reg_read_bank_0200(void)
 {
-    return XDATA_REG8(0x0200);
+    return REG_BANK_0200;
 }
 
 /*
@@ -861,7 +861,7 @@ uint8_t reg_read_bank_0200(void)
  */
 uint8_t reg_read_bank_1200(void)
 {
-    return XDATA_REG8(0x1200);
+    return REG_BANK_1200;
 }
 
 /*
@@ -880,7 +880,7 @@ uint8_t reg_read_and_clear_bit3(uint8_t offset)
  */
 uint8_t reg_read_bank_1603(void)
 {
-    return XDATA_REG8(0x1603);
+    return REG_BANK_1603;
 }
 
 /*
@@ -903,7 +903,7 @@ uint8_t reg_nibble_extract(__xdata uint8_t *reg)
  */
 uint8_t reg_read_bank_1504_clear(void)
 {
-    return XDATA_REG8(0x1504) & 0xF3;
+    return REG_BANK_1504 & 0xF3;
 }
 
 /*
@@ -912,7 +912,7 @@ uint8_t reg_read_bank_1504_clear(void)
  */
 uint8_t reg_read_bank_1200_alt(void)
 {
-    return XDATA_REG8(0x1200);
+    return REG_BANK_1200;
 }
 
 /*
@@ -932,7 +932,7 @@ uint8_t reg_read_event_mask(void)
  */
 uint8_t reg_read_bank_1407(void)
 {
-    return XDATA_REG8(0x1407);
+    return REG_BANK_1407;
 }
 
 /* reg_write_and_set_link_bit0 moved to drivers/phy.c as phy_write_and_set_link_bit0 */
@@ -1031,7 +1031,7 @@ void reg_set_bit7(__xdata uint8_t *reg)
 uint8_t reg_delay_param_setup(void)
 {
     /* This calls into bank read routine - returns value from 0xFF2269 */
-    return XDATA_REG8(0x2269);  /* Simplified - actual routine uses banked memory */
+    return REG_BANK_2269;  /* Simplified - actual routine uses banked memory */
 }
 
 /*
@@ -1087,7 +1087,7 @@ void init_sys_flags_07f0(void)
     G_SYS_FLAGS_07F3 = 0x85;
     G_SYS_FLAGS_07F4 = 0x00;
     G_SYS_FLAGS_07F5 = 0x00;
-    REG_CPU_EXEC_STATUS_3 = REG_CPU_EXEC_STATUS_3 & 0xFE;
+    REG_CPU_EXEC_STATUS_3 = REG_CPU_EXEC_STATUS_3 & ~CPU_EXEC_STATUS_3_BIT0;
 }
 
 /* delay functions moved to drivers/timer.c */
@@ -1863,19 +1863,19 @@ uint8_t mem_read_ptr_1bd7(uint8_t low_byte, uint8_t r2_hi, uint8_t r3_mode, uint
 }
 
 /*
- * helper_1b2e - Calculate DPTR address 0x0108 + param
+ * usb_buf_ptr_0108 - Get USB buffer pointer at 0x0108 + offset
  * Address: 0x1b2e-0x1b37 (10 bytes)
  */
-__xdata uint8_t * helper_1b2e(uint8_t param)
+__xdata uint8_t * usb_buf_ptr_0108(uint8_t param)
 {
     return (__xdata uint8_t *)(0x0108 + param);
 }
 
 /*
- * helper_1b30 - Calculate DPTR address 0x0100 + param (mid-entry of 1b2e)
+ * usb_buf_ptr_0100 - Get USB buffer pointer at 0x0100 + offset
  * Address: 0x1b30-0x1b37 (8 bytes)
  */
-__xdata uint8_t * helper_1b30(uint8_t param)
+__xdata uint8_t * usb_buf_ptr_0100(uint8_t param)
 {
     return (__xdata uint8_t *)(0x0100 + param);
 }
@@ -2046,11 +2046,11 @@ void ep_config_write_calc(uint8_t param)
     /* The param would be written to whatever DPTR the caller set up.
      * Based on context, this is likely writing to an endpoint config area.
      * Then it calculates address 0x044E + G_SYS_STATUS_PRIMARY */
-    uint8_t status = *(__xdata uint8_t *)0x0464;  /* G_SYS_STATUS_PRIMARY */
+    uint8_t status = G_SYS_STATUS_PRIMARY;
     uint16_t addr = 0x044E + status;
 
     /* Write param to the computed address (approximation of the behavior) */
-    *(__xdata uint8_t *)addr = param;
+    XDATA_VAR8(addr) = param;
 }
 
 /*
@@ -2218,20 +2218,7 @@ void tlp_status_clear(void)
     /* Additional setup performed via helper calls */
 }
 
-/*
- * nvme_status_update - Update NVMe device and control status
- * Address: 0x1b47-0x1b5f (25 bytes)
- *
- * Reads G_STATE_HELPER_42, ORs with high bits of REG_NVME_DEV_STATUS,
- * writes result. Then sets bit 1 of REG_NVME_CTRL_STATUS.
- */
-void nvme_status_update(void)
-{
-    uint8_t state_val = G_STATE_HELPER_42;
-    uint8_t dev_status_hi = REG_NVME_DEV_STATUS & 0xC0;
-    REG_NVME_DEV_STATUS = state_val | dev_status_hi;
-    REG_NVME_CTRL_STATUS = (REG_NVME_CTRL_STATUS & 0xFD) | 0x02;
-}
+/* nvme_status_update moved to drivers/nvme.c */
 
 /*
  * nvme_dev_status_hi - Read NVMe device status high bits
@@ -2463,34 +2450,18 @@ void ext_mem_init_address_e914(void)
 
 /*
  * xdata_cond_write - Conditional XDATA write helper (register-based)
- * Address: 0x0be6-0x0bef (10 bytes)
- *
- * This is a low-level helper that writes the A register to XDATA at
- * address r2:r1 if r3 == 1. It's used for conditional memory writes
- * where the calling function has set up the register context.
- *
- * Original disassembly:
- *   0be6: cjne r3, #0x01, 0x0bef  ; if r3 != 1, skip to return
- *   0be9: mov 0x82, r1            ; DPL = r1 (low byte of address)
- *   0beb: mov 0x83, r2            ; DPH = r2 (high byte of address)
- *   0bed: movx @dptr, a           ; write A to xdata[r2:r1]
- *   0bee: ret
- *   0bef: ret                     ; skip case - just return
+ * Note: This is an alternative entry point into banked_store_byte() at 0x0be6.
+ * When r3==1, it performs a simple XDATA write and returns at 0x0bee/0x0bef.
+ * The full banked_store_byte() handles additional memory types (IDATA, PDATA, etc).
  *
  * Since this function operates on raw register state from the caller,
  * and C cannot easily replicate this register-passing behavior,
  * the stub remains empty. Callers that use this function should be
  * aware that the write operation is not performed in the C version.
- *
- * The function is primarily called from:
- * - pcie_lane_init_e7f8 (after setting up r1, r2, r3, A via prior calls)
- * - state_checksum_calc (checksum computation path)
  */
 void xdata_cond_write(void)
 {
-    /* Register-based function - cannot be directly replicated in C.
-     * The calling context would need to set up r1, r2, r3, A registers
-     * which is not possible with standard C calling conventions. */
+    /* Register-based function - see banked_store_byte() at 0x0be6 */
 }
 
 void ext_mem_bank_access(uint8_t bank, uint8_t addr_hi, uint8_t addr_lo)

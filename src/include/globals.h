@@ -106,6 +106,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_EP_STATUS_CTRL        XDATA_VAR8(0x0003)  /* Endpoint status control (checked by usb_ep_process) */
 #define G_WORK_0006             XDATA_VAR8(0x0006)  /* Work variable 0x0006 */
 #define G_WORK_0007             XDATA_VAR8(0x0007)  /* Work variable 0x0007 */
+#define G_BOOT_STATUS_0009      XDATA_VAR8(0x0009)  /* Boot status byte */
 #define G_USB_CTRL_000A         XDATA_VAR8(0x000A)  /* USB control byte (increment counter) */
 #define G_EP_CHECK_FLAG         G_USB_CTRL_000A     /* Alias: Endpoint check flag */
 #define G_ENDPOINT_STATE_0051   XDATA_VAR8(0x0051)  /* Endpoint state storage */
@@ -116,12 +117,21 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_USB_ADDR_HI_0056      XDATA_VAR8(0x0056)  /* USB address high 0x0056 */
 #define G_USB_ADDR_LO_0057      XDATA_VAR8(0x0057)  /* USB address low 0x0057 */
 #define G_USB_WORK_009F         XDATA_VAR8(0x009F)  /* USB work array base */
+#define G_USB_MODE_FLAG_00BF    XDATA_VAR8(0x00BF)  /* USB mode flag */
 #define G_INIT_STATE_00C2       XDATA_VAR8(0x00C2)  /* Initialization state flag */
+#define G_LOOP_STATE_00E2       XDATA_VAR8(0x00E2)  /* Loop state variable */
+#define G_USB_BUF_BASE          ((__xdata uint8_t *)0x0100)  /* USB buffer base */
+#define G_USB_STATE_0105        XDATA_VAR8(0x0105)  /* USB state variable */
 #define G_USB_INIT_STATE_0108   XDATA_VAR8(0x0108)  /* USB initialization state */
 #define G_WORK_012B             XDATA_VAR8(0x012B)  /* Work variable 0x012B */
+#define G_WORK_0128             XDATA_VAR8(0x0128)  /* Work variable 0x0128 */
 #define G_INIT_STATE_00E5       XDATA_VAR8(0x00E5)  /* Initialization state flag 2 */
 #define G_USB_INDEX_COUNTER     XDATA_VAR8(0x014E)  /* USB index counter (5-bit) */
-#define G_SCSI_CTRL             XDATA_VAR8(0x0171)  /* SCSI control */
+/* SCSI slot arrays (indexed by I_WORK_22) */
+#define G_SCSI_SLOT_4E_BASE     ((__xdata uint8_t *)0x004E)  /* SCSI slot config base */
+#define G_SCSI_SLOT_71_BASE     ((__xdata uint8_t *)0x0171)  /* SCSI slot ctrl base */
+#define G_SCSI_SLOT_7C_BASE     ((__xdata uint8_t *)0x017C)  /* SCSI slot status base */
+#define G_SCSI_CTRL             XDATA_VAR8(0x0171)  /* SCSI control (alias for slot 0) */
 #define G_USB_WORK_01B4         XDATA_VAR8(0x01B4)  /* USB work variable 0x01B4 */
 #define G_USB_WORK_01B6         XDATA_VAR8(0x01B6)  /* USB work variable 0x01B6 */
 
@@ -163,10 +173,14 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_STATE_HELPER_41       XDATA_VAR8(0x0474)  /* State helper byte from R41 */
 #define G_STATE_HELPER_42       XDATA_VAR8(0x0475)  /* State helper byte from R42 (masked) */
 #define G_XFER_DIV_0476         XDATA_VAR8(0x0476)  /* Transfer division result */
+#define G_STATE_FLAG_04D7       XDATA_VAR8(0x04D7)  /* State flag variable */
+#define G_STATE_FLAG_04F7       XDATA_VAR8(0x04F7)  /* State flag variable 2 */
 
 //=============================================================================
 // Endpoint Configuration Work Area (0x0500-0x05FF)
 //=============================================================================
+#define G_EP_WORK_BASE          ((__xdata uint8_t *)0x0500)  /* EP work area base */
+#define G_EP_SLOT_COUNTER_OFF   0x17  /* Offset to slot counter within EP work slot */
 #define G_EP_INIT_0517          XDATA_VAR8(0x0517)  /* Endpoint init state */
 #define G_NVME_PARAM_053A       XDATA_VAR8(0x053A)  /* NVMe parameter storage */
 #define G_NVME_STATE_053B       XDATA_VAR8(0x053B)  /* NVMe state flag */
@@ -211,6 +225,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 //=============================================================================
 // Transfer Work Area (0x0600-0x07FF)
 //=============================================================================
+#define G_STATE_FLAG_0719       XDATA_VAR8(0x0719)  /* State flag for NVMe queue handling */
 #define G_DMA_WORK_05AC         XDATA_VAR8(0x05AC)  /* DMA work byte */
 #define G_DMA_WORK_05AD         XDATA_VAR8(0x05AD)  /* DMA work byte */
 #define G_MAX_LOG_ENTRIES       XDATA_VAR8(0x06E5)  /* Max error log entries */

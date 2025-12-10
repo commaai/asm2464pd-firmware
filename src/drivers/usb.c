@@ -5,12 +5,14 @@
  */
 
 #include "drivers/usb.h"
+#include "drivers/nvme.h"
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"
 #include "globals.h"
 #include "structs.h"
 #include "utils.h"
+#include "app/scsi.h"
 
 /* External utility functions from utils.c */
 extern uint32_t idata_load_dword(__idata uint8_t *ptr);
@@ -22,14 +24,6 @@ extern void reg_wait_bit_set(uint16_t addr);
 
 /* External from moved stubs */
 extern void pcie_txn_table_lookup(void);
-extern void scsi_handle_init_4d92(void);
-
-/* External NVMe queue functions from nvme.c */
-extern void nvme_process_queue_entries(void);  /* 0x488f */
-extern void nvme_state_handler(void);          /* 0x4784 */
-extern void nvme_queue_sync(void);             /* 0x49e9 */
-extern void nvme_queue_process_pending(void);  /* 0x3e81 */
-extern void nvme_queue_helper(void);           /* 0x1196 */
 
 /* External from protocol.c */
 extern void scsi_core_dispatch(uint8_t param);  /* 0x4ff2 */
@@ -38,6 +32,7 @@ extern void nvme_completion_handler(uint8_t param);  /* 0x3adb */
 
 /* External from event_handler.c */
 extern void dma_queue_state_handler(void);  /* 0x2608 */
+extern void nvme_cmd_status_init(void);     /* 0x1196 - NVMe cmd status init */
 
 /* Forward declaration - USB master handler (0x10e0)
  * Called at end of endpoint dispatch loop */
@@ -1247,8 +1242,8 @@ void usb_master_handler(void)
             }
         }
 
-        /* Call NVMe queue helper at 0x1196 */
-        nvme_queue_helper();
+        /* Call NVMe command status init at 0x1196 */
+        nvme_cmd_status_init();
     }
 
     /* Post-loop processing at 0x113a-0x117a:
@@ -2188,13 +2183,13 @@ uint8_t usb_get_ep_config_txn(void)
  *   1c9f: lcall 0x4ff2      ; scsi_core_dispatch
  *   1ca2: lcall 0x4e6d      ; helper function
  */
-extern void helper_4e6d(void);  /* 0x4e6d - Buffer configuration helper */
+extern void buf_base_config(void);  /* 0x4e6d - Buffer configuration */
 
 void usb_core_protocol_dispatch(void)
 {
     /* Calls core handler and nvme helper */
     scsi_core_dispatch(0);
-    helper_4e6d();
+    buf_base_config();
 }
 
 /*
@@ -4757,7 +4752,7 @@ uint8_t usb_read_transfer_params_lo(void) { return G_TRANSFER_PARAMS_LO; }
  */
 void usb_get_descriptor_length(uint8_t param)
 {
-    uint8_t len = XDATA8(0x9E00 + param);
+    uint8_t len = ((__xdata uint8_t *)USB_CTRL_BUF_BASE)[param];
     (void)len;
 }
 
@@ -4768,7 +4763,7 @@ void usb_get_descriptor_length(uint8_t param)
  */
 void usb_convert_speed(uint8_t param)
 {
-    uint8_t speed = XDATA8(0x9E00 + param);
+    uint8_t speed = ((__xdata uint8_t *)USB_CTRL_BUF_BASE)[param];
     (void)speed;
 }
 

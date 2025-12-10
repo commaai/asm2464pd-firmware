@@ -20,15 +20,15 @@ void scsi_dma_mode_setup(void);
 
 /* External functions from moved stubs */
 extern void nvme_completion_handler(uint8_t param);
-extern void handler_0395(void);
+extern void usb_poll_wait(void);
 
-/* Stub helpers for slot address calculations */
-static __xdata uint8_t *get_slot_addr_71(void) { return &XDATA8(0x0171 + I_WORK_22); }
-static __xdata uint8_t *get_slot_addr_4e(void) { return &XDATA8(0x004E + I_WORK_22); }
-static __xdata uint8_t *get_slot_addr_7c(void) { return &XDATA8(0x017C + I_WORK_22); }
-static __xdata uint8_t *get_addr_from_slot(uint8_t base) { return &XDATA8(base + I_WORK_22); }
-static __xdata uint8_t *get_addr_low(uint8_t offset) { return &XDATA8(offset + I_WORK_22); }
-static uint8_t get_ep_config_4e(void) { return XDATA8(0x004E + I_WORK_22); }
+/* SCSI slot address helpers - indexed by I_WORK_22 */
+static __xdata uint8_t *get_slot_addr_71(void) { return &G_SCSI_SLOT_71_BASE[I_WORK_22]; }
+static __xdata uint8_t *get_slot_addr_4e(void) { return &G_SCSI_SLOT_4E_BASE[I_WORK_22]; }
+static __xdata uint8_t *get_slot_addr_7c(void) { return &G_SCSI_SLOT_7C_BASE[I_WORK_22]; }
+static __xdata uint8_t *get_addr_from_slot(uint8_t base) { return ((__xdata uint8_t *)base) + I_WORK_22; }
+static __xdata uint8_t *get_addr_low(uint8_t offset) { return ((__xdata uint8_t *)offset) + I_WORK_22; }
+static uint8_t get_ep_config_4e(void) { return G_SCSI_SLOT_4E_BASE[I_WORK_22]; }
 
 /* External functions */
 extern uint8_t usb_read_transfer_params_hi(void);
@@ -61,8 +61,8 @@ extern void dma_poll_link_ready(void);
 extern void xdata_load_dword(void);
 extern void handler_039a_buffer_dispatch(void);
 extern uint8_t xdata_read_0100(uint8_t param);
-extern void helper_1b2e(uint8_t param);
-extern void helper_1b30(uint8_t param);
+extern void usb_buf_ptr_0108(uint8_t param);
+extern void usb_buf_ptr_0100(uint8_t param);
 extern void xdata_ptr_from_param(uint8_t param);
 extern void dptr_calc_work43(void);
 extern void dptr_setup_stub(void);
@@ -238,11 +238,11 @@ void scsi_state_dispatch(void)
 
         if (result != 0) {
             /* Error path */
-            helper_1b30(offset + 0x08);
+            usb_buf_ptr_0100(offset + 0x08);
             G_SCSI_STATUS_06CB = 0xE0;
         } else {
             /* Success path */
-            helper_1b2e(offset);
+            usb_buf_ptr_0108(offset);
             G_SCSI_STATUS_06CB = 0x60;
             xdata_ptr_from_param(offset + 0x0C);
         }
@@ -257,10 +257,10 @@ void scsi_state_dispatch(void)
         result = xdata_read_0100(offset + 0x71);
 
         if (result != 0) {
-            helper_1b30(offset + 0x08);
+            usb_buf_ptr_0100(offset + 0x08);
             G_XFER_FLAG_07EA = 0xF4;
         } else {
-            helper_1b2e(offset);
+            usb_buf_ptr_0108(offset);
             G_XFER_FLAG_07EA = 0x74;
             xdata_ptr_from_param(offset + 0x0C);
         }
@@ -1295,7 +1295,7 @@ uint8_t scsi_dma_dispatch_helper(void)
 {
     uint8_t status;
 
-    helper_1b2e(0);
+    usb_buf_ptr_0108(0);
     status = REG_XFER_READY;  /* Check some status via 0x1bd5 */
     I_WORK_3C = status & 0x01;
 
@@ -1309,7 +1309,7 @@ uint8_t scsi_dma_dispatch_helper(void)
     /* Check work flag */
     if (I_WORK_3C != 0) {
         scsi_mode_clear();
-        helper_1b2e(0);  /* usb_write_byte_1bcb equivalent */
+        usb_buf_ptr_0108(0);  /* usb_write_byte_1bcb equivalent */
         return 5;
     }
 
@@ -1492,7 +1492,7 @@ void scsi_core_process(void)
     uint8_t val;
 
     /* Decrement R3 (implicit in calling convention) */
-    helper_1b2e(0);  /* usb_read_buffer */
+    usb_buf_ptr_0108(0);  /* usb_read_buffer */
 
     /* Add 0x11 and call 0x1bc3 */
     /* This reads/writes some USB buffer data */
@@ -1528,7 +1528,7 @@ uint8_t scsi_transfer_start_alt(void)
     }
 
     /* Call 0x1b23, 0x1bd5 */
-    helper_1b2e(0);
+    usb_buf_ptr_0108(0);
     status = REG_XFER_READY;
     I_WORK_3C = status & 0x02;
 
@@ -1586,7 +1586,7 @@ uint8_t scsi_transfer_check_5069(uint8_t param)
     }
 
     /* Final cleanup call */
-    helper_1b2e(0);  /* 0x1bcb equivalent */
+    usb_buf_ptr_0108(0);  /* 0x1bcb equivalent */
     return 5;
 }
 
@@ -1754,7 +1754,7 @@ extern uint8_t stub_return_zero(void);
 extern void buf_addr_read16(void);
 extern void core_state_sub16(void);
 extern void ep_queue_ctrl_set_84(void);
-extern void nvme_status_update(void);
+extern void nvme_status_update(void);  /* drivers/nvme.c */
 extern void nvme_cmd_param_hi(void);
 extern void usb_index_add_wrap(uint8_t param);
 extern void tlp_status_clear(void);
@@ -2106,15 +2106,15 @@ void scsi_dma_init_4be6(void)
 
     /* Clear bit 0 of CC35 */
     val = REG_CPU_EXEC_STATUS_3;  /* 0xCC35 */
-    REG_CPU_EXEC_STATUS_3 = val & 0xFE;
+    REG_CPU_EXEC_STATUS_3 = val & ~CPU_EXEC_STATUS_3_BIT0;
 
-    /* Modify C801 */
+    /* Modify C801 - set system interrupt enable bit */
     val = REG_INT_ENABLE;  /* 0xC801 */
-    REG_INT_ENABLE = (val & 0xEF) | 0x10;
+    REG_INT_ENABLE = (val & ~INT_ENABLE_SYSTEM) | INT_ENABLE_SYSTEM;
 
-    /* Modify C800 */
+    /* Modify C800 - set PCIe interrupt status bit */
     val = REG_INT_STATUS_C800;
-    REG_INT_STATUS_C800 = (val & 0xFB) | 0x04;
+    REG_INT_STATUS_C800 = (val & ~INT_STATUS_PCIE) | INT_STATUS_PCIE;
 
     /* Modify CA60 */
     val = REG_CPU_CTRL_CA60;
@@ -2591,7 +2591,7 @@ void scsi_send_csw(uint8_t status, uint8_t param)
         }
 
         /* Polling call */
-        handler_0395();
+        usb_poll_wait();
 
         if (flags != 0) {
             return;

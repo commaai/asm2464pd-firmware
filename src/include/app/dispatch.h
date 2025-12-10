@@ -57,7 +57,7 @@ void handler_e91d(void);                        /* dispatch to 0xe91d */
 void handler_e96c(void);                        /* dispatch to 0xe96c */
 void handler_0327_usb_power_init(void);         /* 0x0327-0x032a */
 void handler_039a_buffer_dispatch(void);        /* 0x039a-0x039e -> 0xd810 */
-void handler_0395(void);                        /* 0x0395-0x0399 */
+void usb_poll_wait(void);                       /* 0x0395-0x0399 */
 
 /* Dispatch stubs (numbered by address) */
 /* Each stub is 5 bytes: bank switch + ljmp to target */

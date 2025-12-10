@@ -237,13 +237,9 @@ uint8_t pcie_init_alt(void)
  */
 void pcie_set_idata_params(void)
 {
-    __asm
-        mov     r0, #0x65
-        mov     @r0, #0x0f
-        mov     r0, #0x63
-        mov     @r0, #0x00
-        inc     r0
-    __endasm;
+    I_WORK_65 = 0x0F;
+    I_WORK_63 = 0x00;
+    /* Note: original leaves R0 pointing to 0x64, but that's an artifact */
 }
 
 /*
@@ -262,13 +258,8 @@ void pcie_set_idata_params(void)
  */
 void pcie_clear_address_regs(void)
 {
-    __asm
-        clr     a
-        mov     r0, #0x63
-        mov     @r0, a
-        inc     r0
-        mov     @r0, a
-    __endasm;
+    I_WORK_63 = 0;
+    I_WORK_64 = 0;
 }
 
 /*
@@ -1039,11 +1030,7 @@ void pcie_tunnel_enable(void)
     pcie_lane_config(0x0F);
 
     /* Clear IDATA[0x62] */
-    __asm
-        clr     a
-        mov     r0, #0x62
-        mov     @r0, a
-    __endasm;
+    I_WORK_62 = 0;
 
     /* Clear max log entries */
     G_MAX_LOG_ENTRIES = 0x00;

@@ -13,6 +13,7 @@
 #include "registers.h"
 #include "globals.h"
 #include "app/dispatch.h"
+#include "app/scsi.h"
 #include "drivers/timer.h"
 #include "drivers/phy.h"
 #include "drivers/flash.h"
@@ -23,11 +24,10 @@
 #include "utils.h"
 #include "drivers/power.h"
 
-/* Forward declarations for app layer functions */
+/* Forward declarations for app layer functions not in headers yet */
 extern void event_state_handler(void);         /* app/event_handler.c */
 extern void error_state_config(void);          /* app/event_handler.c */
 extern void protocol_nop_handler(void);        /* app/protocol.c */
-extern void scsi_flash_ready_check(void);      /* app/scsi.c */
 
 /*===========================================================================
  * Forward declarations
@@ -68,7 +68,8 @@ static void load_both_signatures(uint32_t *sig1, uint32_t *sig2)
 
 /*
  * Helper: Compare two 32-bit signatures
- * Address: 0x0d22-0x0d32 (17 bytes)
+ * Note: These are C wrappers for comparison logic.
+ * The actual firmware function at 0x0d22 is cmp32() in utils.c.
  *
  * Compares (r0:r1:r2:r3) - (r4:r5:r6:r7) with initial borrow.
  * Returns carry if comparison indicates condition met.
@@ -277,20 +278,8 @@ boot_dispatch:
 
 /*
  * write_xdata_reg - Write value to XDATA register
- * Address: 0x0be6 (helper function)
- *
- * Writes the value in A to the XDATA address specified by R3:R2 (high:low).
- * Uses R1 as loop counter for sequential writes.
- *
- * Original disassembly:
- *   0be6: push 0x82        ; push DPL
- *   0be8: push 0x83        ; push DPH
- *   0bea: mov dph, r3
- *   0bec: mov dpl, r2
- *   0bee: movx @dptr, a    ; write to XDATA
- *   0bef: pop 0x83
- *   0bf1: pop 0x82
- *   0bf3: ret
+ * Note: Local helper used by process_init_table.
+ * The actual firmware function at 0x0be6 is banked_store_byte() in utils.c.
  */
 static void write_xdata_reg(uint8_t addr_h, uint8_t addr_l, uint8_t value)
 {
@@ -639,7 +628,7 @@ check_loop_state:
             usb_status = (usb_status >> 4) & 0x03;
             if (usb_status != 0) {
                 /* Check REG_USB_PHY_CTRL_91C0 bit 1 (0x3031-0x303d) */
-                if (REG_USB_PHY_CTRL_91C0 & 0x02) {
+                if (REG_USB_PHY_CTRL_91C0 & USB_PHY_CTRL_BIT1) {
                     dispatch_0322();  /* 0x0322 -> system_state_handler */
                 }
             }
@@ -911,7 +900,7 @@ void main_polling_handler(void)
 
     /* Check state flag and conditionally clear bit 0 of CPU exec status */
     if (G_STATE_FLAG_0AE3 != 0) {
-        REG_CPU_EXEC_STATUS = REG_CPU_EXEC_STATUS & 0xFE;
+        REG_CPU_EXEC_STATUS = REG_CPU_EXEC_STATUS & ~CPU_EXEC_STATUS_ACTIVE;
     }
 
     /* Poll PHY status register until bits 4 or 5 are set */
@@ -947,13 +936,13 @@ void sys_timer_handler_e957(void);
  * ============================================================ */
 
 /*
- * handler_0395 - Polling/wait dispatch entry
+ * usb_poll_wait - Polling/wait dispatch entry
  * Address: 0x0395 (dispatch entry), target: 0xDA8F
  *
  * From ghidra.c: jump_bank_0(0xda8f)
  * This is a wait/poll function called during CSW sending.
  */
-void handler_0395(void)
+void usb_poll_wait(void)
 {
     /* Dispatch to 0xDA8F - wait/poll function */
     /* For now, no-op since it's a poll loop */

@@ -119,7 +119,7 @@ extern void flash_func_1679(void);
 /*
  * Helper function forward declarations
  */
-extern void helper_4e6d(void);  /* 0x4e6d - Buffer configuration */
+extern void buf_base_config(void);  /* 0x4e6d - Buffer configuration */
 
 /*
  * FUN_CODE_15ac, FUN_CODE_15af - State helper functions
@@ -666,7 +666,7 @@ void helper_53c0(void)
 }
 
 /*
- * helper_039a - Register initialization for 0xD810
+ * usb_ep_ctrl_clear - Clear USB endpoint control register 0xD810
  * Address: 0x039a-0x039d (5 bytes)
  *
  * Sets DPTR = 0xD810 and jumps to 0x0300 which is a common
@@ -686,7 +686,7 @@ void helper_53c0(void)
  *   039a: mov dptr, #0xd810
  *   039d: ajmp 0x0300
  */
-void helper_039a(void)
+void usb_ep_ctrl_clear(void)
 {
     /* Clear the register at 0xD810 */
     REG_USB_EP_CTRL_10 = 0;
@@ -799,7 +799,7 @@ static void helper_50db(void)
  * helper_5409 - Queue/state cleanup helper
  * Address: 0x5409-0x5415 (13 bytes)
  *
- * Clears various state variables and jumps to helper_039a.
+ * Clears various state variables and jumps to usb_ep_ctrl_clear.
  *
  * Original disassembly:
  *   5409: clr a
@@ -809,7 +809,7 @@ static void helper_50db(void)
  *   5410: mov @r0, a            ; Clear IDATA[0x6A]
  *   5411: mov dptr, #0x06e6
  *   5414: movx @dptr, a         ; Clear 0x06E6
- *   5415: ljmp 0x039a           ; Jump to helper_039a
+ *   5415: ljmp 0x039a           ; Jump to usb_ep_ctrl_clear
  */
 static void helper_5409(void)
 {
@@ -819,7 +819,7 @@ static void helper_5409(void)
     G_STATE_FLAG_06E6 = 0;
 
     /* Call cleanup handler */
-    helper_039a();
+    usb_ep_ctrl_clear();
 }
 
 /*
@@ -1272,12 +1272,12 @@ void helper_1d1d(void)
  * helper_1c9f - Core processing and buffer setup
  * Address: 0x1c9f-0x1cad (15 bytes)
  *
- * Calls scsi_core_dispatch with param=0, then calls helper_4e6d to
+ * Calls scsi_core_dispatch with param=0, then calls buf_base_config to
  * configure buffers. Returns OR of IDATA[0x16] and IDATA[0x17].
  *
  * Original disassembly:
  *   1c9f: lcall 0x4ff2         ; scsi_core_dispatch(0)
- *   1ca2: lcall 0x4e6d         ; helper_4e6d
+ *   1ca2: lcall 0x4e6d         ; buf_base_config
  *   1ca5: mov r0, #0x16
  *   1ca7: mov a, @r0           ; R4 = [0x16]
  *   1ca8: mov r4, a
@@ -1293,7 +1293,7 @@ uint8_t helper_1c9f(void)
     scsi_core_dispatch(0);
 
     /* Configure buffer base addresses */
-    helper_4e6d();
+    buf_base_config();
 
     /* Return non-zero if either byte is non-zero */
     return I_CORE_STATE_L | I_CORE_STATE_H;
@@ -1454,7 +1454,7 @@ static uint8_t helper_1b9a(uint8_t val)
  * Since we're calling directly, we use 0x054F as the base
  * (the A register in original code was already set).
  *
- * Actually, helper_4e6d calls this at 0x4EAB with dptr=0x054F:
+ * Actually, buf_base_config calls this at 0x4EAB with dptr=0x054F:
  *   4ea8: mov dptr, #0x054f
  *   4eab: lcall 0x1b9d
  *
@@ -1474,7 +1474,7 @@ static uint8_t param_stub(uint8_t val)
 }
 
 /*
- * helper_4e6d - Buffer base address configuration
+ * buf_base_config - Buffer base address configuration
  * Address: 0x4e6d-0x4eb2 (70 bytes)
  *
  * Sets up buffer base addresses for DMA transfers based on
@@ -1504,7 +1504,7 @@ static uint8_t param_stub(uint8_t val)
  *   4e81: movx @dptr, a
  *   ...continues with table lookup and address computation
  */
-void helper_4e6d(void)
+void buf_base_config(void)
 {
     uint8_t status;
     uint8_t base_hi;
@@ -2228,10 +2228,10 @@ uint8_t dma_queue_action_handler(uint8_t param_1, uint8_t param_2, uint8_t actio
     REG_NVME_CMD = G_USB_ADDR_HI_0056;
     REG_NVME_CMD_OPCODE = G_USB_ADDR_LO_0057;
 
-    /* 0x28bc: Combine state helpers from 0x0474 */
-    temp = XDATA8(0x0474);
+    /* 0x28bc: Combine state helpers from G_STATE_HELPER_41 */
+    temp = G_STATE_HELPER_41;
     ep_status = nvme_get_data_ctrl_upper();
-    XDATA8(0x0474) = temp | ep_status;
+    G_STATE_HELPER_41 = temp | ep_status;
 
     /* 0x28c8: Clear bit 1 of REG_NVME_CTRL_STATUS */
     REG_NVME_CTRL_STATUS &= 0xFD;
@@ -2263,7 +2263,7 @@ uint8_t dma_queue_action_handler(uint8_t param_1, uint8_t param_2, uint8_t actio
         /* 0x2994: Counter non-zero - update index */
         ptr = scsi_get_ctrl_ptr_1b3b();
         temp = *ptr;
-        ctrl_idx = XDATA8(0x0216);
+        ctrl_idx = G_DMA_WORK_0216;
         temp += ctrl_idx;
         usb_calc_idx_counter_ptr(temp);
         *ptr = temp;
@@ -3175,7 +3175,7 @@ abort_path:
 
     usb_set_transfer_active_flag();
     /* 0x31ce: Set bit 7 of REG_USB_PHY_CTRL_9006 (DPTR left at 0x9006 by prev call) */
-    XDATA8(0x9006) = (XDATA8(0x9006) & 0x7F) | 0x80;
+    REG_USB_EP0_CONFIG = (REG_USB_EP0_CONFIG & 0x7F) | 0x80;
 }
 
 /*
@@ -4141,9 +4141,9 @@ void helper_3e81(void)
     pending = REG_NVME_QUEUE_PENDING & 0x3F;
     I_WORK_38 = pending;
 
-    counter = XDATA8(0x0500 + pending + 0x17);
+    counter = G_EP_WORK_BASE[pending + G_EP_SLOT_COUNTER_OFF];
     counter++;
-    XDATA8(0x0500 + pending + 0x17) = counter;
+    G_EP_WORK_BASE[pending + G_EP_SLOT_COUNTER_OFF] = counter;
     I_WORK_39 = counter;
 }
 

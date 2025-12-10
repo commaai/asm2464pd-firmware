@@ -2548,7 +2548,7 @@ extern void nvme_queue_cfg_by_state(void);                   /* 0x4784 - link st
 extern void nvme_queue_index_update(void);                   /* 0x49e9 - USB control handler */
 
 /*
- * helper_1196 - USB endpoint loop with r7=1 and C47A write
+ * nvme_cmd_status_init - USB endpoint loop with r7=1 and C47A write
  * Address: 0x1196-0x11a1 (12 bytes)
  *
  * Calls usb_ep_loop_180d(1) then writes 0xFF to REG_NVME_CMD_STATUS_C47A.
@@ -2561,7 +2561,7 @@ extern void nvme_queue_index_update(void);                   /* 0x49e9 - USB con
  *   11a0: movx @dptr, a       ; Write 0xFF
  *   11a1: ret
  */
-void helper_1196(void)
+void nvme_cmd_status_init(void)
 {
     usb_ep_loop_180d(0x01);
     REG_NVME_CMD_STATUS_C47A = 0xFF;
@@ -2651,8 +2651,8 @@ void usb_state_handler_isr_1006(void)
                 }
             }
 
-            /* Always call helper_1196 for each iteration */
-            helper_1196();
+            /* Always call nvme_cmd_status_init for each iteration */
+            nvme_cmd_status_init();
         }
     }
 
@@ -2739,7 +2739,7 @@ void system_state_update(void)
     pcie_lane_config(0x0F);
     state_update_e25e();
     val = REG_FLASH_BUF_CTRL_7041; val &= 0xBF; REG_FLASH_BUF_CTRL_7041 = val;
-    /* 0x1507 is in banked PCIe config space - access via XDATA */
-    val = XDATA_REG8(0x1507); val = (val & 0xFB) | 0x04; XDATA_REG8(0x1507) = val;
-    val = XDATA_REG8(0x1507); val = (val & 0xFD) | 0x02; XDATA_REG8(0x1507) = val;
+    /* 0x1507 is in banked PCIe config space */
+    val = REG_BANK_1507; val = (val & 0xFB) | 0x04; REG_BANK_1507 = val;
+    val = REG_BANK_1507; val = (val & 0xFD) | 0x02; REG_BANK_1507 = val;
 }

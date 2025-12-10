@@ -114,7 +114,7 @@ __xdata uint8_t *error_log_get_array_ptr(uint8_t index)
  */
 void error_log_get_array_ptr_2(uint8_t offset)
 {
-    uint8_t val = XDATA8(0x0500 + offset);
+    uint8_t val = G_EP_WORK_BASE[offset];
     G_PCIE_TXN_COUNT_LO = val;
 }
 

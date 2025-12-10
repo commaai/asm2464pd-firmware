@@ -297,7 +297,7 @@ uint8_t buf_read_offset_08(uint8_t param)
 uint8_t buf_read_base(uint8_t param)
 {
     /* Read from 0x0100 + param (assuming no carry from prior add) */
-    return XDATA8(0x0100 + param);
+    return G_USB_BUF_BASE[param];
 }
 
 /*

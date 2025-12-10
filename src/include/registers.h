@@ -49,10 +49,12 @@
 
 // Flash buffer control registers (0x7041, 0x78AF-0x78B2)
 #define REG_FLASH_BUF_CTRL_7041 XDATA_REG8(0x7041)  /* Flash buffer control */
+#define   FLASH_BUF_CTRL_BIT6    0x40  // Bit 6: Buffer control enable
 #define REG_FLASH_BUF_CFG_78AF  XDATA_REG8(0x78AF)  /* Flash buffer config 0 */
 #define REG_FLASH_BUF_CFG_78B0  XDATA_REG8(0x78B0)  /* Flash buffer config 1 */
 #define REG_FLASH_BUF_CFG_78B1  XDATA_REG8(0x78B1)  /* Flash buffer config 2 */
 #define REG_FLASH_BUF_CFG_78B2  XDATA_REG8(0x78B2)  /* Flash buffer config 3 */
+#define   FLASH_BUF_CFG_BIT6     0x40  // Bit 6: Buffer config enable
 
 #define USB_SCSI_BUF_BASE       0x8000
 #define USB_SCSI_BUF_SIZE       0x1000
@@ -66,6 +68,10 @@
 #define USB_CTRL_BUF_BASE       0x9E00
 #define USB_CTRL_BUF_SIZE       0x0200
 #define REG_USB_CTRL_BUF_9E00   XDATA_REG8(0x9E00)  /* USB control buffer first byte */
+#define REG_USB_CTRL_BUF_9E16   XDATA_REG8(0x9E16)  /* USB control buffer descriptor 1 hi */
+#define REG_USB_CTRL_BUF_9E17   XDATA_REG8(0x9E17)  /* USB control buffer descriptor 1 lo */
+#define REG_USB_CTRL_BUF_9E1D   XDATA_REG8(0x9E1D)  /* USB control buffer descriptor 2 hi */
+#define REG_USB_CTRL_BUF_9E1E   XDATA_REG8(0x9E1E)  /* USB control buffer descriptor 2 lo */
 
 #define NVME_IOSQ_BASE          0xA000
 #define NVME_IOSQ_SIZE          0x1000
@@ -97,6 +103,7 @@
 #define REG_USB_EP0_CONFIG      XDATA_REG8(0x9006)
 // REG_USB_STATUS2 removed (alias)
 #define   USB_EP0_CONFIG_ENABLE   0x01  // Bit 0: EP0 config enable
+#define   USB_EP0_CONFIG_READY    0x80  // Bit 7: EP0 ready/valid
 #define REG_USB_SCSI_BUF_LEN    XDATA_REG16(0x9007)
 #define REG_USB_SCSI_BUF_LEN_L  XDATA_REG8(0x9007)
 #define REG_USB_SCSI_BUF_LEN_H  XDATA_REG8(0x9008)
@@ -114,6 +121,7 @@
 #define REG_USB_EP_CFG_905A     XDATA_REG8(0x905A)  // USB endpoint config
 #define REG_USB_EP_BUF_HI       XDATA_REG8(0x905B)  // USB endpoint buffer high byte
 #define REG_USB_EP_BUF_LO       XDATA_REG8(0x905C)  // USB endpoint buffer low byte
+#define REG_USB_EP_CTRL_905D    XDATA_REG8(0x905D)  /* USB endpoint control 1 */
 #define REG_USB_EP_MGMT         XDATA_REG8(0x905E)
 #define REG_USB_EP_CTRL_905F    XDATA_REG8(0x905F)  /* USB endpoint control 2 */
 #define   USB_EP_CTRL_905F_BIT4   0x10  // Bit 4: Endpoint control flag
@@ -124,6 +132,8 @@
 #define REG_USB_EP_CFG1         XDATA_REG8(0x9093)
 #define REG_USB_EP_CFG2         XDATA_REG8(0x9094)
 #define REG_USB_EP_READY        XDATA_REG8(0x9096)
+#define REG_USB_EP_CTRL_9097    XDATA_REG8(0x9097)  /* USB endpoint control */
+#define REG_USB_EP_MODE_9098    XDATA_REG8(0x9098)  /* USB endpoint mode */
 #define REG_USB_STATUS_909E     XDATA_REG8(0x909E)
 #define REG_USB_CTRL_90A0       XDATA_REG8(0x90A0)  /* USB control 0x90A0 */
 #define REG_USB_SIGNAL_90A1     XDATA_REG8(0x90A1)
@@ -162,6 +172,7 @@
 
 // USB PHY registers (0x91C0-0x91FF)
 #define REG_USB_PHY_CTRL_91C0   XDATA_REG8(0x91C0)
+#define   USB_PHY_CTRL_BIT1       0x02  // Bit 1: USB PHY ready/enable
 #define REG_USB_PHY_CTRL_91C1   XDATA_REG8(0x91C1)
 #define REG_USB_PHY_CTRL_91C3   XDATA_REG8(0x91C3)
 #define REG_USB_EP_CTRL_91D0    XDATA_REG8(0x91D0)
@@ -379,6 +390,8 @@
 #define REG_NVME_CTRL_STATUS    XDATA_REG8(0xC412)
 #define   NVME_CTRL_STATUS_READY  0x02  // Bit 1: NVMe controller ready
 #define REG_NVME_CONFIG         XDATA_REG8(0xC413)
+#define   NVME_CONFIG_MASK_LO    0x3F  // Bits 0-5: Config value
+#define   NVME_CONFIG_MASK_HI    0xC0  // Bits 6-7: Config mode
 #define REG_NVME_DATA_CTRL      XDATA_REG8(0xC414)
 #define   NVME_DATA_CTRL_MASK     0xC0  // Bits 6-7: Data control mode
 #define   NVME_DATA_CTRL_BIT7     0x80  // Bit 7: Data control high bit
@@ -417,6 +430,7 @@
 // Note: 0xC42C-0xC42D are USB MSC registers, not NVMe
 #define REG_USB_MSC_CTRL        XDATA_REG8(0xC42C)
 #define REG_USB_MSC_STATUS      XDATA_REG8(0xC42D)
+#define REG_NVME_CMD_PRP1       XDATA_REG8(0xC430)  // NVMe command PRP1
 #define REG_NVME_CMD_PRP2       XDATA_REG8(0xC431)
 #define REG_NVME_CMD_CDW10      XDATA_REG8(0xC435)
 #define REG_NVME_INIT_CTRL      XDATA_REG8(0xC438)  // NVMe init control (set to 0xFF)
@@ -442,11 +456,14 @@
 #define REG_NVME_QUEUE_BUSY     XDATA_REG8(0xC471)  /* Queue busy status */
 #define   NVME_QUEUE_BUSY_BIT     0x01              /* Bit 0: Queue busy */
 #define REG_NVME_LINK_CTRL      XDATA_REG8(0xC472)  // NVMe link control
+#define REG_NVME_LINK_PARAM     XDATA_REG8(0xC473)  // NVMe link parameter (bit 4)
 #define REG_NVME_CMD_STATUS_C47A XDATA_REG8(0xC47A) // NVMe command status (used by usb_ep_loop)
 #define REG_NVME_DMA_CTRL_C4E9  XDATA_REG8(0xC4E9)  // NVMe DMA control extended
 #define REG_NVME_PARAM_C4EA     XDATA_REG8(0xC4EA)  // NVMe parameter storage
 #define REG_NVME_PARAM_C4EB     XDATA_REG8(0xC4EB)  // NVMe parameter storage high
 #define REG_NVME_BUF_CFG        XDATA_REG8(0xC508)  // NVMe buffer configuration
+#define   NVME_BUF_CFG_MASK_LO   0x3F  // Bits 0-5: Buffer index
+#define   NVME_BUF_CFG_MASK_HI   0xC0  // Bits 6-7: Buffer mode
 #define REG_NVME_QUEUE_INDEX    XDATA_REG8(0xC512)
 #define REG_NVME_QUEUE_PENDING  XDATA_REG8(0xC516)  /* Pending queue status */
 #define   NVME_QUEUE_PENDING_IDX  0x3F              /* Bits 0-5: Queue index */
@@ -482,6 +499,7 @@
 // Interrupt Controller (0xC800-0xC80F)
 //=============================================================================
 #define REG_INT_STATUS_C800     XDATA_REG8(0xC800)  /* Interrupt status register */
+#define   INT_STATUS_PCIE         0x04  // Bit 2: PCIe interrupt status
 #define REG_INT_ENABLE          XDATA_REG8(0xC801)  /* Interrupt enable register */
 #define   INT_ENABLE_GLOBAL       0x01  // Bit 0: Global interrupt enable
 #define   INT_ENABLE_USB          0x02  // Bit 1: USB interrupt enable
@@ -617,6 +635,7 @@
 #define   CPU_EXEC_STATUS_2_INT   0x04  // Bit 2: Interrupt pending
 #define REG_CPU_EXEC_CTRL_2     XDATA_REG8(0xCC34)  /* CPU execution control 2 */
 #define REG_CPU_EXEC_STATUS_3   XDATA_REG8(0xCC35)  /* CPU execution status 3 */
+#define   CPU_EXEC_STATUS_3_BIT0  0x01  // Bit 0: Exec active flag
 #define   CPU_EXEC_STATUS_3_BIT2  0x04  // Bit 2: Exec status flag
 // Timer enable/disable control registers
 #define REG_TIMER_ENABLE_A      XDATA_REG8(0xCC38)  /* Timer enable control A */
@@ -768,6 +787,9 @@
 #define REG_USB_EP_CTRL_0E      XDATA_REG8(0xD80E)  // Control 0E
 #define REG_USB_EP_CTRL_0F      XDATA_REG8(0xD80F)  // Control 0F
 #define REG_USB_EP_CTRL_10      XDATA_REG8(0xD810)  // Control 10
+// USB Endpoint buffers at 0xDE30, 0xDE36 (extended region)
+#define REG_USB_EP_BUF_DE30     XDATA_REG8(0xDE30)  // Endpoint buffer extended control
+#define REG_USB_EP_BUF_DE36     XDATA_REG8(0xDE36)  // Endpoint buffer extended config
 
 // Note: Full struct access at 0xD800 - see structs.h
 
@@ -871,6 +893,19 @@
 #define PCIE_FMT_CFG_WRITE_0    0x44
 #define PCIE_FMT_CFG_READ_1     0x05
 #define PCIE_FMT_CFG_WRITE_1    0x45
+
+//=============================================================================
+// Bank-Selected Registers (0x0xxx-0x2xxx)
+// These are accessed via bank switching or as part of extended memory access
+//=============================================================================
+#define REG_BANK_0200           XDATA_REG8(0x0200)  /* Bank register at 0x0200 */
+#define REG_BANK_1200           XDATA_REG8(0x1200)  /* Bank register at 0x1200 */
+#define REG_BANK_1235           XDATA_REG8(0x1235)  /* Bank register at 0x1235 */
+#define REG_BANK_1407           XDATA_REG8(0x1407)  /* Bank register at 0x1407 */
+#define REG_BANK_1504           XDATA_REG8(0x1504)  /* Bank register at 0x1504 */
+#define REG_BANK_1507           XDATA_REG8(0x1507)  /* Bank register at 0x1507 */
+#define REG_BANK_1603           XDATA_REG8(0x1603)  /* Bank register at 0x1603 */
+#define REG_BANK_2269           XDATA_REG8(0x2269)  /* Bank register at 0x2269 */
 
 //=============================================================================
 // Timeouts (milliseconds)

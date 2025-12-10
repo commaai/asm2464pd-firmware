@@ -87,6 +87,7 @@ void nvme_load_transfer_data(void);             /* 0x1c6d-0x1c76 */
 __xdata uint8_t *nvme_calc_idata_offset(void);  /* 0x1c88-0x1c8f */
 
 /* NVMe status */
+void nvme_status_update(void);                  /* 0x1b47-0x1b5f */
 uint8_t nvme_check_scsi_ctrl(void);             /* 0x1cae-0x1cb6 */
 uint8_t nvme_get_cmd_param_upper(void);         /* 0x1cb7-0x1cc0 */
 uint8_t nvme_get_dev_status_upper(void);        /* 0x1cc1-0x1cc7 */
@@ -165,7 +166,7 @@ void nvme_process_queue_entries(void);          /* 0x488f-0x48ff */
 void nvme_state_handler(void);                  /* 0x4784-0x47ff */
 void nvme_queue_sync(void);                     /* 0x49e9-0x4a56 */
 void nvme_queue_process_pending(void);          /* 0x3e81-0x3eff */
-void nvme_queue_helper(void);                   /* 0x1196-0x11ff */
+/* NOTE: nvme_queue_helper (0x1196) moved to event_handler.c as nvme_cmd_status_init */
 
 /* NVMe command engine */
 void nvme_cmd_store_and_trigger(uint8_t param, __xdata uint8_t *ptr);  /* 0x95a8-0x95b5 */

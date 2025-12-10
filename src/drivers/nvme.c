@@ -20,10 +20,24 @@ extern void usb_get_descriptor_ptr(void);
 extern uint16_t core_state_read16(void);
 extern uint8_t stub_return_zero(void);
 extern void queue_param_buf_calc(uint8_t param);
-extern void nvme_status_update(void);
 
 /* Forward declarations */
 void nvme_util_get_queue_depth(uint8_t p1, uint8_t p2);
+
+/*
+ * nvme_status_update - Update NVMe device and control status
+ * Address: 0x1b47-0x1b5f (25 bytes)
+ *
+ * Reads G_STATE_HELPER_42, ORs with high bits of REG_NVME_DEV_STATUS,
+ * writes result. Then sets bit 1 of REG_NVME_CTRL_STATUS.
+ */
+void nvme_status_update(void)
+{
+    uint8_t state_val = G_STATE_HELPER_42;
+    uint8_t dev_status_hi = REG_NVME_DEV_STATUS & 0xC0;
+    REG_NVME_DEV_STATUS = state_val | dev_status_hi;
+    REG_NVME_CTRL_STATUS = (REG_NVME_CTRL_STATUS & 0xFD) | 0x02;
+}
 
 /*
  * nvme_set_usb_mode_bit - Set USB mode bit 0 of register 0x9006
@@ -2063,80 +2077,8 @@ done:
     return;
 }
 
-/*
- * nvme_queue_helper_180d - NVMe queue initialization helper
- * Address: 0x180d-0x18xx
- *
- * Initializes NVMe queue state based on parameter.
- *
- * Parameters:
- *   r7: Queue enable flag (1=enable)
- *
- * Original disassembly:
- *   180d: mov dptr, #0x0a7d
- *   1810: mov a, r7
- *   1811: movx @dptr, a         ; Store r7 to 0x0A7D
- *   1812: xrl a, #0x01          ; Check if r7 == 1
- *   1814: jz 0x1819             ; If r7 == 1, continue
- *   1816: ljmp 0x19fa           ; Else jump to alternate path
- *   1819: ...                   ; Continue with queue setup
- */
-static void nvme_queue_helper_180d(uint8_t enable)
-{
-    /* Store enable flag */
-    *(__xdata uint8_t *)0x0A7D = enable;
-
-    if (enable != 1) {
-        /* Alternate path at 0x19FA - TODO */
-        return;
-    }
-
-    /* Check if initialization needed */
-    if (*(__xdata uint8_t *)0x000A == 0) {
-        /* Increment counter at 0x07E8 */
-        (*(__xdata uint8_t *)0x07E8)++;
-
-        /* Check state at 0x0B41 */
-        if (*(__xdata uint8_t *)0x0B41 != 0) {
-            /* Call helper at 0x04DA with r7=1 */
-            /* TODO: Implement helper_04da */
-        }
-    }
-
-    /* Write queue index to 0xCE88 */
-    *(__idata uint8_t *)0x38 = *(__xdata uint8_t *)0xC47A;
-    REG_XFER_CTRL_CE88 = *(__idata uint8_t *)0x38;
-
-    /* Wait for bit 0 of 0xCE89 */
-    while (!(REG_XFER_READY & XFER_READY_BIT));
-
-    /* Increment counter at 0x000A */
-    (*(__xdata uint8_t *)0x000A)++;
-}
-
-/*
- * nvme_queue_helper - NVMe queue processing helper
- * Address: 0x1196-0x11a1 (12 bytes)
- *
- * Entry point for NVMe queue helper. Sets up queue state and
- * marks queue as active.
- *
- * Original disassembly:
- *   1196: mov r7, #0x01
- *   1198: lcall 0x180d          ; Call queue init helper
- *   119b: mov dptr, #0xc47a
- *   119e: mov a, #0xff
- *   11a0: movx @dptr, a         ; Set 0xC47A = 0xFF
- *   11a1: ret
- */
-void nvme_queue_helper(void)
-{
-    /* Initialize queue with enable flag */
-    nvme_queue_helper_180d(1);
-
-    /* Mark queue as active */
-    *(__xdata uint8_t *)0xC47A = 0xFF;
-}
+/* NOTE: nvme_queue_helper_180d removed - duplicate of usb_ep_loop_180d in usb.c (0x180d) */
+/* NOTE: nvme_queue_helper removed - duplicate of nvme_cmd_status_init in event_handler.c (0x1196) */
 
 /*===========================================================================
  * NVMe Command Engine Functions (0x9500-0x9900)
