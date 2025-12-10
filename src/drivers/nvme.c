@@ -149,10 +149,10 @@
 
 /* External helper functions not in headers */
 extern void usb_get_descriptor_ptr(void);
-extern uint16_t helper_1b77(void);
-extern uint8_t helper_1c1b(void);
-extern void helper_1aad(uint8_t param);
-extern void helper_1b47(void);
+extern uint16_t core_state_read16(void);
+extern uint8_t stub_return_zero(void);
+extern void queue_param_buf_calc(uint8_t param);
+extern void nvme_status_update(void);
 
 /* Forward declarations */
 void nvme_util_get_queue_depth(uint8_t p1, uint8_t p2);
@@ -1097,7 +1097,7 @@ uint8_t nvme_get_dma_status_masked(void)
     return REG_DMA_STATUS3 & DMA_STATUS3_UPPER;
 }
 
-/* Forward declaration for reg_wait_bit_clear from state_helpers.c */
+/* Forward declaration for reg_wait_bit_clear from event_handler.c */
 extern void reg_wait_bit_clear(uint16_t addr, uint8_t mask, uint8_t flags, uint8_t timeout);
 
 /*
@@ -1321,7 +1321,7 @@ handle_default:
     }
 }
 
-/* Forward declaration for reg_wait_bit_set from state_helpers.c */
+/* Forward declaration for reg_wait_bit_set from event_handler.c */
 extern void reg_wait_bit_set(uint16_t addr);
 
 /*
@@ -2054,7 +2054,7 @@ void nvme_queue_sync(void)
             /* Check G_INIT_STATE_00E5 */
             if (G_INIT_STATE_00E5 != 0) {
                 /* Call helper with params: R3=0x03, R5=0x47, R7=0x0B */
-                /* TODO: call helper_523c(0x03, 0x47, 0x0B) */
+                /* TODO: call protocol_setup_params(0x03, 0x47, 0x0B) */
             }
             goto call_state_handler;
         }
@@ -2163,7 +2163,7 @@ void nvme_queue_process_pending(void)
         ptr = (__xdata uint8_t *)(0x00E5 + *queue_idx);
         if (*ptr != 0) {
             /* Non-zero secondary state - call helper with params */
-            /* TODO: call helper_523c(0x03, 0x47, 0x0B) */
+            /* TODO: call protocol_setup_params(0x03, 0x47, 0x0B) */
         }
         goto done;
     }
@@ -3365,7 +3365,7 @@ void nvme_state_error_set_92bb(void)
 }
 
 /*
- * helper_92b3 - Call helper and store result to IDATA[0x24]
+ * nvme_queue_status_read - Call helper and store result to IDATA[0x24]
  * Address: 0x92b3-0x92ba (8 bytes)
  *
  * Calls helper_e6a7 which returns a value in R7,
@@ -3377,7 +3377,7 @@ void nvme_state_error_set_92bb(void)
  *   92b8: mov a, 0x24        ; return value
  *   92ba: ret
  */
-uint8_t helper_92b3(void)
+uint8_t nvme_queue_status_read(void)
 {
     uint8_t result = check_link_with_delay_e6a7();
     *((__idata uint8_t *)0x24) = result;
@@ -3588,10 +3588,10 @@ void nvme_util_get_queue_depth(uint8_t p1, uint8_t p2)
     G_EP_DISPATCH_VAL4 = p1;   /* param_2 in ghidra */
 
     /* Call helper functions */
-    helper_1b77();
+    core_state_read16();
 
-    /* Check helper_1c1b result */
-    if (helper_1c1b() == 0) {
+    /* Check stub_return_zero result */
+    if (stub_return_zero() == 0) {
         /* If helper returns 0, do buffer address pair processing */
         usb_read_buf_addr_pair();
         nvme_subtract_idata_16(0, 0);  /* Simplified - actual uses R6/R7 */
@@ -3603,9 +3603,9 @@ void nvme_util_get_queue_depth(uint8_t p1, uint8_t p2)
     /* Update queue status */
     G_EP_QUEUE_STATUS = G_EP_DISPATCH_VAL3;
 
-    /* Select param for helper_1aad based on mode */
+    /* Select param for queue_param_buf_calc based on mode */
     param_for_aad = (G_EP_DISPATCH_VAL4 == 1) ? 1 : 2;
-    helper_1aad(param_for_aad);
+    queue_param_buf_calc(param_for_aad);
 
     /* Initialize PCIe transaction state */
     usb_init_pcie_txn_state();
@@ -3616,8 +3616,8 @@ void nvme_util_get_queue_depth(uint8_t p1, uint8_t p2)
     /* Handle SCSI control state */
     scsi_ctrl = G_SCSI_CTRL;
     if (scsi_ctrl == 0) {
-        /* Call helper_1b47 */
-        helper_1b47();
+        /* Call nvme_status_update */
+        nvme_status_update();
     } else {
         /* Update G_EP_DISPATCH_VAL3 with device status */
         temp = G_EP_DISPATCH_VAL3;

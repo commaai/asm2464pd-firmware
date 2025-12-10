@@ -37,7 +37,6 @@ uint8_t usb_setup_transfer_mode5(void);
 /* USB status and data */
 uint8_t usb_get_nvme_data_ctrl(void);
 void usb_set_nvme_ctrl_bit7(__xdata uint8_t *ptr);
-void dma_clear_dword(__xdata uint8_t *ptr);
 uint8_t usb_get_sys_status_offset(void);
 void usb_copy_status_to_buffer(void);
 uint16_t usb_read_status_pair(void);
@@ -73,7 +72,7 @@ uint8_t usb_read_queue_status_masked(void);
 uint8_t usb_shift_right_3(uint8_t val);
 
 /* USB endpoint status */
-uint8_t usb_calc_addr_009f(void);
+uint8_t usb_calc_ep_status_addr(void);
 uint8_t usb_get_ep_config_indexed(void);
 uint16_t usb_read_buf_addr_pair(void);
 uint8_t usb_get_idata_0x12_field(void);

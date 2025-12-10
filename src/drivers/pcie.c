@@ -173,12 +173,12 @@ extern void pcie_stage_address(uint8_t param);
 extern uint8_t pcie_read_transaction_start(void);
 extern uint8_t pcie_read_ext_reg(uint8_t reg_offset);
 extern uint8_t pcie_setup_tlp_transaction(void);
-extern void helper_053e(void);
-extern void helper_538d(uint8_t r3, uint8_t r2, uint8_t r1);
+extern void dispatch_helper(void);
+extern void scsi_data_copy(uint8_t r3, uint8_t r2, uint8_t r1);
 extern uint8_t nvme_clear_ep0_status(void);
-extern void helper_be8b(void);
-extern void helper_bd05(void);
-extern void ext_mem_read_bc57(uint8_t r3, uint8_t r2, uint8_t r1);
+extern void pcie_config_helper(void);
+extern void pcie_status_helper(void);
+extern void ext_mem_read_stub(uint8_t r3, uint8_t r2, uint8_t r1);
 
 /* Forward declarations */
 uint8_t pcie_poll_and_read_completion(void);
@@ -1244,7 +1244,7 @@ void pcie_store_txn_idx(uint8_t idx)
 }
 
 /*
- * pcie_lookup_config_05c0 - Look up in config table at 0x05C0
+ * pcie_config_table_lookup - Look up in config table at 0x05C0
  * Address: 0x9923-0x992f (13 bytes)
  *
  * Reads index from 0x05A6, multiplies by 0x22 (34),
@@ -1257,7 +1257,7 @@ void pcie_store_txn_idx(uint8_t idx)
  *   992a: mov b, #0x22         ; entry size 34 bytes
  *   992d: ljmp 0x0dd1          ; table lookup helper
  */
-__xdata uint8_t *pcie_lookup_config_05c0(void)
+__xdata uint8_t *pcie_config_table_lookup(void)
 {
     uint8_t idx = G_PCIE_TXN_COUNT_LO;
     uint16_t addr = 0x05C0 + ((uint16_t)idx * 0x22);
@@ -1404,7 +1404,7 @@ uint8_t pcie_get_txn_count_with_mult(void)
 }
 
 /*
- * pcie_lookup_from_idata26 - Look up using IDATA[0x26] as index
+ * pcie_idata_table_lookup - Look up using IDATA[0x26] as index
  * Address: 0x9962-0x9969 (8 bytes)
  *
  * Reads IDATA[0x26], multiplies by 0x22, jumps to 0x0dd1.
@@ -1414,7 +1414,7 @@ uint8_t pcie_get_txn_count_with_mult(void)
  *   9964: mov b, #0x22
  *   9967: ljmp 0x0dd1
  */
-__xdata uint8_t *pcie_lookup_from_idata26(void)
+__xdata uint8_t *pcie_idata_table_lookup(void)
 {
     uint8_t idx = *(__idata uint8_t *)0x26;
     /* Base address implied by caller's DPTR setup */
@@ -1447,7 +1447,7 @@ uint8_t pcie_check_txn_count(void)
 }
 
 /*
- * pcie_lookup_05b6 - Look up in table at 0x05B6
+ * pcie_param_table_lookup - Look up in table at 0x05B6
  * Address: 0x9977-0x997f (9 bytes)
  *
  * Sets DPTR=0x05B6, B=0x22, jumps to table lookup helper.
@@ -1457,7 +1457,7 @@ uint8_t pcie_check_txn_count(void)
  *   997a: mov b, #0x22
  *   997d: ljmp 0x0dd1
  */
-__xdata uint8_t *pcie_lookup_05b6(uint8_t idx)
+__xdata uint8_t *pcie_param_table_lookup(uint8_t idx)
 {
     uint16_t addr = 0x05B6 + ((uint16_t)idx * 0x22);
     return (__xdata uint8_t *)addr;
@@ -1771,7 +1771,7 @@ __xdata uint8_t *pcie_lookup_r6_multiply(uint8_t idx)
 }
 
 /*
- * pcie_lookup_05bd - Look up in table at 0x05BD
+ * pcie_offset_table_lookup - Look up in table at 0x05BD
  * Address: 0x9a10-0x9a1f (16 bytes)
  *
  * Sets DPTR=0x05BD, reads index from 0x05A6, multiplies by 0x22.
@@ -1780,7 +1780,7 @@ __xdata uint8_t *pcie_lookup_r6_multiply(uint8_t idx)
  *   9a10: mov dptr, #0x05bd
  *   ... (continues with table lookup)
  */
-__xdata uint8_t *pcie_lookup_05bd(void)
+__xdata uint8_t *pcie_offset_table_lookup(void)
 {
     uint8_t idx = G_PCIE_TXN_COUNT_LO;
     uint16_t addr = 0x05BD + ((uint16_t)idx * 0x22);
@@ -3186,10 +3186,10 @@ uint8_t pcie_init_write_e902(void)
 extern void pcie_timer_channels_init(void);
 extern void helper_9617(void);
 extern void helper_95bf(void);
-extern void helper_bd23(__xdata uint8_t *reg);
+extern void reg_modify_helper(__xdata uint8_t *reg);
 extern void timer0_reset(void);
 extern uint8_t pcie_read_link_state(void);
-extern void helper_0be6(void);
+extern void xdata_cond_write(void);
 
 /*
  * pcie_handler_e890 - Bank 1 PCIe link state reset handler
@@ -3388,7 +3388,7 @@ void pcie_channel_disable_e5fe(void)
     XDATA_REG8(0xC6BD) = val & 0xFE;
 
     /* Call helper with dptr=0xC801 - sets bit 5 */
-    helper_bd23((__xdata uint8_t *)0xC801);
+    reg_modify_helper((__xdata uint8_t *)0xC801);
 
     /* Write 4 to 0xCC33 */
     XDATA_REG8(0xCC33) = 0x04;
@@ -3473,7 +3473,7 @@ void clear_pcie_status_bytes_e8cd(void)
  *   bit 1: set if 0x0B35 != 0
  *   bit 2: set if 0x0B36 != 0
  *   bit 3: set if 0x0B37 != 0
- * Then calls pcie_read_link_state, combines results, and writes via helper_0be6
+ * Then calls pcie_read_link_state, combines results, and writes via xdata_cond_write
  */
 uint8_t get_pcie_status_flags_e00c(void)
 {
@@ -3487,8 +3487,8 @@ uint8_t get_pcie_status_flags_e00c(void)
     /* Combine with upper nibble from helper */
     flags |= (pcie_read_link_state() & 0xF0);
 
-    /* Write result via helper_0be6 */
-    helper_0be6();
+    /* Write result via xdata_cond_write */
+    xdata_cond_write();
 
     return flags;
 }
@@ -4372,7 +4372,7 @@ void pcie_check_and_trigger_d5da(uint8_t addrlo, uint8_t addrhi, uint8_t memtype
 void pcie_handler_e06b(uint8_t param)
 {
     G_USB_WORK_009F = param;
-    ext_mem_read_bc57(0x02, 0x12, 0x35);
+    ext_mem_read_stub(0x02, 0x12, 0x35);
     G_PCIE_WORK_0B34 = 1;
     param = G_USB_WORK_009F;
     dma_transfer_handler(param);
@@ -4478,7 +4478,7 @@ void pcie_lane_init_e7f8(void)
     uint8_t val;
 
     /* Call initial helper */
-    helper_0be6();
+    xdata_cond_write();
 
     /* Read extended register 0x37, set bit 7 */
     val = pcie_read_ext_reg(0x37);
@@ -4554,10 +4554,10 @@ void pcie_timer_channels_init(void)
 void pcie_dma_init_e0e4(void)
 {
     /* Initial setup */
-    helper_053e();
+    dispatch_helper();
 
     /* Set up extended memory parameters and call */
-    helper_538d(0xFF, 0x52, 0xE6);
+    scsi_data_copy(0xFF, 0x52, 0xE6);
 
     /* Final PCIe/DMA handler */
     uart_wait_tx_ready();
@@ -4667,12 +4667,12 @@ void pcie_write_transaction_start(void)
 void pcie_trigger_link_init(void)
 {
     XDATA_REG8(0xCC81) = 0x04;
-    helper_be8b();
+    pcie_config_helper();
 }
 
 void pcie_bd05_wrapper(void)
 {
-    helper_bd05();
+    pcie_status_helper();
 }
 
 uint8_t pcie_setup_tlp_transaction(void)

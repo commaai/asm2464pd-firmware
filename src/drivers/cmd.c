@@ -1582,7 +1582,7 @@ void cfg_write_b217(uint8_t val)
  *   0x996a = pcie_check_txn_count
  *   0x9a09 = pcie_lookup_r6_multiply
  *   0x9916 = pcie_store_r6_to_05a6
- *   0x9923 = pcie_lookup_config_05c0
+ *   0x9923 = pcie_config_table_lookup
  *   0x99af = pcie_read_and_store_idata
  *   0x994e = pcie_init_idata_65_63
  *   0x99b5 = pcie_add_2_to_idata
@@ -1594,7 +1594,7 @@ extern void pcie_inc_0a5b(void);
 extern uint8_t pcie_check_txn_count(void);
 extern __xdata uint8_t *pcie_lookup_r6_multiply(uint8_t idx);
 extern void pcie_store_r6_to_05a6(uint8_t val);
-extern __xdata uint8_t *pcie_lookup_config_05c0(void);
+extern __xdata uint8_t *pcie_config_table_lookup(void);
 extern void pcie_read_and_store_idata(__xdata uint8_t *ptr);
 extern void pcie_init_idata_65_63(void);
 extern void pcie_add_2_to_idata(uint8_t val);
@@ -1727,7 +1727,7 @@ loop_977c:
     /* For now, skip this call */
 
     /* lcall 0x9923 - get config table entry */
-    dptr = pcie_lookup_config_05c0();
+    dptr = pcie_config_table_lookup();
 
     /* Read and store to idata */
     pcie_read_and_store_idata(dptr);
@@ -1774,7 +1774,7 @@ label_97fb:
     pcie_store_r6_to_05a6(0x01);
     *(__idata uint8_t *)0x26 = 0x02;  /* Set index */
 
-    dptr = pcie_lookup_config_05c0();  /* 0x9923 */
+    dptr = pcie_config_table_lookup();  /* 0x9923 */
     pcie_read_and_store_idata(dptr);  /* 0x99af */
 
     /* 0x980b-0x981c: Setup and call more helpers */
@@ -1803,7 +1803,7 @@ loop_9825:
     pcie_store_r6_to_05a6(r6_val);
     *(__idata uint8_t *)0x26 = 0x0C;
 
-    dptr = pcie_lookup_config_05c0();
+    dptr = pcie_config_table_lookup();
     pcie_read_and_store_idata(dptr);
 
     /* Setup 32-bit values and call 0x9902 */

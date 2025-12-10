@@ -558,7 +558,7 @@ uint8_t dma_check_state_counter(void)
  *   173f: mov r4, a
  *   1740: ljmp 0x0dc5         ; xdata_store_dword
  */
-void dma_clear_dword_at(__xdata uint8_t *ptr)
+void dma_clear_dword(__xdata uint8_t *ptr)
 {
     ptr[0] = 0;
     ptr[1] = 0;

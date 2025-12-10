@@ -57,7 +57,7 @@ void dma_write_to_scsi_ce6e(void);
 void dma_write_idata_to_dptr(__xdata uint8_t *ptr);
 void dma_read_0461(void);
 void dma_store_and_dispatch(uint8_t val);
-void dma_clear_dword_at(__xdata uint8_t *ptr);
+void dma_clear_dword(__xdata uint8_t *ptr);
 
 /* Transfer functions */
 uint16_t transfer_set_dptr_0464_offset(void);

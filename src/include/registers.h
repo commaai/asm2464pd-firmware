@@ -438,11 +438,11 @@
 //=============================================================================
 #define REG_PHY_EXT_2D          XDATA_REG8(0xC62D)
 #define   PHY_EXT_LANE_MASK       0x07  // Bits 0-2: Lane configuration
-#define REG_PHY_CFG_C655        XDATA_REG8(0xC655)  /* PHY config (bit 3 set by helper_bbc0) */
+#define REG_PHY_CFG_C655        XDATA_REG8(0xC655)  /* PHY config (bit 3 set by flash_set_bit3) */
 #define REG_PHY_EXT_56          XDATA_REG8(0xC656)
 #define   PHY_EXT_SIGNAL_CFG      0x20  // Bit 5: Signal config
 #define REG_PCIE_LANE_CTRL_C659 XDATA_REG8(0xC659)  /* PCIe lane control */
-#define REG_PHY_CFG_C65A        XDATA_REG8(0xC65A)  /* PHY config (bit 3 set by helper_bbc0) */
+#define REG_PHY_CFG_C65A        XDATA_REG8(0xC65A)  /* PHY config (bit 3 set by flash_set_bit3) */
 #define   PHY_CFG_C65A_BIT3       0x08  // Bit 3: PHY config flag
 #define REG_PHY_EXT_5B          XDATA_REG8(0xC65B)
 #define   PHY_EXT_ENABLE          0x08  // Bit 3: PHY extended enable

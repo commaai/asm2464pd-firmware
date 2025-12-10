@@ -102,21 +102,21 @@ void pcie_txn_index_load(void);
 void pcie_txn_array_calc(void);
 
 /* Helper functions */
-void helper_15d4(void);
-void helper_15ef(uint8_t a, uint8_t b);
-void helper_15f1(uint8_t param);
+void dptr_setup_stub(void);
+void dptr_calc_ce40_indexed(uint8_t a, uint8_t b);
+void dptr_calc_ce40_param(uint8_t param);
 uint8_t get_ep_config_indexed(void);
-void helper_1755(uint8_t offset);
-void helper_159f(uint8_t value);
-void helper_166f(void);
-void helper_173b(void);
+void addr_setup_0059(uint8_t offset);
+void mem_write_via_ptr(uint8_t value);
+void dptr_calc_work43(void);
+void dma_queue_ptr_setup(void);
 
 /* System status pointers */
 __xdata uint8_t *get_sys_status_ptr_0456(uint8_t param);
 __xdata uint8_t *get_sys_status_ptr_0400(uint8_t param);
 
 /* Misc helpers */
-uint8_t helper_1b0b(uint8_t low_byte, uint8_t carry);
+uint8_t xdata_read_0100(uint8_t low_byte, uint8_t carry);
 uint8_t xdata_write_load_triple_1564(uint8_t value, uint8_t r1_addr, uint8_t r2_addr, uint8_t r3_mode);
 
 /* Timer configuration */

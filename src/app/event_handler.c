@@ -58,8 +58,8 @@
 
 /* External helper functions from stubs.c */
 extern uint8_t get_ep_config_indexed(void);
-extern void helper_1755(uint8_t offset);
-extern void helper_159f(uint8_t value);
+extern void addr_setup_0059(uint8_t offset);
+extern void mem_write_via_ptr(uint8_t value);
 
 /* External functions for moved stubs */
 extern uint8_t pcie_read_ctrl_b402(void);
@@ -96,7 +96,7 @@ uint8_t state_get_table_entry(void)
 }
 
 /*
- * state_calc_addr_ce40 - Calculate address in 0xCE40+ region
+ * state_calc_scsi_reg_addr - Calculate address in 0xCE40+ region
  * Address: 0x15ef-0x15f9 (11 bytes)
  *
  * Computes: 0xCE40 + R7
@@ -111,13 +111,13 @@ uint8_t state_get_table_entry(void)
  *   15f7: mov 0x83, a
  *   15f9: ret
  */
-__xdata uint8_t *state_calc_addr_ce40(uint8_t offset)
+__xdata uint8_t *state_calc_scsi_reg_addr(uint8_t offset)
 {
     return (__xdata uint8_t *)(0xCE40 + offset);
 }
 
 /*
- * state_load_from_0007 - Load triple from XDATA[0x0007]
+ * state_load_work_area - Load triple from XDATA[0x0007]
  * Address: 0x15fa-0x1601 (8 bytes)
  *
  * Loads 3 bytes from 0x0007 using xdata_load_triple, returns R1.
@@ -128,7 +128,7 @@ __xdata uint8_t *state_calc_addr_ce40(uint8_t offset)
  *   1600: mov a, r1
  *   1601: ret
  */
-uint8_t state_load_from_0007(void)
+uint8_t state_load_work_area(void)
 {
     __xdata uint8_t *ptr = (__xdata uint8_t *)0x0007;
     /* Load 3 bytes, return middle byte (R1 in original) */
@@ -415,8 +415,8 @@ extern uint8_t helper_1cd4(void);  /* 0x1cd4 - Returns status with bit 1 flag */
 extern void helper_1cc8(void);     /* 0x1cc8 - Register setup */
 extern void helper_1c22(void);     /* 0x1c22 - Carry flag helper */
 extern uint8_t get_ep_config_indexed(void);  /* 0x1646 - Get endpoint config value */
-extern void helper_1755(uint8_t offset);  /* 0x1755 - Set up address pointer */
-extern void helper_159f(uint8_t value);   /* 0x159f - Write value via pointer */
+extern void addr_setup_0059(uint8_t offset);  /* 0x1755 - Set up address pointer */
+extern void mem_write_via_ptr(uint8_t value);   /* 0x159f - Write value via pointer */
 
 /*
  * state_action_dispatch - Dispatch state action
@@ -474,7 +474,7 @@ uint8_t state_action_dispatch(uint8_t action_code)
     /* Write R4:R5 to 0xC426:0xC427 (from helper_1c9f) */
     /* Read 4 bytes from 0xC4CC using helper_0d84 */
     /* Store to IDATA 0x09, then to IDATA 0x6B-0x6E */
-    /* Call helper_0cab to compute */
+    /* Call math_sub32 to compute */
     /* Store R4-R7 to IDATA 0x6F-0x72 */
 
     /* Check bit 1 of action code again */
@@ -1075,13 +1075,13 @@ static __xdata uint8_t *helper_15bb(uint8_t idx)
  * handler_280a - Queue processing helper
  * Address: 0x280a-0x2813 (10 bytes)
  *
- * Calls helper_523c with r3=3, r5=0x47, r7=0x0b
+ * Calls protocol_setup_params with r3=3, r5=0x47, r7=0x0b
  */
-extern void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7);
+extern void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7);
 
 static void handler_280a(void)
 {
-    helper_523c(0x03, 0x47, 0x0B);
+    protocol_setup_params(0x03, 0x47, 0x0B);
 }
 
 /*
@@ -1766,8 +1766,8 @@ void state_transfer_calc_120d(void)
  *   1. Check if param >= 0x40, if so return 0 (out of bounds)
  *   2. Write I_WORK_40 to REG_SCSI_DMA_STATUS_L and G_STATE_HELPER_41
  *   3. Write I_WORK_40 + I_WORK_3F to G_STATE_HELPER_42
- *   4. Call helper_1755 with 0x59 + I_WORK_43
- *   5. Call helper_159f with I_WORK_40
+ *   4. Call addr_setup_0059 with 0x59 + I_WORK_43
+ *   5. Call mem_write_via_ptr with I_WORK_40
  *   6. Call helper_166a with I_WORK_40 (writes to computed slot)
  *   7. Write 1 to slot and return 1
  *
@@ -1796,13 +1796,13 @@ uint8_t state_transfer_setup_12aa(uint8_t param)
     sum = I_WORK_40 + I_WORK_3F;
     G_STATE_HELPER_42 = sum;
 
-    /* Call helper_1755 with 0x59 + I_WORK_43 */
+    /* Call addr_setup_0059 with 0x59 + I_WORK_43 */
     /* This sets up address at 0x0059 + I_WORK_43 */
-    helper_1755(0x59 + I_WORK_43);
+    addr_setup_0059(0x59 + I_WORK_43);
 
-    /* Call helper_159f with I_WORK_40 */
+    /* Call mem_write_via_ptr with I_WORK_40 */
     /* This increments pointer and writes I_WORK_40 */
-    helper_159f(I_WORK_40);
+    mem_write_via_ptr(I_WORK_40);
 
     /* Call helper_166a: writes I_WORK_40 to DPTR, then computes new DPTR = 0x7C + I_WORK_43 */
     /* This stores I_WORK_40 to the current address, then computes slot pointer */
@@ -2383,9 +2383,9 @@ void flash_config_init_9388(void)
  */
 extern void helper_e5fe(void);
 extern void helper_dbbb(void);
-extern void helper_048a(void);
-extern void helper_bbc0(__xdata uint8_t *dest);
-extern void helper_bb6e(__xdata uint8_t *dest);
+extern void state_checksum_calc(void);
+extern void flash_set_bit3(__xdata uint8_t *dest);
+extern void flash_set_bit2(__xdata uint8_t *dest);
 
 void flash_config_copy_9403(void)
 {
@@ -2455,7 +2455,7 @@ void flash_config_copy_9403(void)
     /* Bits 4-5 -> 0x0AEE (state check byte) */
     G_STATE_CHECK_0AEE = (cfg_707a >> 4) & 0x03;
 
-    /* Process 0x707A upper bits with helper_bb96 pattern -> 0x0AEF */
+    /* Process 0x707A upper bits with flash_extract_2bits_shift2 pattern -> 0x0AEF */
     cfg_707a = G_FLASH_BUF_707A;
     G_LINK_CFG_0AEF = (cfg_707a >> 6) & 0x03;
 
@@ -2488,9 +2488,9 @@ void flash_config_copy_9403(void)
 
     /* PHY config based on G_PHY_LANE_CFG_0AE4 and r6_ae3 */
     if (G_PHY_LANE_CFG_0AE4 == 0) {
-        /* Call helper_bbc0 to set bit 3 at 0xC655 and 0xC65A */
-        helper_bbc0(&REG_PHY_CFG_C655);
-        helper_bbc0(&REG_PHY_CFG_C65A);
+        /* Call flash_set_bit3 to set bit 3 at 0xC655 and 0xC65A */
+        flash_set_bit3(&REG_PHY_CFG_C655);
+        flash_set_bit3(&REG_PHY_CFG_C65A);
     } else {
         /* Clear bit 3 at 0xC65A */
         REG_PHY_CFG_C65A &= ~PHY_CFG_C65A_BIT3;
@@ -2498,7 +2498,7 @@ void flash_config_copy_9403(void)
 
     /* Check r6_ae3 and r7_ae6 for REG_CPU_EXEC_STATUS_3 (0xCC35) update */
     if (r6_ae3 == 0 || r7_ae6 == 0) {
-        helper_bb6e(&REG_CPU_EXEC_STATUS_3);
+        flash_set_bit2(&REG_CPU_EXEC_STATUS_3);
     } else {
         REG_CPU_EXEC_STATUS_3 &= ~CPU_EXEC_STATUS_3_BIT2;  /* Clear bit 2 */
     }
@@ -2516,7 +2516,7 @@ void flash_config_copy_9403(void)
 
     val = G_STATE_FLAG_0AF1;
     if (val & 0x04) {
-        helper_048a();
+        state_checksum_calc();
     }
 
     /* Clear bit 4 of USB endpoint control */
@@ -2542,7 +2542,7 @@ extern void usb_ep_loop_180d(uint8_t param);     /* 0x180d */
 extern void usb_ep_loop_3419(void);              /* 0x3419 */
 extern void dma_interrupt_handler(void);                  /* 0x2608 - link event handler (dma.c) */
 extern void nvme_completion_handler(uint8_t param);         /* 0x3adb - CEF2 handler (protocol.c) */
-extern void helper_488f(void);                   /* 0x488f - queue processor */
+extern void scsi_csw_ext_build(void);                   /* 0x488f - queue processor */
 extern void helper_3e81(void);                   /* 0x3e81 - USB status handler */
 extern void nvme_queue_cfg_by_state(void);                   /* 0x4784 - link status handler */
 extern void nvme_queue_index_update(void);                   /* 0x49e9 - USB control handler */
@@ -2647,7 +2647,7 @@ void usb_state_handler_isr_1006(void)
                 /* Check REG_NVME_LINK_STATUS (0xC520) bit 1 */
                 val = REG_NVME_LINK_STATUS;
                 if (val & 0x02) {  /* Bit 1 set */
-                    helper_488f();
+                    scsi_csw_ext_build();
                 }
             }
 
@@ -2671,7 +2671,7 @@ void usb_state_handler_isr_1006(void)
         /* Check REG_NVME_LINK_STATUS bit 1 */
         val = REG_NVME_LINK_STATUS;
         if (val & 0x02) {  /* Bit 1 set */
-            helper_488f();
+            scsi_csw_ext_build();
         }
     } else {
         /* USB not active - check link status */
@@ -2726,7 +2726,7 @@ void state_update_e25e(void)
  * TODO: Full implementation requires:
  *   - helper_ccac, helper_e8a9(0x0F), helper_e57d
  *   - helper_d630(0x01), helper_d436(0x0F), helper_e25e
- *   - ext_mem_access_0bc8 calls for register configuration
+ *   - ext_mem_bank_access calls for register configuration
  */
 void system_state_update(void)
 {

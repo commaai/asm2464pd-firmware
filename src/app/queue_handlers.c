@@ -746,7 +746,7 @@ void pcie_reg_set_bit4_a3db(uint8_t val)
 /* Forward declaration for helper_dd42 */
 extern void helper_dd42(uint8_t param);
 extern void helper_e7c1(uint8_t param);
-extern void helper_057a(uint8_t param);
+extern void dispatch_event_e0d9(uint8_t param);
 
 /*
  * pcie_config_init_a3f5 - Initialize PCIe configuration registers
@@ -811,7 +811,7 @@ void pcie_config_init_a3f5(void)
     /* Call helper functions */
     helper_dd42(0x00);
     helper_e7c1(0x01);
-    helper_057a(0x00);
+    dispatch_event_e0d9(0x00);
 
     /* Continue with state update - implementation follows at 0xa424+ */
     /* The full function is longer but the core PCIe init is above */
@@ -822,7 +822,7 @@ void pcie_config_init_a3f5(void)
  *===========================================================================*/
 
 /* Forward declarations */
-extern void helper_545c(void);
+extern void scsi_state_clear(void);
 extern void phy_set_config_bit0(void);
 
 /*
@@ -871,7 +871,7 @@ void system_state_clear_bfc4(void)
     G_SYS_FLAGS_07ED = val;         /* 0x07ED */
 
     /* Call helper functions */
-    helper_545c();
+    scsi_state_clear();
     phy_set_config_bit0();
 
     /* Read-modify power control register */
@@ -1184,7 +1184,7 @@ void queue_setup_abc9(void)
     /* Queue initialization */
 }
 
-/* Note: helper_96ae, cmd_trigger_params, cmd_param_setup, helper_545c, phy_set_config_bit0
+/* Note: helper_96ae, cmd_trigger_params, cmd_param_setup, scsi_state_clear, phy_set_config_bit0
  * are defined in stubs.c */
 
 /*===========================================================================
@@ -1230,7 +1230,7 @@ void pcie_write_and_read_a308(void)
  *===========================================================================*/
 
 /* External helper declarations */
-extern void helper_545c(void);
+extern void scsi_state_clear(void);
 extern void phy_set_config_bit0(void);
 
 /*
@@ -1246,7 +1246,7 @@ extern void phy_set_config_bit0(void);
  * - G_SYS_FLAGS_07E8 (0x07E8)
  * - G_STATE_CTRL_0B3C (0x0B3C)
  * - G_SYS_FLAGS_07ED (0x07ED)
- * Then calls helper_545c and phy_set_config_bit0.
+ * Then calls scsi_state_clear and phy_set_config_bit0.
  * Finally clears bits 0 and 1 of REG_POWER_CTRL_92C8.
  */
 void state_clear_all_bfc4(uint8_t val)
@@ -1264,7 +1264,7 @@ void state_clear_all_bfc4(uint8_t val)
     G_SYS_FLAGS_07ED = val;       /* 0x07ED */
 
     /* Call helpers */
-    helper_545c();
+    scsi_state_clear();
     phy_set_config_bit0();
 
     /* Clear bits 0 and 1 of power control register */

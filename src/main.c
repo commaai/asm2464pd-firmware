@@ -24,8 +24,8 @@
 #include "drivers/power.h"
 
 /* Forward declarations for app layer functions */
-extern void event_state_handler(void);         /* app/state_helpers.c */
-extern void error_state_config(void);          /* app/state_helpers.c */
+extern void event_state_handler(void);         /* app/event_handler.c */
+extern void error_state_config(void);          /* app/event_handler.c */
 extern void protocol_nop_handler(void);        /* app/protocol.c */
 extern void scsi_flash_ready_check(void);      /* app/scsi.c */
 
@@ -934,8 +934,8 @@ void main_polling_handler(void)
 }
 
 
-/* event_state_handler() moved to app/state_helpers.c */
-/* error_state_config() moved to app/state_helpers.c */
+/* event_state_handler() moved to app/event_handler.c */
+/* error_state_config() moved to app/event_handler.c */
 
 /* phy_register_config() moved to drivers/phy.c */
 

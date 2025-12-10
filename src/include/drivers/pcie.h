@@ -69,12 +69,12 @@ uint8_t pcie_queue_handler_a62d(void);
 void pcie_set_interrupt_flag(void);
 
 /* PCIe configuration lookup */
-__xdata uint8_t *pcie_lookup_config_05c0(void);
-__xdata uint8_t *pcie_lookup_from_idata26(void);
-__xdata uint8_t *pcie_lookup_05b6(uint8_t idx);
+__xdata uint8_t *pcie_config_table_lookup(void);
+__xdata uint8_t *pcie_idata_table_lookup(void);
+__xdata uint8_t *pcie_param_table_lookup(uint8_t idx);
 __xdata uint8_t *pcie_lookup_r3_multiply(uint8_t idx);
 __xdata uint8_t *pcie_lookup_r6_multiply(uint8_t idx);
-__xdata uint8_t *pcie_lookup_05bd(void);
+__xdata uint8_t *pcie_offset_table_lookup(void);
 
 /* PCIe data register operations */
 void pcie_write_data_reg_with_val(uint8_t val, uint8_t r6, uint8_t r7);

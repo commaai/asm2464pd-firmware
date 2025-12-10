@@ -35,7 +35,7 @@ extern uint16_t usb_read_transfer_params(void);
 extern uint8_t protocol_compare_32bit(void);
 extern void idata_load_dword(uint8_t addr);
 extern void idata_store_dword(uint8_t addr);
-extern uint8_t helper_0cab(uint8_t r0, uint8_t r1, uint8_t r6, uint8_t r7);
+extern uint8_t math_sub32(uint8_t r0, uint8_t r1, uint8_t r6, uint8_t r7);
 extern void helper_0c64(uint8_t a, uint8_t b);
 extern uint8_t helper_313f(uint8_t r0_val);
 extern uint8_t helper_3298(void);
@@ -58,16 +58,16 @@ extern void nvme_check_completion(uint16_t addr);
 extern void dma_poll_link_ready(void);
 extern void xdata_load_dword(void);
 extern void handler_039a_buffer_dispatch(void);
-extern uint8_t helper_1b0b(uint8_t param);
+extern uint8_t xdata_read_0100(uint8_t param);
 extern void helper_1b2e(uint8_t param);
 extern void helper_1b30(uint8_t param);
-extern void helper_1c13(uint8_t param);
-extern void helper_166f(void);
-extern void helper_15d4(void);
+extern void xdata_ptr_from_param(uint8_t param);
+extern void dptr_calc_work43(void);
+extern void dptr_setup_stub(void);
 extern uint8_t get_ep_config_indexed(void);
 extern void usb_shift_right_3(uint8_t param);
-extern void helper_15ef(uint8_t a, uint8_t b);
-extern void helper_15f1(uint8_t param);
+extern void dptr_calc_ce40_indexed(uint8_t a, uint8_t b);
+extern void dptr_calc_ce40_param(uint8_t param);
 extern void usb_calc_addr_with_offset(void);
 extern void helper_3f4a(void);
 extern void interface_ready_check(uint8_t p1, uint8_t p2, uint8_t p3);
@@ -107,7 +107,7 @@ extern void dispatch_0453(void);              /* Bank 0 dispatch */
 extern void transfer_func_173b(void);         /* Helper at 0x173b in usb.c */
 extern void helper_312a(void);                /* Protocol helper at 0x312a */
 extern void helper_31ce(void);                /* Protocol helper at 0x31ce */
-extern void helper_1cf0(void);                /* Helper at 0x1cf0 */
+extern void protocol_helper_setup(void);                /* Helper at 0x1cf0 */
 
 /* Forward declarations */
 static void scsi_setup_buffer_length(uint8_t hi, uint8_t lo);
@@ -119,7 +119,7 @@ static void scsi_cmd_process(void);
 static void scsi_cmd_state_machine(void);
 static void scsi_cmd_clear(void);
 static void pcie_setup_transaction(uint8_t param);
-static void helper_1580(uint8_t param);
+static void scsi_transfer_setup(uint8_t param);
 
 /*
  * scsi_setup_transfer_result - Setup transfer result registers
@@ -152,7 +152,7 @@ void scsi_setup_transfer_result(__xdata uint8_t *param)
         idata_load_dword(0x09);
         hi = usb_read_transfer_params_hi();
         lo = usb_read_transfer_params_lo();
-        helper_0cab(0, 0, hi, lo);
+        math_sub32(0, 0, hi, lo);
         idata_store_dword(0x09);
     }
 }
@@ -240,7 +240,7 @@ void scsi_state_dispatch(void)
         /* State 0x09: Setup complete flag */
         G_STATE_FLAG_06E6 = 1;
         offset = I_QUEUE_IDX;
-        result = helper_1b0b(offset + 0x71);
+        result = xdata_read_0100(offset + 0x71);
 
         if (result != 0) {
             /* Error path */
@@ -250,7 +250,7 @@ void scsi_state_dispatch(void)
             /* Success path */
             helper_1b2e(offset);
             G_SCSI_STATUS_06CB = 0x60;
-            helper_1c13(offset + 0x0C);
+            xdata_ptr_from_param(offset + 0x0C);
         }
         usb_set_transfer_flag();
         return;
@@ -260,7 +260,7 @@ void scsi_state_dispatch(void)
         /* State 0x0A: Similar to 0x09 with different address */
         G_XFER_FLAG_07EA = 1;
         offset = I_QUEUE_IDX;
-        result = helper_1b0b(offset + 0x71);
+        result = xdata_read_0100(offset + 0x71);
 
         if (result != 0) {
             helper_1b30(offset + 0x08);
@@ -268,7 +268,7 @@ void scsi_state_dispatch(void)
         } else {
             helper_1b2e(offset);
             G_XFER_FLAG_07EA = 0x74;
-            helper_1c13(offset + 0x0C);
+            xdata_ptr_from_param(offset + 0x0C);
         }
         usb_set_transfer_flag();
         return;
@@ -562,7 +562,7 @@ void scsi_buffer_threshold_config(void)
     uint8_t mode;
 
     G_LOG_INIT_044D = 0;
-    helper_166f();
+    dptr_calc_work43();
 
     val = G_LOG_INIT_044D;
     if (val == 1) {
@@ -573,7 +573,7 @@ void scsi_buffer_threshold_config(void)
 
     usb_calc_addr_with_offset();
     val = G_LOG_INIT_044D;
-    helper_15d4();
+    dptr_setup_stub();
 
     if (G_LOG_INIT_044D > 1) {
         val = G_DMA_ENDPOINT_0578;
@@ -590,32 +590,32 @@ void scsi_buffer_threshold_config(void)
 
     if (mode < 5) {
         uint8_t bit = (val >> 2) & 0x01;
-        helper_15ef(0, 0);
+        dptr_calc_ce40_indexed(0, 0);
         G_DMA_ENDPOINT_0578 = G_DMA_ENDPOINT_0578 & (bit ? 0x0F : 0xF0);
         return;
     }
 
     if (mode < 9) {
-        helper_15f1(0x40);
+        dptr_calc_ce40_param(0x40);
         G_DMA_ENDPOINT_0578 = 0;
         return;
     }
 
     if (mode < 17) {
-        helper_15ef(mode - 17, 0);
+        dptr_calc_ce40_indexed(mode - 17, 0);
         G_DMA_ENDPOINT_0578 = 0;
-        helper_15f1(0x3F);
+        dptr_calc_ce40_param(0x3F);
         G_DMA_ENDPOINT_0578 = 0;
         return;
     }
 
-    helper_15ef(mode - 17, 0);
+    dptr_calc_ce40_indexed(mode - 17, 0);
     G_DMA_ENDPOINT_0578 = 0;
-    helper_15f1(0x3F);
+    dptr_calc_ce40_param(0x3F);
     G_DMA_ENDPOINT_0578 = 0;
-    helper_15f1(0x3E);
+    dptr_calc_ce40_param(0x3E);
     G_DMA_ENDPOINT_0578 = 0;
-    helper_15f1(0x3D);
+    dptr_calc_ce40_param(0x3D);
     G_DMA_ENDPOINT_0578 = 0;
 }
 
@@ -1149,22 +1149,22 @@ extern void usb_data_handler(void);
 extern void usb_configure(void);
 extern void nvme_get_config_offset(void);
 extern void nvme_calc_addr_01xx(uint8_t param);
-extern uint8_t helper_165e(uint8_t param);
-extern void helper_1660(uint8_t param1, uint8_t param2);
-extern void helper_1659(uint8_t param);
+extern uint8_t xdata_read_044e(uint8_t param);
+extern void xdata_write_0400(uint8_t param1, uint8_t param2);
+extern void ep_config_write_calc(uint8_t param);
 extern void helper_0412(uint8_t param);
-extern void helper_1677(void);
+extern void dptr_calc_work53_x4(void);
 extern void usb_calc_queue_addr(uint8_t param);
 extern void usb_calc_queue_addr_next(uint8_t param);
 extern uint8_t helper_313d(void);
 extern void nvme_ep_config_init_3267(void);
 extern void helper_3181(void);
 extern void helper_3279(void);
-extern void helper_1ce4(void);
+extern void dptr_calc_04b7_work23(void);
 extern uint8_t helper_1c22(void);
 extern uint8_t helper_3bcd(uint8_t param);
-extern void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7);
-extern void helper_544c(void);
+extern void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7);
+extern void scsi_mode_clear(void);
 
 /*
  * nvme_scsi_cmd_buffer_setup - Setup NVMe SCSI command buffer
@@ -1277,7 +1277,7 @@ void scsi_transfer_check(void)
             helper_3279();
 
             /* Calculate using helper */
-            helper_0cab(0, 0, 0, 0);
+            math_sub32(0, 0, 0, 0);
 
             /* Store back to IDATA 0x6B */
             idata_store_dword(0x6B);
@@ -1314,7 +1314,7 @@ uint8_t scsi_dma_dispatch_helper(void)
 
     /* Check work flag */
     if (I_WORK_3C != 0) {
-        helper_544c();
+        scsi_mode_clear();
         helper_1b2e(0);  /* usb_write_byte_1bcb equivalent */
         return 5;
     }
@@ -1348,20 +1348,20 @@ void scsi_endpoint_queue_process(void)
 
     /* Get primary system status */
     status = G_SYS_STATUS_PRIMARY;
-    helper_165e(status);
+    xdata_read_044e(status);
     I_WORK_53 = G_SYS_STATUS_PRIMARY;
 
     /* Calculate next index: (status + 1) & 0x03 */
     r6_val = (I_WORK_53 + 1) & 0x03;
 
     /* Setup endpoint parameters */
-    helper_1660(status + 0x4E, r6_val);
-    helper_1659(r6_val);
+    xdata_write_0400(status + 0x4E, r6_val);
+    ep_config_write_calc(r6_val);
     helper_0412(G_SYS_STATUS_PRIMARY);
 
     /* Check if status is 0 */
     if (G_SYS_STATUS_PRIMARY == 0) {
-        helper_1677();
+        dptr_calc_work53_x4();
         G_SYS_STATUS_PRIMARY = 0;
     }
 
@@ -1383,7 +1383,7 @@ void scsi_endpoint_queue_process(void)
             continue;
         }
 
-        helper_1677();
+        dptr_calc_work53_x4();
         if (G_SYS_STATUS_PRIMARY != 0) {
             usb_calc_queue_addr(I_WORK_53);
             usb_calc_queue_addr_next(I_WORK_53);
@@ -1463,13 +1463,13 @@ void scsi_queue_scan_handler(void)
         }
 
         /* Get entry at current index via 0x1ce4 */
-        helper_1ce4();
+        dptr_calc_04b7_work23();
         I_WORK_22 = G_USB_INDEX_COUNTER;  /* Read slot value */
 
         /* Check if entry matches current USB index */
         if (G_USB_INDEX_COUNTER == I_WORK_22) {
             /* Clear entry via 0x1ce4 */
-            helper_1ce4();
+            dptr_calc_04b7_work23();
 
             /* Decrement SCSI control counter */
             G_SCSI_CTRL--;
@@ -1539,14 +1539,14 @@ uint8_t scsi_transfer_start_alt(void)
     I_WORK_3C = status & 0x02;
 
     if (I_WORK_3C != 0) {
-        helper_544c();
+        scsi_mode_clear();
     } else {
         /* Check G_XFER_FLAG_07EA */
         if (G_XFER_FLAG_07EA == 1) {
             /* Call 0x3bcd with R7=0 */
             if (helper_3bcd(0) != 0) {
                 /* Call 0x523c with R3=0, R5=0x44, R7=4 */
-                helper_523c(0, 0x44, 4);
+                protocol_setup_params(0, 0x44, 4);
             }
         }
     }
@@ -1587,7 +1587,7 @@ uint8_t scsi_transfer_check_5069(uint8_t param)
     if (G_LOG_COUNTER_044B == 1) {
         if (G_WORK_0006 != 0) {
             /* Setup DMA: R3=0, R5=0x3A, R7=2 */
-            helper_523c(0, 0x3A, 2);
+            protocol_setup_params(0, 0x3A, 2);
         }
     }
 
@@ -1755,19 +1755,19 @@ uint8_t scsi_queue_check_52c7(uint8_t index)
  * Configures slot based on endpoint dispatch values.
  * Sets up transfer parameters and calls various helpers.
  */
-extern void helper_1b77(void);
-extern uint8_t helper_1c1b(void);
-extern void helper_1ba5(void);
-extern void helper_1c6d(void);
-extern void helper_1cc1(void);
-extern void helper_1b47(void);
-extern void helper_1c77(void);
-extern void helper_1d39(uint8_t param);
-extern void helper_1d43(void);
-extern void helper_1aad(uint8_t param);
-extern void helper_1cae(void);
-extern void helper_1c56(void);
-extern void helper_041c(uint8_t param);
+extern void core_state_read16(void);
+extern uint8_t stub_return_zero(void);
+extern void buf_addr_read16(void);
+extern void core_state_sub16(void);
+extern void ep_queue_ctrl_set_84(void);
+extern void nvme_status_update(void);
+extern void nvme_cmd_param_hi(void);
+extern void usb_index_add_wrap(uint8_t param);
+extern void tlp_status_clear(void);
+extern void queue_param_buf_calc(uint8_t param);
+extern void queue_index_inc_wrap(void);
+extern void nvme_dev_status_hi(void);
+extern void power_check_wrapper(uint8_t param);
 
 void scsi_slot_config_46f8(uint8_t r7_val, uint8_t r5_val)
 {
@@ -1779,16 +1779,16 @@ void scsi_slot_config_46f8(uint8_t r7_val, uint8_t r5_val)
     G_EP_DISPATCH_VAL4 = r5_val;  /* 0x0A7E */
 
     /* Call helper sequence */
-    helper_1b77();
-    if (helper_1c1b()) {
+    core_state_read16();
+    if (stub_return_zero()) {
         /* Carry set - setup additional parameters */
-        helper_1ba5();
+        buf_addr_read16();
         /* Store values via indirect addressing @R0 */
         I_WORK_18 = G_WORK_0006;
         I_WORK_19 = G_WORK_0007;
-        helper_1c6d();
+        core_state_sub16();
     }
-    helper_1cc1();
+    ep_queue_ctrl_set_84();
 
     /* Store endpoint dispatch value to queue status */
     G_EP_QUEUE_STATUS = G_EP_DISPATCH_VAL3;  /* 0x0565 = 0x0A7D */
@@ -1798,8 +1798,8 @@ void scsi_slot_config_46f8(uint8_t r7_val, uint8_t r5_val)
     if (G_EP_DISPATCH_VAL4 == 0x01) {
         mode = 0x01;
     }
-    helper_1aad(mode);
-    helper_1d43();
+    queue_param_buf_calc(mode);
+    tlp_status_clear();
 
     /* Clear bit 7 of REG_NVME_DATA_CTRL (0xC414) */
     REG_NVME_DATA_CTRL &= ~NVME_DATA_CTRL_BIT7;
@@ -1809,28 +1809,28 @@ void scsi_slot_config_46f8(uint8_t r7_val, uint8_t r5_val)
     if (tmp > 0) {
         /* Get DMA work value and add to dispatch value */
         tmp = G_DMA_WORK_0216 + G_EP_DISPATCH_VAL3;
-        helper_1c56();
+        nvme_dev_status_hi();
         G_EP_DISPATCH_VAL3 |= tmp;
     } else {
-        helper_1b47();
+        nvme_status_update();
     }
 
     /* Continue with address calculation */
     tmp = G_EP_DISPATCH_VAL3;
-    helper_1c77();
+    nvme_cmd_param_hi();
     G_EP_DISPATCH_VAL3 |= tmp;
 
     /* Check SCSI control again for NVMe setup */
     if (G_SCSI_CTRL > 0) {
-        helper_1d39(G_DMA_WORK_0216);
+        usb_index_add_wrap(G_DMA_WORK_0216);
         nvme_scsi_cmd_buffer_setup();
     }
 
-    helper_1cae();
+    queue_index_inc_wrap();
 
     /* Final check for dispatch value 4 */
     if (G_EP_DISPATCH_VAL4 == 0) {
-        helper_041c(G_USB_PARAM_0B00);
+        power_check_wrapper(G_USB_PARAM_0B00);
     }
 }
 
@@ -1951,8 +1951,8 @@ void scsi_csw_build_ext_488f(void)
  *
  * Sets up NVMe command from SCSI parameters.
  */
-extern void helper_1bd7(uint8_t param);
-extern void helper_15a0(void);
+extern void calc_chain_stub(uint8_t param);
+extern void state_ptr_calc_014e(void);
 
 void scsi_nvme_setup_49e9(uint8_t param)
 {
@@ -1972,18 +1972,18 @@ void scsi_nvme_setup_49e9(uint8_t param)
     G_BUF_BASE_LO = 0x00;
 
     /* Call helper for status secondary */
-    helper_1bd7(G_SYS_STATUS_SECONDARY);
+    calc_chain_stub(G_SYS_STATUS_SECONDARY);
 
     /* Store DMA work value */
     G_DMA_WORK_0216 = G_SYS_STATUS_SECONDARY;
 
     /* Calculate buffer address */
-    helper_15a0();
+    state_ptr_calc_014e();
     G_BUF_ADDR_HI = G_EP_CONFIG_BASE;
     G_BUF_ADDR_LO = G_EP_CONFIG_ARRAY;
 
     /* Get offset value */
-    val = helper_1b0b(G_SYS_STATUS_SECONDARY);
+    val = xdata_read_0100(G_SYS_STATUS_SECONDARY);
     G_DMA_OFFSET = val;
 }
 
@@ -2062,7 +2062,7 @@ void scsi_queue_setup_4b25(uint8_t param)
 
     /* Get system status */
     status = G_SYS_STATUS_PRIMARY;
-    helper_1b0b(0);
+    xdata_read_0100(0);
     I_WORK_3C = G_SYS_STATUS_PRIMARY;
 
     /* Calculate address offset */
@@ -2094,9 +2094,9 @@ void scsi_queue_setup_4b25(uint8_t param)
  * Initializes DMA registers and control bits.
  */
 extern void reg_set_bit_0(uint16_t addr);
-extern void helper_03a4(void);
-extern void helper_0584(void);
-extern void helper_048f(void);
+extern void power_config_wrapper(void);
+extern void dispatch_nop_stub2(void);
+extern void dispatch_nop_stub(void);
 
 void scsi_dma_init_4be6(void)
 {
@@ -2137,9 +2137,9 @@ void scsi_dma_init_4be6(void)
     REG_TIMER_CTRL_CC3B = (val & 0xFD) | 0x02;
 
     /* Call initialization helpers */
-    helper_03a4();
-    helper_0584();
-    helper_048f();
+    power_config_wrapper();
+    dispatch_nop_stub2();
+    dispatch_nop_stub();
 }
 
 /*
@@ -2165,16 +2165,16 @@ void scsi_buffer_setup_4e25(void)
 
     /* Get EP config */
     val = G_SYS_STATUS_SECONDARY;
-    helper_1bd7(val);
+    calc_chain_stub(val);
     G_DMA_WORK_0216 = val;
 
     /* Calculate buffer address using multiply-add */
-    helper_15a0();
+    state_ptr_calc_014e();
     G_BUF_ADDR_HI = G_EP_CONFIG_BASE;
     G_BUF_ADDR_LO = G_EP_CONFIG_ARRAY;
 
     /* Get DMA offset */
-    val = helper_1b0b(G_SYS_STATUS_SECONDARY);
+    val = xdata_read_0100(G_SYS_STATUS_SECONDARY);
     G_DMA_OFFSET = val;
 }
 
@@ -2186,7 +2186,7 @@ void scsi_buffer_setup_4e25(void)
  */
 extern uint8_t ep_config_read(uint8_t param);
 extern void mul_add_index(uint8_t param1, uint8_t param2);
-extern uint8_t helper_1b9d(uint8_t p1, uint16_t p2);
+extern uint8_t param_stub(uint8_t p1, uint16_t p2);
 
 void scsi_ep_config_4e6d(void)
 {
@@ -2214,7 +2214,7 @@ void scsi_ep_config_4e6d(void)
     G_BUF_ADDR_LO = G_EP_CONFIG_ARRAY;
 
     /* Get offset from helper */
-    val = helper_1b9d(G_SYS_STATUS_SECONDARY, 0x054F);
+    val = param_stub(G_SYS_STATUS_SECONDARY, 0x054F);
     G_DMA_OFFSET = val;
 }
 
@@ -2450,7 +2450,7 @@ void scsi_init_slot_53d4(void)
  * scsi_dispatch_5426 - Dispatch handler
  * Address: 0x5426-0x5454 (47 bytes)
  *
- * Calls dispatch_0426 with param 0x14, then helper_173b with DPTR=0xB220
+ * Calls dispatch_0426 with param 0x14, then dma_queue_ptr_setup with DPTR=0xB220
  */
 void scsi_dispatch_5426(void)
 {
@@ -2486,11 +2486,11 @@ void scsi_clear_mode_545c(void)
  * scsi_helper_5462 - Call helper 1cf0
  * Address: 0x5462-0x5465 (4 bytes)
  *
- * Simple wrapper for helper_1cf0
+ * Simple wrapper for protocol_helper_setup
  */
 void scsi_helper_5462(void)
 {
-    helper_1cf0();
+    protocol_helper_setup();
 }
 
 /*
@@ -2526,7 +2526,7 @@ void scsi_loop_process_573b(void)
  * Disassembly:
  *   1b07: mov a, #0x71       ; Base offset
  *   1b09: add a, 0x3e        ; A = 0x71 + I_WORK_3E
- *   1b0b: mov DPL, a         ; (continues to helper_1b0b)
+ *   1b0b: mov DPL, a         ; (continues to xdata_read_0100)
  *   1b0d: clr a
  *   1b0e: addc a, #0x01      ; DPH = 0x01 + carry
  *   1b10: mov DPH, a
@@ -2824,10 +2824,10 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
 }
 
 /*
- * helper_544c - Call queue processing with specific parameters
+ * scsi_mode_clear - Call queue processing with specific parameters
  * Address: 0x544c-0x5454 (9 bytes)
  *
- * Wrapper that calls helper_523c(0, 0x24, 5).
+ * Wrapper that calls protocol_setup_params(0, 0x24, 5).
  * Sets up queue processing with index 0x24, mode 5.
  *
  * Original disassembly:
@@ -2837,14 +2837,14 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
  *   5450: mov r7, #0x05
  *   5452: ljmp 0x523c
  */
-void helper_544c(void)
+void scsi_mode_clear(void)
 {
-    extern void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7);
-    helper_523c(0, 0x24, 5);
+    extern void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7);
+    protocol_setup_params(0, 0x24, 5);
 }
 
 /*
- * helper_545c - Clear transfer flag
+ * scsi_state_clear - Clear transfer flag
  * Address: 0x545c-0x5461 (6 bytes)
  *
  * Clears the transfer flag at 0x0AF8.
@@ -2855,7 +2855,7 @@ void helper_544c(void)
  *   5460: movx @dptr, a      ; Write 0
  *   5461: ret
  */
-void helper_545c(void)
+void scsi_state_clear(void)
 {
     G_TRANSFER_FLAG_0AF8 = 0;
 }
@@ -2890,10 +2890,10 @@ void scsi_handle_init_4d92(void)
      * starts the SCSI command state machine. For now, stub. */
 }
 
-/* helper_488f - Queue processor
+/* scsi_csw_ext_build - Queue processor
  * Address: 0x488f
  */
-void helper_488f(void)
+void scsi_csw_ext_build(void)
 {
     uint8_t status;
 
@@ -2955,7 +2955,7 @@ void nvme_queue_index_update(void)
     }
 }
 
-void helper_538d(uint8_t r3, uint8_t r2, uint8_t r1)
+void scsi_data_copy(uint8_t r3, uint8_t r2, uint8_t r1)
 {
     (void)r3; (void)r2; (void)r1;
     /* Stub */

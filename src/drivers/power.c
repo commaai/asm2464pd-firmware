@@ -79,7 +79,7 @@
 #include "structs.h"
 
 /* External declarations */
-extern void usb_mode_config_d07f(uint8_t param);     /* state_helpers.c */
+extern void usb_mode_config_d07f(uint8_t param);     /* event_handler.c */
 extern void nvme_queue_config_e214(void);            /* nvme.c */
 extern void delay_short_e89d(void);                  /* utils.c */
 extern void pcie_clear_address_regs(void);           /* pcie.c - 0x9a9c */

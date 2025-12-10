@@ -534,7 +534,7 @@ void helper_1bcb(void)
 }
 
 /*
- * helper_523c - Queue processing helper
+ * protocol_setup_params - Queue processing helper
  * Address: 0x523c-0x525f (36 bytes)
  *
  * Stores queue parameters and optionally triggers USB endpoint.
@@ -566,7 +566,7 @@ void helper_1bcb(void)
  *   525c: lcall 0x1bcb        ; call USB helper
  *   525f: ret
  */
-void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7)
+void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7)
 {
     /* Store queue type to 0x0203 */
     G_DMA_MODE_SELECT = r7;
@@ -1145,7 +1145,7 @@ uint8_t helper_3f4a(void)
     /* 0x3f4a: Check 0x07EF - if non-zero, return 0 */
     if (G_SYS_FLAGS_07EF != 0) {
         /* 0x3fda path: return 0 */
-        helper_523c(0, 0x3A, 2);
+        protocol_setup_params(0, 0x3A, 2);
         return 5;
     }
 
@@ -1175,7 +1175,7 @@ uint8_t helper_3f4a(void)
         /* 0x3f7b: Check bit 7 of result */
         if (status & 0x80) {
             /* Return 2 with R3=2, R5=4 via 0x3fd3 -> 0x3fde */
-            helper_523c(2, 4, 2);
+            protocol_setup_params(2, 4, 2);
             return 5;
         }
     }
@@ -1225,7 +1225,7 @@ uint8_t helper_3f4a(void)
     status = helper_043f();
     if (status == 0) {
         /* Jump to 0x3fda - return 0 */
-        helper_523c(0, 0x3A, 2);
+        protocol_setup_params(0, 0x3A, 2);
         return 5;
     }
 
@@ -1237,7 +1237,7 @@ uint8_t helper_3f4a(void)
 
         if (table_val == 0x0F) {
             /* Jump to 0x3fda */
-            helper_523c(0, 0x3A, 2);
+            protocol_setup_params(0, 0x3A, 2);
             return 5;
         }
     }
@@ -1255,8 +1255,8 @@ check_044c:
 
         /* 0x3fcc: Clear 0x044C, set R3=1 */
         G_LOG_ACTIVE_044C = 0;
-        /* R3=1, R5=4, R7=2 -> return 5 via helper_523c */
-        helper_523c(1, 4, 2);
+        /* R3=1, R5=4, R7=2 -> return 5 via protocol_setup_params */
+        protocol_setup_params(1, 4, 2);
         return 5;
     }
 
@@ -1460,7 +1460,7 @@ static uint8_t helper_1b9a(uint8_t val)
 }
 
 /*
- * helper_1b9d - Table lookup helper (shared entry point)
+ * param_stub - Table lookup helper (shared entry point)
  * Address: 0x1b9d-0x1ba4
  *
  * Same as 1b9a but called with DPTR already set.
@@ -1474,7 +1474,7 @@ static uint8_t helper_1b9a(uint8_t val)
  * So this expects DPTR to be pre-set by caller.
  * For our C implementation, we pass the table index.
  */
-static uint8_t helper_1b9d(uint8_t val)
+static uint8_t param_stub(uint8_t val)
 {
     uint16_t addr;
     __xdata uint8_t *ptr;
@@ -1500,7 +1500,7 @@ static uint8_t helper_1b9d(uint8_t val)
  * - Computes index via helper_1b9a and stores to G_DMA_WORK_0216
  * - Computes table entry at 0x054C + (index * 20)
  * - Writes buffer address to G_BUF_ADDR_HI/LO (0x0218-0x0219)
- * - Computes another value via helper_1b9d and stores to 0x0217
+ * - Computes another value via param_stub and stores to 0x0217
  *
  * Original disassembly:
  *   4e6d: mov dptr, #0x0464   ; Read G_SYS_STATUS_PRIMARY
@@ -1555,7 +1555,7 @@ void helper_4e6d(void)
 
     /* Read from 0x054F + computed offset and store to 0x0217 */
     index = G_SYS_STATUS_SECONDARY;
-    offset = helper_1b9d(index);
+    offset = param_stub(index);
     G_DMA_OFFSET = offset;
 }
 
@@ -2148,7 +2148,7 @@ extern uint8_t scsi_dma_transfer_process(uint8_t param);
 extern void nvme_clear_status_bit1(void);
 extern uint8_t nvme_get_data_ctrl_upper(void);
 extern void scsi_read_ctrl_indexed(void);
-extern uint8_t usb_calc_addr_009f(void);
+extern uint8_t usb_calc_ep_status_addr(void);
 extern void nvme_calc_addr_012b(uint8_t param);
 extern uint8_t nvme_get_dev_status_upper(void);
 extern uint8_t nvme_get_cmd_param_upper(void);
@@ -2259,7 +2259,7 @@ uint8_t dma_queue_action_handler(uint8_t param_1, uint8_t param_2, uint8_t actio
     if ((G_ACTION_CODE_0A83 & 0x02) == 0) {
         /* Mode without bit 1 - additional DMA setup */
         scsi_read_ctrl_indexed();
-        temp = usb_calc_addr_009f();
+        temp = usb_calc_ep_status_addr();
         /* Additional processing... */
     }
 
@@ -3490,8 +3490,8 @@ void protocol_state_dispatcher_32a5(void)
     extern void helper_31ce(void);
     extern uint16_t helper_3181(void);
     extern uint8_t helper_313d(void);
-    extern void helper_544c(void);
-    extern void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7);
+    extern void scsi_mode_clear(void);
+    extern void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7);
     extern void dispatch_04a3(void);
     extern void dispatch_04a8(void);
     extern void dispatch_0206(void);
@@ -3520,11 +3520,11 @@ void protocol_state_dispatcher_32a5(void)
 case_f9_e1:
     /* 0x32c6: Check XDATA[0x0001] == 0x07 */
     if (XDATA_VAR8(0x0001) != 0x07) {
-        /* Not 0x07: call int_aux_set_bit1, dispatch_04a3, then helper_523c */
+        /* Not 0x07: call int_aux_set_bit1, dispatch_04a3, then protocol_setup_params */
         int_aux_set_bit1_3280();
         dispatch_04a3();
-        /* Simplified: always call helper_523c since we can't easily check R7 return */
-        helper_523c(0, 0x03, 0x03);
+        /* Simplified: always call protocol_setup_params since we can't easily check R7 return */
+        protocol_setup_params(0, 0x03, 0x03);
         goto common_exit_e8;
     }
 
@@ -3550,8 +3550,8 @@ case_f9_e1:
         goto common_exit_d8;
     }
 
-    /* IDATA[0x6B] is zero: call helper_544c and goto common_exit_e8 */
-    helper_544c();
+    /* IDATA[0x6B] is zero: call scsi_mode_clear and goto common_exit_e8 */
+    scsi_mode_clear();
     goto common_exit_e8;
 
 case_e3_fb:
@@ -3639,8 +3639,8 @@ path_330b_alt:
     /* Call dispatch_04a8 - simplified: always take the R7==0 path */
     dispatch_04a8();
 
-    /* Simplified: Call helper_523c(0, 3, 3), check helper_313d */
-    helper_523c(0, 0x03, 0x03);
+    /* Simplified: Call protocol_setup_params(0, 3, 3), check helper_313d */
+    protocol_setup_params(0, 0x03, 0x03);
     if (helper_313d() == 0) {
         goto path_33dc;
     }

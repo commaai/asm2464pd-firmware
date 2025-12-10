@@ -131,8 +131,8 @@
  * [x] usb_read_queue_status_masked (0x17c1) - Read masked queue status
  * [x] usb_shift_right_3 (0x17cd)           - Shift utility
  * [x] usb_ep_dispatch_loop (0x0e96)        - Main endpoint dispatch
- * [x] dma_clear_dword (0x173b)             - Clear 32-bit value
- * [x] usb_calc_addr_009f (0x1b88)          - Calculate address with IDATA offset
+ * [x] dma_clear_dword (0x173b)             - Clear 32-bit value (in dma.c)
+ * [x] usb_calc_ep_status_addr (0x1b88)          - Calculate address with IDATA offset
  * [x] usb_get_ep_config_indexed (0x1b96)   - Get indexed endpoint config
  * [x] usb_read_buf_addr_pair (0x1ba5)      - Read buffer address pair
  * [x] usb_get_idata_0x12_field (0x1bae)    - Extract IDATA[0x12] field
@@ -154,7 +154,7 @@ extern uint32_t idata_load_dword_alt(__idata uint8_t *ptr);
 /* External handler from main.c */
 extern void usb_buffer_dispatch(void);
 
-/* External from state_helpers.c */
+/* External from event_handler.c */
 extern void nvme_func_04da(uint8_t param);
 extern void reg_wait_bit_set(uint16_t addr);
 
@@ -171,10 +171,10 @@ extern void nvme_queue_helper(void);           /* 0x1196 */
 
 /* External from protocol.c */
 extern void scsi_core_dispatch(uint8_t param);  /* 0x4ff2 */
-extern void helper_523c(uint8_t r3, uint8_t r5, uint8_t r7);  /* 0x523c */
+extern void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7);  /* 0x523c */
 extern void nvme_completion_handler(uint8_t param);  /* 0x3adb */
 
-/* External from state_helpers.c */
+/* External from event_handler.c */
 extern void dma_queue_state_handler(void);  /* 0x2608 */
 
 /* Forward declaration - USB master handler (0x10e0)
@@ -728,27 +728,7 @@ void usb_set_nvme_ctrl_bit7(__xdata uint8_t *ptr)
  * DMA/Transfer Utility Functions
  *===========================================================================*/
 
-/*
- * dma_clear_dword - Clear 32-bit value at XDATA address
- * Address: 0x173b-0x1742 (8 bytes)
- *
- * Clears R4-R7 to 0 and calls xdata_store_dword (0x0dc5).
- *
- * Original disassembly:
- *   173b: clr a
- *   173c: mov r7, a
- *   173d: mov r6, a
- *   173e: mov r5, a
- *   173f: mov r4, a
- *   1740: ljmp 0x0dc5        ; xdata_store_dword
- */
-void dma_clear_dword(__xdata uint8_t *ptr)
-{
-    ptr[0] = 0;
-    ptr[1] = 0;
-    ptr[2] = 0;
-    ptr[3] = 0;
-}
+/* dma_clear_dword moved to dma.c - use dma_clear_dword_at instead */
 
 /*
  * usb_get_sys_status_offset - Get system status with offset
@@ -1462,7 +1442,7 @@ void usb_master_handler(void)
  *===========================================================================*/
 
 /*
- * usb_calc_addr_009f - Calculate address 0x009F + IDATA[0x3E]
+ * usb_calc_ep_status_addr - Calculate address 0x009F + IDATA[0x3E]
  * Address: 0x1b88-0x1b95 (14 bytes)
  *
  * Reads offset from IDATA[0x3E], adds to 0x9F, returns that XDATA value.
@@ -1478,7 +1458,7 @@ void usb_master_handler(void)
  *   1b94: movx a, @dptr
  *   1b95: ret
  */
-uint8_t usb_calc_addr_009f(void)
+uint8_t usb_calc_ep_status_addr(void)
 {
     uint8_t offset = *(__idata uint8_t *)0x3E;
     return (&G_USB_WORK_009F)[offset];
@@ -1864,7 +1844,7 @@ uint8_t usb_dec_indexed_counter(void)
  *   1b29: mov a, r1
  *   1b2a: ret
  */
-/* Note: usb_func_1b14 is now in state_helpers.c with correct signature for protocol.c */
+/* Note: usb_func_1b14 is now in event_handler.c with correct signature for protocol.c */
 
 void usb_xdata_copy_with_offset(uint8_t addr_lo, uint8_t addr_hi)
 {
@@ -2025,7 +2005,7 @@ uint16_t usb_marshal_idata_to_xdata(void)
  *
  * Clears various USB state variables to reset the interface.
  */
-/* Note: usb_reset_interface is now in state_helpers.c with correct signature for protocol.c */
+/* Note: usb_reset_interface is now in event_handler.c with correct signature for protocol.c */
 
 void usb_reset_interface_full(void)
 {
@@ -2547,7 +2527,7 @@ uint8_t usb_setup_transfer_mode5(void)
 {
     /* Calls transfer setup helper with params:
      * R3=0 (some flag), R5=0x20 (size), R7=5 (mode/type) */
-    helper_523c(0, 0x20, 5);
+    protocol_setup_params(0, 0x20, 5);
     return 5;
 }
 
