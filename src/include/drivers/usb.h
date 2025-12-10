@@ -1,45 +1,86 @@
 /*
  * usb.h - USB Interface Driver
  *
- * The USB subsystem handles the host-side interface for the ASM2464PD
- * USB4/Thunderbolt to NVMe bridge. It implements USB Mass Storage Class
- * using the Bulk-Only Transport (BOT) protocol to expose NVMe drives
- * as SCSI devices to the host.
+ * USB host interface controller for the ASM2464PD USB4/Thunderbolt to NVMe
+ * bridge. Implements USB Mass Storage Class using Bulk-Only Transport (BOT)
+ * protocol to expose NVMe drives as SCSI devices to the host.
  *
- * HARDWARE CAPABILITIES:
- *   - USB 3.2 Gen2x2 (20 Gbps) support
- *   - USB4/Thunderbolt 3/4 tunneling
- *   - 8 configurable endpoints (EP0-EP7)
- *   - Hardware DMA for bulk transfers
+ * HARDWARE CAPABILITIES
+ *   USB 3.2 Gen2x2 (20 Gbps) SuperSpeed+
+ *   USB4/Thunderbolt 3/4 tunneling
+ *   8 configurable endpoints (EP0-EP7)
+ *   Hardware DMA for bulk transfers
  *
- * DATA FLOW:
- *   USB Host <---> USB Controller <---> Endpoint Buffers <---> DMA Engine
- *                       |                      |
- *                       v                      v
- *               Status Registers         SCSI/NVMe Translation
+ * DATA FLOW
+ *   USB Host <-> USB Controller <-> Endpoint Buffers <-> DMA Engine
+ *                     |                    |
+ *                     v                    v
+ *             Status Registers      SCSI/NVMe Translation
  *
- * ENDPOINT ARCHITECTURE:
- *   EP0: Control endpoint (enumeration, class requests)
+ * ENDPOINT ARCHITECTURE
+ *   EP0:     Control endpoint (enumeration, class requests)
  *   EP1-EP2: Bulk IN/OUT for Mass Storage data
  *   EP3-EP7: Reserved for additional interfaces
  *
- * KEY REGISTERS (0x9000-0x91FF):
- *   0x9000: USB_STATUS      - Main status (bit 0: activity, bit 7: connected)
- *   0x9006: USB_EP0_CONFIG  - EP0 mode configuration
- *   0x9093: USB_EP_CFG1     - Endpoint configuration
- *   0x9118: USB_EP_STATUS   - Endpoint status bitmap (8 endpoints)
+ * REGISTER MAP (0x9000-0x91FF)
+ *   0x9000  USB_STATUS       Main status (bit 0: activity, bit 7: connected)
+ *   0x9001  USB_CONTROL      Control register
+ *   0x9002  USB_CONFIG       Configuration
+ *   0x9003  USB_EP0_STATUS   EP0 status
+ *   0x9004  USB_EP0_LEN_LO   EP0 transfer length low
+ *   0x9005  USB_EP0_LEN_HI   EP0 transfer length high
+ *   0x9006  USB_EP0_CONFIG   EP0 mode (bit 0: USB mode)
+ *   0x9007  USB_SCSI_LEN_LO  SCSI buffer length low
+ *   0x9008  USB_SCSI_LEN_HI  SCSI buffer length high
+ *   0x9091  INT_FLAGS_EX0    Extended interrupt flags
+ *   0x9093  USB_EP_CFG1      Endpoint config 1
+ *   0x9094  USB_EP_CFG2      Endpoint config 2
+ *   0x9096  USB_EP_BASE      Indexed by endpoint number
+ *   0x9101  USB_PERIPH       Peripheral status (bit 6: busy)
+ *   0x9118  USB_EP_STATUS    Endpoint status bitmap (8 endpoints)
+ *   0x911B  USB_BUFFER_ALT   Buffer alternate
  *
- * ENDPOINT DISPATCH:
- *   The dispatch loop (usb_ep_dispatch_loop) polls endpoint status and
- *   calls handlers for endpoints needing service. Priority is determined
- *   by a lookup table at CODE address 0x5A6A that maps status bits to
- *   endpoint indices.
+ * BUFFER CONTROL (0xD800-0xD8FF)
+ *   0xD804-0xD807  Transfer status copy area
+ *   0xD80C         Buffer transfer start
  *
- * USAGE:
- *   1. usb_enable() - Initialize USB controller and load config
- *   2. usb_setup_endpoint() - Configure endpoints for Mass Storage
- *   3. usb_ep_dispatch_loop() - Main processing loop (called from interrupt)
- *   4. usb_buffer_handler() - Handle completed DMA transfers
+ * ENDPOINT DISPATCH
+ *   Dispatch table at CODE 0x5A6A (256 bytes) maps status byte to EP index
+ *   Bit mask table at 0x5B6A (8 bytes) maps EP index to clear mask
+ *   Offset table at 0x5B72 (8 bytes) maps EP index to register offset
+ *
+ *   Algorithm:
+ *   1. Read endpoint status from USB_EP_STATUS (0x9118)
+ *   2. Look up primary EP index via ep_index_table[status]
+ *   3. If index >= 8, exit (no endpoints need service)
+ *   4. Read secondary status from USB_EP_BASE + ep_index1
+ *   5. Look up secondary EP index
+ *   6. Calculate combined offset = ep_offset_table[ep_index1] + ep_index2
+ *   7. Call endpoint handler with combined offset
+ *   8. Clear endpoint status via bit mask write
+ *   9. Loop up to 32 times
+ *
+ * WORK AREA GLOBALS (0x0000-0x0BFF)
+ *   0x000A  EP_CHECK_FLAG         Endpoint processing check
+ *   0x014E  Circular buffer index (5-bit)
+ *   0x0218  Buffer address low
+ *   0x0219  Buffer address high
+ *   0x0464  SYS_STATUS_PRIMARY    Primary status for indexing
+ *   0x0465  SYS_STATUS_SECONDARY  Secondary status
+ *   0x054E  EP_CONFIG_ARRAY       Endpoint config array base
+ *   0x0564  EP_QUEUE_CTRL         Endpoint queue control
+ *   0x0565  EP_QUEUE_STATUS       Endpoint queue status
+ *   0x05A6  PCIE_TXN_COUNT_LO     PCIe transaction count low
+ *   0x05A7  PCIE_TXN_COUNT_HI     PCIe transaction count high
+ *   0x06E6  STATE_FLAG            Processing complete/error flag
+ *   0x07E4  SYS_FLAGS_BASE        System flags base (must be 1)
+ *   0x0A7B  EP_DISPATCH_VAL1      First endpoint index
+ *   0x0A7C  EP_DISPATCH_VAL2      Second endpoint index
+ *   0x0AF2  TRANSFER_FLAG         Transfer active flag
+ *   0x0AF5  EP_DISPATCH_OFFSET    Combined dispatch offset
+ *   0x0AFA  TRANSFER_PARAM_LO     Transfer parameters low
+ *   0x0AFB  TRANSFER_PARAM_HI     Transfer parameters high
+ *   0x0B2E  USB_TRANSFER_FLAG     USB transfer in progress
  */
 #ifndef _USB_H_
 #define _USB_H_

@@ -1,46 +1,77 @@
 /*
  * dma.h - DMA Engine Driver
  *
- * The DMA engine provides high-speed data transfer between USB endpoints,
- * NVMe buffers, and internal SRAM without CPU intervention. It supports
- * both scatter-gather operations and contiguous transfers.
+ * DMA engine control for the ASM2464PD USB4/Thunderbolt to NVMe bridge.
+ * Handles high-speed data transfers between USB, NVMe, and internal buffers
+ * without CPU intervention.
  *
- * DMA ARCHITECTURE:
- *   USB Endpoint Buffers <---> DMA Engine <---> NVMe Data Buffers
- *                                  ↓
- *                          SCSI Data Buffers
+ * ARCHITECTURE
+ *   USB Host <---> USB Buffer <---> DMA Engine <---> NVMe Buffer <---> NVMe SSD
+ *                      |                |
+ *                      v                v
+ *                 XRAM Buffers    SCSI/Mass Storage
  *
- * CHANNEL CONFIGURATION:
- *   - Multiple DMA channels for concurrent operations
- *   - Per-channel source/destination addressing
- *   - Configurable transfer sizes and burst modes
- *   - Interrupt on completion support
+ * TRANSFER MODES
+ *   - USB to Buffer: Host writes (USB RX)
+ *   - Buffer to USB: Host reads (USB TX)
+ *   - Buffer to NVMe: SSD writes
+ *   - NVMe to Buffer: SSD reads
  *
- * TRANSFER MODES:
- *   - USB RX: Host → USB Controller → DMA → Internal Buffer
- *   - USB TX: Internal Buffer → DMA → USB Controller → Host
- *   - NVMe: PCIe TLP data ↔ Internal buffers
+ * DMA ENGINE CORE REGISTERS (0xC8B0-0xC8DF)
+ *   0xC8B0  DMA_MODE          DMA mode configuration
+ *   0xC8B2  DMA_CHAN_AUX      Channel auxiliary config (2 bytes)
+ *   0xC8B4-B5 Transfer count (16-bit)
+ *   0xC8B6  DMA_CHAN_CTRL2    Channel control 2
+ *                             Bit 0: Start/busy
+ *                             Bit 1: Direction
+ *                             Bit 2: Enable
+ *                             Bit 7: Active
+ *   0xC8B7  DMA_CHAN_STATUS2  Channel status 2
+ *   0xC8B8  DMA_TRIGGER       Trigger register (poll bit 0)
+ *   0xC8D4  DMA_CONFIG        Global DMA configuration
+ *   0xC8D6  DMA_STATUS        DMA status
+ *                             Bit 2: Done flag
+ *                             Bit 3: Error flag
+ *   0xC8D8  DMA_STATUS2       DMA status 2
  *
- * KEY REGISTERS (0xCE00-0xCEFF):
- *   0xCE6E: SCSI DMA control register
- *   0xCE96: DMA status/completion flags
+ * SCSI/MASS STORAGE DMA REGISTERS (0xCE40-0xCE6F)
+ *   0xCE40  SCSI_DMA_PARAM0   SCSI parameter 0
+ *   0xCE41  SCSI_DMA_PARAM1   SCSI parameter 1
+ *   0xCE42  SCSI_DMA_PARAM2   SCSI parameter 2
+ *   0xCE43  SCSI_DMA_PARAM3   SCSI parameter 3
+ *   0xCE5C  SCSI_DMA_COMPL    Completion status
+ *                             Bit 0: Mode 0 complete
+ *                             Bit 1: Mode 0x10 complete
+ *   0xCE66  SCSI_DMA_TAG_CNT  Tag count (5-bit, 0-31)
+ *   0xCE67  SCSI_DMA_QUEUE    Queue status (4-bit, 0-15)
+ *   0xCE6E  SCSI_DMA_CTRL     SCSI DMA control register
+ *   0xCE96  SCSI_DMA_STATUS   DMA status/completion flags
  *
- * SCSI BUFFER MANAGEMENT:
- *   The DMA engine maintains SCSI command/data buffers used during
- *   USB Mass Storage operations. Buffer addresses are calculated
- *   dynamically based on endpoint configuration.
+ * WORK AREA GLOBALS (0x0200-0x07FF)
+ *   0x0203  G_DMA_MODE_SELECT    Current DMA mode
+ *   0x020D  G_DMA_PARAM1         Transfer parameter 1
+ *   0x020E  G_DMA_PARAM2         Transfer parameter 2
+ *   0x021A-1B G_BUF_BASE         Buffer base address (16-bit)
+ *   0x0472-73 G_DMA_LOAD_PARAM   Load parameters
+ *   0x0564  G_EP_QUEUE_CTRL      Endpoint queue control
+ *   0x0565  G_EP_QUEUE_STATUS    Endpoint queue status
+ *   0x07E5  G_TRANSFER_ACTIVE    Transfer active flag
+ *   0x0AA3-A4 G_STATE_COUNTER    16-bit state counter
  *
- * ADDRESS SPACES:
+ * ADDRESS SPACES
  *   0x0000-0x00FF: Endpoint queue descriptors
  *   0x0100-0x01FF: Transfer work areas
  *   0x0400-0x04FF: DMA configuration tables
  *   0x0A00-0x0AFF: SCSI buffer management
  *
- * USAGE:
- *   1. dma_config_channel() - Configure DMA channel parameters
- *   2. dma_setup_transfer() - Set source, dest, length
- *   3. dma_start_transfer() - Begin DMA operation
- *   4. dma_wait_complete() or dma_poll_complete() - Wait for completion
+ * TRANSFER SEQUENCE
+ *   1. Set transfer parameters in work area (G_DMA_MODE_SELECT, etc)
+ *   2. Configure channel via dma_config_channel()
+ *   3. Set buffer pointers and length
+ *   4. Trigger transfer via DMA_TRIGGER (write 0x01)
+ *   5. Poll DMA_TRIGGER bit 0 until clear
+ *   6. Check DMA_STATUS for errors
+ *   7. Clear status via dma_clear_status()
  */
 #ifndef _DMA_H_
 #define _DMA_H_

@@ -1,44 +1,75 @@
 /*
  * timer.h - Timer and System Event Driver
  *
- * The timer subsystem provides periodic interrupts for system scheduling,
- * timeout handling, and event-driven processing. It uses the 8051's
- * Timer 0 and Timer 1 hardware peripherals.
+ * Hardware timer and periodic interrupt handling for the ASM2464PD
+ * USB4/Thunderbolt to NVMe bridge. Provides millisecond-resolution delays
+ * and periodic polling for system events.
  *
- * TIMER ARCHITECTURE:
- *   Timer 0 (T0) - System tick and timeout handling
- *   Timer 1 (T1) - Auxiliary timing (UART baud rate, etc.)
+ * HARDWARE CONFIGURATION
+ *   - 4 independent hardware timers (Timer0-Timer3)
+ *   - Each timer has: Divider, Control/Status, Threshold registers
+ *   - Timer0: Main system tick timer, drives periodic ISR
+ *   - Timer1: Protocol timeouts
+ *   - Timer2: USB timing
+ *   - Timer3: Idle timeout management
+ *   - Clock source: 114MHz system clock
  *
- * INTERRUPT HANDLING:
- *   Timer 0 ISR (vector 1) processes:
- *   - System event dispatch
- *   - Idle timeout detection
- *   - PCIe link monitoring
- *   - NVMe completion polling
- *   - Debug output scheduling
+ * REGISTER MAP (0xCC10-0xCC24)
+ *   0xCC10  Timer0 DIV       Clock divider (bits 0-2: prescaler)
+ *   0xCC11  Timer0 CSR       Control/Status (bit 1: done flag)
+ *   0xCC12-13 Timer0 Threshold (16-bit count value, little-endian)
+ *   0xCC16  Timer1 DIV       Clock divider
+ *   0xCC17  Timer1 CSR       Control/Status
+ *   0xCC18-19 Timer1 Threshold (16-bit)
+ *   0xCC1C  Timer2 DIV       Clock divider
+ *   0xCC1D  Timer2 CSR       Control/Status
+ *   0xCC1E-1F Timer2 Threshold (16-bit)
+ *   0xCC22  Timer3 DIV       Clock divider
+ *   0xCC23  Timer3 CSR       Control/Status
+ *   0xCC24  Timer3 Idle Timeout
+ *   0xCC33  Timer Status/Control (bit 2: event flag)
  *
- * EVENT SYSTEM:
- *   The timer drives a cooperative event system where handlers are
- *   called based on system state flags. This provides pseudo-threading
- *   without a full RTOS.
+ * TIMER CSR REGISTER BITS
+ *   Bit 0: Enable - Start/stop timer counting
+ *   Bit 1: Done - Timer reached threshold (write 0x02 to clear)
+ *   Bit 2: Interrupt enable
+ *   Bits 3-7: Reserved
  *
- *   Event Handlers:
+ * TIMER DIV REGISTER BITS
+ *   Bits 0-2: Prescaler select (divides clock by 2^N)
+ *   Bit 3: Timer enable/disable bit
+ *   Bits 4-7: Reserved
+ *
+ * TYPICAL TIMER0 CONFIGURATION (from 0xAD72)
+ *   - Prescaler: 3 (divide by 8)
+ *   - Threshold: 0x0028 (40 counts)
+ *   - Results in ~1ms tick at 114MHz / 8 / 40 ≈ 356kHz → ~2.8us per tick
+ *
+ * TIMER0 ISR FLOW (0x4486)
+ *   1. Save context (ACC, B, DPTR, PSW, R0-R7)
+ *   2. Check 0xC806 bit 0 → timer_idle_timeout_handler (0xB4BA)
+ *   3. Check 0xCC33 bit 2 → clear flag, dispatch to 0xCD10
+ *   4. Check 0xC80A bit 6 → timer_uart_debug_output (0xAF5E)
+ *   5. If 0x09F9 & 0x83:
+ *      - Check 0xC80A bit 5 → timer_pcie_async_event (0xA066)
+ *      - Check 0xC80A bit 4 → timer_pcie_link_event (0xC105)
+ *      - Check 0xEC06 bit 0 → timer_nvme_completion (0xC0A5)
+ *   6. Check 0xC80A & 0x0F → timer_pcie_error_handler (0xE911)
+ *   7. Check 0xC806 bit 4 → timer_system_event_stub (0xEF4E)
+ *   8. Restore context and RETI
+ *
+ * INTERRUPT SOURCES
+ *   0xC806  INT_SYSTEM     System interrupt status
+ *   0xCC33  CPU_EXEC_STAT  CPU execution status
+ *   0xC80A  INT_PCIE_NVME  PCIe/NVMe interrupt status
+ *   0xEC06  NVME_EVENT_ST  NVMe event status
+ *   0xEC04  NVME_EVENT_ACK NVMe event acknowledge
+ *
+ * EVENT HANDLERS
  *   - timer_idle_timeout_handler(): Detect host inactivity
  *   - timer_pcie_link_event(): PCIe link state changes
  *   - timer_nvme_completion(): Poll NVMe completion queues
  *   - timer_uart_debug_output(): Periodic debug messages
- *
- * KEY REGISTERS (8051 SFRs):
- *   TH0/TL0: Timer 0 counter
- *   TH1/TL1: Timer 1 counter
- *   TMOD: Timer mode configuration
- *   TCON: Timer control and flags
- *
- * USAGE:
- *   1. timer_event_init() - Initialize timer subsystem
- *   2. Timer 0 ISR runs automatically on interrupt
- *   3. timer_wait() - Blocking delay with timeout
- *   4. system_timer_handler() - Process pending events
  */
 #ifndef _TIMER_H_
 #define _TIMER_H_

@@ -1,46 +1,87 @@
 /*
  * cmd.h - Hardware Command Engine Driver
  *
- * The command engine is a hardware accelerator that handles low-level
- * command sequencing and synchronization between the USB, PCIe, and
- * NVMe subsystems. It provides atomic command issue/completion tracking.
+ * Hardware command engine for the ASM2464PD USB4/Thunderbolt to NVMe bridge.
+ * Abstracts the process of building NVMe commands and tracking execution,
+ * providing atomic command issue/completion tracking.
  *
- * COMMAND ENGINE ARCHITECTURE:
+ * ARCHITECTURE
  *   Software → cmd_write_issue_bits() → Hardware Sequencer
  *                                              ↓
  *   Software ← cmd_wait_completion() ← Completion Status
  *
- * COMMAND FLOW:
+ * COMMAND FLOW
  *   1. Check busy status (cmd_check_busy)
  *   2. Configure command parameters
  *   3. Issue command (cmd_start_trigger)
  *   4. Wait for completion (cmd_wait_completion)
  *   5. Read result/status
  *
- * KEY REGISTERS:
- *   0xCC88: Command engine status/control
- *   0xCC89: Command state register
- *     - 0x01: Read operation
- *     - 0x02: Write operation
- *   0xCC8A: Command auxiliary register
- *   0xC801: Interrupt control (bit 4: command complete)
+ * REGISTER MAP (0xE400-0xE43F)
+ *   0xE402  STATUS_FLAGS   Bit 1: busy, Bit 2: error, Bit 3: additional
+ *   0xE403  CONTROL        Command state (written from G_CMD_STATUS)
+ *   0xE41C  BUSY_STATUS    Bit 0: command busy
+ *   0xE420  TRIGGER        0x80 (mode2/3) or 0x40 (mode1) to start
+ *   0xE422  PARAM/OPCODE   Command parameter byte
+ *   0xE423  STATUS         Command status byte
+ *   0xE424  ISSUE          Command issue register, bits written per mode
+ *   0xE425  TAG            Command tag (typically 4)
+ *   0xE426  LBA_0          LBA byte 0 (from G_CMD_LBA_1)
+ *   0xE427  LBA_1          Computed from G_CMD_LBA_2
+ *   0xE428  LBA_2          Computed from G_CMD_LBA_3
  *
- * LBA HANDLING:
+ * COMMAND CONTROL REGISTERS
+ *   0xCC88  CMD_ENGINE_STATUS  Command engine status/control
+ *   0xCC89  CMD_STATE          Command state register
+ *                              0x01: Read operation
+ *                              0x02: Write operation
+ *   0xCC8A  CMD_AUX            Command auxiliary register
+ *   0xC801  INT_CTRL           Interrupt control (bit 4: command complete)
+ *
+ * GLOBAL VARIABLES (Command Work Area 0x07B0-0x07FF)
+ *   0x07B7  G_CMD_SLOT_INDEX   Command slot index (3-bit, 0-7)
+ *   0x07BD  G_CMD_OP_COUNTER   Operation counter
+ *   0x07C3  G_CMD_STATE        Command state (3-bit)
+ *   0x07C4  G_CMD_STATUS       Command status (0x02, 0x06, etc.)
+ *   0x07CA  G_CMD_MODE         Command mode (1=mode1, 2=mode2, 3=mode3)
+ *   0x07D3  G_CMD_PARAM_0      Parameter 0 (for opcode)
+ *   0x07D4  G_CMD_PARAM_1      Parameter 1
+ *   0x07DA  G_CMD_LBA_0        LBA byte 0 (low)
+ *   0x07DB  G_CMD_LBA_1        LBA byte 1
+ *   0x07DC  G_CMD_LBA_2        LBA byte 2
+ *   0x07DD  G_CMD_LBA_3        LBA byte 3 (high)
+ *
+ * COMMAND EXECUTION FLOW
+ *   1. Set up parameters in globals (G_CMD_LBA_*, G_CMD_MODE, etc.)
+ *   2. Call cmd_setup_with_params() to configure registers
+ *   3. Call cmd_wait_completion() to wait for command to complete
+ *   4. Check return value for success/error
+ *
+ *   Internal flow:
+ *   Set 0xE422 → Set 0xE423 → Set 0xE424/0xE425
+ *   (param)      (status)     (issue/tag)
+ *       │                         │
+ *       v                         v
+ *   Set LBA → Set trigger → Wait on 0xE41C bit 0
+ *   0xE426-28   0xE420       and 0xE402 bit 1
+ *
+ * BUSY CHECK LOGIC (0xe09a function)
+ *   1. Read 0xE402, check bit 1 (busy flag) → return busy (1)
+ *   2. Read 0xE41C, check bit 0 → return busy (1)
+ *   3. Read 0xE402, check bit 2 (error count) → return busy (1)
+ *   4. Read 0xE402, check bit 3 → if not set return not busy (0)
+ *   5. Otherwise return busy (1)
+ *
+ * LBA HANDLING
  *   The command engine includes helpers for LBA (Logical Block Address)
  *   manipulation used in SCSI-to-NVMe translation:
  *   - cmd_combine_lba_param(): Combine bytes into LBA
  *   - cmd_extract_bit5/bits67(): Extract command type bits
  *
- * SLOT MANAGEMENT:
+ * SLOT MANAGEMENT
  *   Commands are tracked via slots that maintain state across
  *   asynchronous operations. Slot addresses are calculated
  *   dynamically based on current queue depth.
- *
- * USAGE:
- *   1. cmd_engine_clear() - Reset command engine state
- *   2. cmd_setup_with_params() - Configure command
- *   3. cmd_start_trigger() - Execute command
- *   4. cmd_wait_completion() - Block until done
  */
 #ifndef _CMD_H_
 #define _CMD_H_

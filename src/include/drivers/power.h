@@ -1,46 +1,54 @@
 /*
  * power.h - Power Management Driver
  *
- * The power management subsystem controls device power states, clock
- * gating, and suspend/resume handling for the ASM2464PD bridge. It
- * coordinates power transitions between USB, PCIe, and internal blocks.
+ * Controls device power states, clock gating, and suspend/resume for the
+ * ASM2464PD USB4/Thunderbolt to NVMe bridge. Coordinates transitions between
+ * USB, PCIe, and internal power domains.
  *
- * POWER STATES:
- *   Active (D0):    Full operation, all clocks running
- *   Idle:           Reduced activity, some clocks gated
- *   Suspended (D3): Minimal power, wake-on-event capability
+ * POWER DOMAINS
+ *   USB:    USB4/Thunderbolt interface power
+ *   PCIe:   Downstream NVMe link power
+ *   PHY:    High-speed serializer/deserializer
+ *   Core:   8051 CPU and peripherals
  *
- * USB POWER STATES:
+ * REGISTER MAP (0x92C0-0x92FF)
+ *   0x92C0  POWER_ENABLE     Bit 0: main power enable
+ *   0x92C1  CLOCK_ENABLE     Bit 0: clock enable, Bit 1: clock select
+ *   0x92C2  POWER_STATUS     Bit 6: suspended flag
+ *                            Bits 4-5: link state
+ *   0x92C4  POWER_CTRL4      Main power control
+ *   0x92C5  PHY_POWER        Bit 2: PHY power enable
+ *   0x92C6  CLOCK_GATE       Clock gating control
+ *   0x92C7  CLOCK_GATE_EXT   Clock gating extension
+ *   0x92C8  POWER_CTRL8      Additional controls
+ *   0x92CF  POWER_CONFIG     Configuration bits
+ *   0x92F8  POWER_EXT_STATUS Extended status
+ *
+ * POWER STATE MACHINE
+ *   ACTIVE <-> SUSPEND transitions via 0x92C2 bit 6
+ *
+ *   Resume sequence:
+ *     1. Set 0x92C0 bit 0 (enable power)
+ *     2. Set 0x92C1 bit 0 (enable clocks)
+ *     3. Configure USB PHY (0x91D1, 0x91C1)
+ *     4. Set 0x92C5 bit 2 (PHY power)
+ *
+ *   Suspend sequence:
+ *     1. Set 0x92C2 bit 6 (mark suspended)
+ *     2. Clear clock enables
+ *     3. Gate clocks via 0x92C6/0x92C7
+ *
+ * USB LINK POWER STATES
  *   U0: Active operation
- *   U1: Standby (fast exit latency)
- *   U2: Sleep (longer exit latency)
- *   U3: Suspend (lowest power, host-initiated wake)
+ *   U1: Standby (fast exit)
+ *   U2: Sleep (longer exit)
+ *   U3: Suspend (lowest power)
  *
- * PCIE POWER STATES:
+ * PCIE LINK POWER STATES
  *   L0:  Active
  *   L0s: Standby (fast recovery)
  *   L1:  Low power idle
  *   L2:  Auxiliary power only
- *
- * REGISTER MAP (0x92C0-0x92CF):
- *   0x92C0: Power Control 0 - Main power enable
- *   0x92C1: Power Control 1 - Clock config
- *   0x92C2: Power Status - State flags (bit 6: suspended)
- *   0x92C5: Power Control 5 - PHY power
- *   0x92C6: Power Control 6 - Clock gating
- *   0x92C7: Power Control 7 - Clock gating extension
- *
- * STATE MACHINE:
- *   power_state_machine_d02a() implements the main power state
- *   transitions, coordinating between USB and PCIe link states.
- *
- * USAGE:
- *   power_config_init();          // Initialize power subsystem
- *   power_enable_clocks();        // Enable all clocks
- *   // ... normal operation ...
- *   power_set_suspended();        // Enter suspend
- *   // ... wake event ...
- *   power_clear_suspended();      // Resume operation
  */
 #ifndef _POWER_H_
 #define _POWER_H_

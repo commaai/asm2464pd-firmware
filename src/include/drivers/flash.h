@@ -1,47 +1,62 @@
 /*
  * flash.h - SPI Flash Driver
  *
- * The flash subsystem manages the external SPI flash memory used for
- * firmware storage, configuration data, and runtime parameters. The
- * ASM2464PD boots from this flash and can update it at runtime.
+ * SPI Flash controller for the ASM2464PD USB4/Thunderbolt to NVMe bridge.
+ * Provides hardware-accelerated SPI transactions with a 4KB DMA buffer.
  *
- * FLASH MEMORY MAP (typical):
- *   0x000000-0x00FFFF: Bank 0 firmware (64KB)
- *   0x010000-0x01FFFF: Bank 1 firmware (64KB)
- *   0x020000-0x02FFFF: Configuration data
- *   0x030000+: Reserved/User data
+ * FLASH MEMORY MAP
+ *   0x000000-0x00FFFF  Bank 0 firmware (64KB)
+ *   0x010000-0x01FFFF  Bank 1 firmware (64KB)
+ *   0x020000-0x02FFFF  Configuration data
+ *   0x030000+          Reserved/User data
  *
- * REGISTER MAP (0xC89F-0xC8AF):
- *   0xC89F: REG_FLASH_CON      - Control register
- *   0xC8A1: REG_FLASH_ADDR_LO  - Flash address low byte
- *   0xC8A2: REG_FLASH_ADDR_MD  - Flash address middle byte
- *   0xC8A3: REG_FLASH_DATA_LEN - Data length low
- *   0xC8A4: REG_FLASH_DATA_LEN_HI - Data length high
- *   0xC8A9: REG_FLASH_CSR      - Control/Status register
- *   0xC8AA: REG_FLASH_CMD      - SPI command byte
- *   0xC8AB: REG_FLASH_ADDR_HI  - Flash address high byte
- *   0xC8AC: REG_FLASH_ADDR_LEN - Address length
- *   0xC8AD: REG_FLASH_MODE     - Mode register
- *   0xC8AE: REG_FLASH_BUF_OFFSET - Buffer offset
+ * REGISTER MAP (0xC89F-0xC8AF)
+ *   0xC89F  FLASH_CON        Control register (transaction setup)
+ *   0xC8A1  FLASH_ADDR_LO    Flash address bits 7:0
+ *   0xC8A2  FLASH_ADDR_MD    Flash address bits 15:8
+ *   0xC8A3  FLASH_DATA_LEN   Data length low byte
+ *   0xC8A4  FLASH_DATA_LEN_HI  Data length high byte
+ *   0xC8A6  FLASH_DIV        SPI clock divisor
+ *   0xC8A9  FLASH_CSR        Control/Status register
+ *                            Bit 0: Busy (poll until clear)
+ *                            Write 0x01 to start transaction
+ *   0xC8AA  FLASH_CMD        SPI command byte
+ *   0xC8AB  FLASH_ADDR_HI    Flash address bits 23:16
+ *   0xC8AC  FLASH_ADDR_LEN   Address length (3 for 24-bit)
+ *   0xC8AD  FLASH_MODE       Mode register
+ *                            Bit 0: Enable
+ *                            Bit 4: DMA mode
+ *                            Bit 5: Write enable
+ *   0xC8AE  FLASH_BUF_OFFSET Buffer offset in 0x7000 region
  *
- * SPI PROTOCOL:
- *   The driver implements standard SPI flash commands:
- *   - Read (0x03): Sequential read from address
- *   - Page Program (0x02): Write up to 256 bytes
- *   - Sector Erase (0x20): Erase 4KB sector
- *   - Write Enable (0x06): Required before write/erase
- *   - Read Status (0x05): Check busy/write-enable flags
+ * FLASH BUFFER (0x7000-0x7FFF)
+ *   4KB buffer for data transfer. CPU and flash controller share this region.
+ *   Reads: Controller DMA's flash data to buffer, CPU reads buffer
+ *   Writes: CPU writes buffer, controller DMA's buffer to flash
  *
- * FLASH BUFFER (0x7000-0x7FFF):
- *   4KB buffer for data transfer between CPU and flash.
+ *   Buffer globals (0x07xx):
+ *     0x07B7-0x07B8  Operation status
+ *     0x07BD         Operation counter
+ *     0x07C1-0x07C7  State/config
+ *     0x07DF         Completion flag
+ *     0x07E3         Error code
  *
- * USAGE:
- *   flash_read(0x1000, 16);           // Read 16 bytes from 0x1000
- *   uint8_t b = flash_get_buffer_byte(0);  // Get first byte
+ * TRANSACTION SEQUENCE
+ *   1. Clear FLASH_CON to 0x00
+ *   2. Configure FLASH_MODE
+ *   3. Write address to ADDR_LO, ADDR_MD, ADDR_HI
+ *   4. Write command to FLASH_CMD
+ *   5. Write length to FLASH_DATA_LEN
+ *   6. Write 0x01 to FLASH_CSR to start
+ *   7. Poll FLASH_CSR bit 0 until clear
+ *   8. Clear FLASH_MODE bits
  *
- *   flash_write_enable();
- *   flash_set_buffer_byte(0, 0xAB);
- *   flash_write_page(0x2000, 1);      // Write 1 byte to 0x2000
+ * SPI COMMANDS
+ *   0x03  Read data
+ *   0x02  Page Program (max 256 bytes)
+ *   0x20  Sector Erase (4KB)
+ *   0x06  Write Enable
+ *   0x05  Read Status
  */
 #ifndef _FLASH_H_
 #define _FLASH_H_

@@ -1,75 +1,7 @@
 /*
- * ASM2464PD Firmware - Power Management Driver
+ * power.c - Power Management Driver
  *
- * Power state management for USB4/Thunderbolt to NVMe bridge controller.
- * Controls device power states, clock gating, and USB suspend/resume.
- *
- *===========================================================================
- * POWER MANAGEMENT ARCHITECTURE
- *===========================================================================
- *
- * Hardware Configuration:
- * - Multiple power domains (USB, PCIe, NVMe, PHY)
- * - Clock gating for power savings
- * - USB suspend/resume handling
- * - Link power states (L0, L1, L2)
- *
- * Register Map (0x92C0-0x92CF):
- * ┌──────────┬──────────────────────────────────────────────────────────┐
- * │ Address  │ Description                                              │
- * ├──────────┼──────────────────────────────────────────────────────────┤
- * │ 0x92C0   │ Power Control 0 - Main power enable (bit 7: enable)      │
- * │ 0x92C1   │ Power Control 1 - Clock config (bit 1: clock select)     │
- * │ 0x92C2   │ Power Status - State flags (bit 6: suspended)            │
- * │ 0x92C4   │ Power Control 4 - Main power control                     │
- * │ 0x92C5   │ Power Control 5 - PHY power (bit 2: enable)              │
- * │ 0x92C6   │ Power Control 6 - Clock gating                           │
- * │ 0x92C7   │ Power Control 7 - Clock gating extension                 │
- * │ 0x92C8   │ Power Control 8 - Additional controls                    │
- * │ 0x92CF   │ Power Config - Configuration bits                        │
- * │ 0x92F8   │ Power Extended Status                                    │
- * └──────────┴──────────────────────────────────────────────────────────┘
- *
- * Power Status Register (0x92C2) Bits:
- * ┌─────┬────────────────────────────────────────────────────────────────┐
- * │ Bit │ Function                                                       │
- * ├─────┼────────────────────────────────────────────────────────────────┤
- * │  6  │ Suspended - Device in suspend state                           │
- * │ 4-5 │ Link state bits                                               │
- * │ 0-3 │ Reserved                                                       │
- * └─────┴────────────────────────────────────────────────────────────────┘
- *
- * Power Control Flow:
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │                    POWER STATE MACHINE                              │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │  ACTIVE ←──────────────────────────────→ SUSPEND                   │
- * │    │                                         │                      │
- * │    └── Check 0x92C2 bit 6 ──────────────────┘                      │
- * │                                                                     │
- * │  Resume sequence:                                                   │
- * │  1. Set 0x92C0 bit 7 (enable power)                                │
- * │  2. Set 0x92C1 bit 1 (enable clocks)                               │
- * │  3. Configure USB PHY (0x91D1, 0x91C1)                             │
- * │  4. Set 0x92C5 bit 2 (PHY power)                                   │
- * │                                                                     │
- * │  Suspend sequence:                                                  │
- * │  1. Set 0x92C2 bit 6 (mark suspended)                              │
- * │  2. Clear clock enables                                            │
- * │  3. Gate clocks via 0x92C6/0x92C7                                  │
- * └─────────────────────────────────────────────────────────────────────┘
- *
- *===========================================================================
- * IMPLEMENTATION STATUS
- *===========================================================================
- * power_set_suspended         [DONE] 0xcb23-0xcb2c - Set suspended bit
- * power_get_status_bit6       [DONE] 0x3023-0x302e - Check suspended
- * power_enable_clocks         [DONE] 0xcb6f-0xcb7e - Enable power/clocks
- * power_config_init           [DONE] 0xcb37-0xcb4a - Init power config
- * power_set_clock_bit1        [DONE] 0xcb4b-0xcb53 - Set clock config
- *
- * Total: 5 functions implemented
- *===========================================================================
+ * See drivers/power.h for hardware documentation.
  */
 
 #include "types.h"

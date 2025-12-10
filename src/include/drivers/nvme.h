@@ -1,44 +1,72 @@
 /*
  * nvme.h - NVMe Command and Queue Management
  *
- * The NVMe subsystem handles command construction, queue management, and
- * completion processing for NVMe storage devices connected via the PCIe
- * bridge. It translates SCSI commands from the USB Mass Storage layer
- * into NVMe commands.
+ * NVMe controller interface for the ASM2464PD USB4/Thunderbolt to NVMe bridge.
+ * Handles NVMe command submission, completion, and queue management for
+ * downstream NVMe SSDs connected via PCIe.
  *
- * COMMAND FLOW:
- *   SCSI Command → nvme_build_cmd() → Submission Queue → NVMe Controller
- *                                                              ↓
- *   SCSI Status  ← nvme_check_completion() ← Completion Queue ←
+ * BLOCK DIAGRAM
+ *   USB/PCIe ──> SCSI Cmd ──> NVMe Cmd Builder ──> Submission Queue
+ *       │                          │                     │
+ *       │                          v                     v
+ *       │                    ┌──────────┐          ┌──────────┐
+ *       │                    │ NVMe Regs│          │ PCIe DMA │
+ *       │                    │ 0xC400+  │          │ Engine   │
+ *       │                    └──────────┘          └────┬─────┘
+ *       │                                               │
+ *       <───── SCSI Status <── NVMe Completion <── Completion Queue
  *
- * QUEUE ARCHITECTURE:
+ * QUEUE ARCHITECTURE
  *   - Admin Queue (QID 0): Controller management commands
  *   - I/O Queues (QID 1+): Read/Write/Flush commands
  *   - Hardware doorbells trigger queue processing
- *   - Circular buffer implementation with head/tail pointers
+ *   - Circular buffer with head/tail pointers and phase bit
+ *   - Maximum 32 outstanding commands (5-bit counter)
  *
- * SCSI-TO-NVME TRANSLATION:
+ * SCSI-TO-NVME TRANSLATION
  *   SCSI READ(10/12/16)  → NVMe Read command
  *   SCSI WRITE(10/12/16) → NVMe Write command
  *   SCSI SYNC CACHE      → NVMe Flush command
  *   SCSI INQUIRY         → NVMe Identify (cached)
  *   SCSI READ CAPACITY   → From Identify Namespace data
  *
- * KEY DATA STRUCTURES (IDATA):
+ * REGISTER MAP (0xC400-0xC5FF)
+ *   0xC400  NVME_CTRL         Control register
+ *   0xC401  NVME_STATUS       Status register
+ *   0xC412  NVME_CTRL_STATUS  Control/status combined
+ *   0xC413  NVME_CONFIG       Configuration
+ *   0xC414  NVME_DATA_CTRL    Data transfer control
+ *   0xC415  NVME_DEV_STATUS   Device presence/ready status
+ *   0xC420  NVME_CMD          Command register
+ *   0xC421  NVME_CMD_OPCODE   NVMe opcode
+ *   0xC422-24 NVME_LBA_0/1/2  LBA bytes 0-2
+ *   0xC425-26 NVME_COUNT      Transfer count
+ *   0xC427  NVME_ERROR        Error code
+ *   0xC428  NVME_QUEUE_CFG    Queue configuration
+ *   0xC429  NVME_CMD_PARAM    Command parameters
+ *   0xC42A  NVME_DOORBELL     Queue doorbell
+ *   0xC440-45 Queue head/tail pointers
+ *   0xC446  NVME_LBA_3        LBA byte 3
+ *   0xC462  DMA_ENTRY         DMA entry point
+ *   0xC470-7F Command queue directory
+ *
+ * NVME EVENT REGISTERS (0xEC00-0xEC0F)
+ *   0xEC04  NVME_EVENT_ACK    Event acknowledge
+ *   0xEC06  NVME_EVENT_STATUS Event status
+ *
+ * SCSI DMA REGISTERS (0xCE40-0xCEFF)
+ *   0xCE88-89  SCSI DMA control/status
+ *   0xCEB0     Transfer status
+ *
+ * KEY DATA STRUCTURES (IDATA)
  *   0x09-0x0D: Current command parameters
  *   0x16-0x17: Transfer length (16-bit)
  *   0x6B-0x6F: Queue state variables
  *
- * KEY REGISTERS:
+ * KEY REGISTERS
  *   0xCC88-0xCC8A: Command engine control
  *   0xCC89: Command state (bit patterns control flow)
  *   0xE400-0xE42F: NVMe command configuration
- *
- * USAGE:
- *   1. nvme_init_registers() - Initialize NVMe subsystem
- *   2. nvme_build_cmd() - Construct NVMe command from SCSI
- *   3. nvme_submit_cmd() - Submit to hardware queue
- *   4. nvme_check_completion() - Poll/process completions
  */
 #ifndef _NVME_H_
 #define _NVME_H_

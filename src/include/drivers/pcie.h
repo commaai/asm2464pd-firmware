@@ -1,55 +1,76 @@
 /*
  * pcie.h - PCIe/NVMe Bridge Driver
  *
- * The PCIe subsystem manages the connection between the USB interface and
- * NVMe storage devices. It handles PCIe link initialization, Transaction
- * Layer Packet (TLP) construction, and NVMe command/completion queue
- * management.
+ * PCIe interface controller for the ASM2464PD USB4/Thunderbolt to NVMe bridge.
+ * Handles PCIe Transaction Layer Packet (TLP) operations for communicating
+ * with downstream NVMe devices.
  *
- * HARDWARE ARCHITECTURE:
- *   USB Controller <---> PCIe Bridge <---> NVMe Controller <---> Storage
- *                            |
- *                     TLP Engine + DMA
+ * DATA FLOW
+ *   USB Host <-> USB Controller <-> DMA Engine <-> PCIe Controller <-> NVMe SSD
  *
- * PCIe CAPABILITIES:
- *   - PCIe Gen3/Gen4 support (up to 16 GT/s per lane)
- *   - x4 lane configuration
- *   - Memory-mapped NVMe registers
- *   - Hardware TLP generation and completion handling
+ * PCIe CAPABILITIES
+ *   PCIe Gen3/Gen4 support (up to 16 GT/s per lane)
+ *   x4 lane configuration
+ *   Memory-mapped NVMe registers
+ *   Hardware TLP generation and completion handling
  *
- * TLP (Transaction Layer Packet) TYPES:
- *   - Memory Read/Write: Access NVMe controller registers
- *   - Configuration Read/Write: PCIe config space access
- *   - Completion: Response packets from NVMe controller
+ * TLP FORMAT/TYPE CODES
+ *   Config Space:
+ *     0x04  Type 0 Configuration Read (local device)
+ *     0x05  Type 1 Configuration Read (downstream device)
+ *     0x44  Type 0 Configuration Write (local device)
+ *     0x45  Type 1 Configuration Write (downstream device)
+ *   Memory Access:
+ *     0x00  Memory Read Request (32-bit address)
+ *     0x40  Memory Write Request (32-bit address)
  *
- * KEY REGISTERS (0xB200-0xB2FF):
- *   0xB216: PCIE_TLP_LENGTH  - TLP payload length
- *   0xB217: PCIE_BYTE_EN     - Byte enable mask
- *   0xB22A: PCIE_LINK_STATUS - Link speed/width status
- *   0xB22C: PCIE_CPL_DATA    - Completion data register
- *   0xB254: PCIE_TRIGGER     - Transaction trigger
- *   0xB296: PCIE_STATUS      - Transaction status
- *     Bit 0: Error flag
- *     Bit 1: Complete flag
- *     Bit 2: Busy flag
+ * REGISTER MAP (0xB200-0xB2FF)
+ *   0xB210  PCIE_FMT_TYPE    TLP format/type byte
+ *   0xB213  PCIE_TLP_CTRL    TLP control (0x01 to enable)
+ *   0xB216  PCIE_TLP_LENGTH  TLP length/mode (usually 0x20)
+ *   0xB217  PCIE_BYTE_EN     Byte enable mask (0x0F for all bytes)
+ *   0xB218  PCIE_ADDR_0      Address bits 7:0
+ *   0xB219  PCIE_ADDR_1      Address bits 15:8
+ *   0xB21A  PCIE_ADDR_2      Address bits 23:16
+ *   0xB21B  PCIE_ADDR_3      Address bits 31:24
+ *   0xB220  PCIE_DATA        Data register (4 bytes)
+ *   0xB22A  PCIE_LINK_STATUS Link status (speed in bits 7:5)
+ *   0xB22B  PCIE_CPL_STATUS  Completion status code
+ *   0xB22C  PCIE_CPL_DATA    Completion data
+ *   0xB254  PCIE_TRIGGER     Transaction trigger (write 0x0F)
+ *   0xB296  PCIE_STATUS      Status register
+ *                            Bit 0: Error flag
+ *                            Bit 1: Complete flag
+ *                            Bit 2: Busy flag
  *
- * TRANSACTION FLOW:
- *   1. Setup TLP header (address, type, length)
- *   2. Write data to TLP buffer (for writes)
- *   3. Clear status flags via pcie_clear_and_trigger()
- *   4. Poll for completion via pcie_get_completion_status()
- *   5. Read completion data (for reads)
+ * TRANSACTION SEQUENCE
+ *   1. Setup TLP:
+ *      - Write format/type to PCIE_FMT_TYPE
+ *      - Write 0x01 to PCIE_TLP_CTRL (enable)
+ *      - Write byte enables to PCIE_BYTE_EN
+ *      - Write address to PCIE_ADDR_0..3
+ *      - For writes: write data to PCIE_DATA
+ *   2. Trigger:
+ *      - pcie_clear_and_trigger() writes 0x01, 0x02, 0x04 to clear flags
+ *      - Then writes 0x0F to PCIE_TRIGGER
+ *   3. Poll:
+ *      - Loop calling pcie_get_completion_status() until non-zero
+ *      - Call pcie_write_status_complete()
+ *   4. Result:
+ *      - Check PCIE_STATUS bit 1 for completion
+ *      - Check PCIE_STATUS bit 0 for errors
+ *      - For reads: read data from PCIE_CPL_DATA
  *
- * NVME QUEUE MANAGEMENT:
- *   The driver manages NVMe submission and completion queues through
- *   PCIe memory-mapped I/O. Queue doorbells are rung via TLP writes
- *   to NVMe controller registers.
+ * GLOBAL VARIABLES
+ *   0x05AE  PCIE_DIRECTION   Bit 0 = 0 for read, 1 for write
+ *   0x05AF  PCIE_ADDR_0..3   Target PCIe address (4 bytes)
+ *   0x05A6  PCIE_TXN_COUNT   Transaction counter
+ *   0x06E6  STATE_FLAG       Error flag
+ *   0x06EA  ERROR_CODE       Error code (0xFE = PCIe error)
  *
- * USAGE:
- *   1. pcie_init() - Initialize PCIe link and controller
- *   2. pcie_setup_memory_tlp() - Configure TLP for memory access
- *   3. pcie_clear_and_trigger() - Execute transaction
- *   4. pcie_wait_for_completion() - Wait for response
+ * DISPATCH TABLE (0x0570-0x0650)
+ *   Maps event indices to handlers. Each entry is 5 bytes.
+ *   Entries marked "Bank 1" use DPX=1 for extended addressing.
  */
 #ifndef _PCIE_H_
 #define _PCIE_H_
@@ -98,7 +119,7 @@ void pcie_store_r6_to_05a6(uint8_t val);    /* 0x998a-0x9995 */
 uint8_t pcie_wait_for_completion(void);     /* 0x9996-0x999c */
 uint8_t pcie_poll_and_read_completion(void);/* 0x99af-0x99bb */
 
-/* TLP (Transaction Layer Packet) operations */
+/* TLP operations */
 uint8_t pcie_setup_memory_tlp(void);        /* 0x99bc-0x99c5 */
 void pcie_write_tlp_addr_low(uint8_t val);  /* 0x99c6-0x99cd */
 void pcie_setup_config_tlp(void);           /* 0x99ce-0x99d4 */
@@ -146,7 +167,7 @@ void pcie_add_2_to_idata(uint8_t val);      /* 0x9b80-0x9b8f */
 void pcie_addr_store_839c(uint8_t p1, uint8_t p2, uint8_t p3, uint8_t p4);  /* 0x839c-0x83b8 */
 void pcie_addr_store_83b9(uint8_t p1, uint8_t p2, uint8_t p3, uint8_t p4);  /* 0x83b9-0x83d5 */
 
-/* PCIe state and error handlers */
+/* PCIe state and error handlers (Bank 1) */
 void pcie_state_clear_ed02(void);           /* 0xed02-0xed1f (Bank 1) */
 void pcie_handler_unused_eef9(void);        /* 0xeef9-0xef0f (Bank 1) */
 void pcie_nvme_event_handler(void);         /* 0xed20-0xed8f (Bank 1) */
