@@ -12,7 +12,7 @@ SUPPORTED_CONTROLLERS = [
   (0xADD1, 0x0001),
 ]
 
-vendor, device = [int(x, base=16) for x in getenv("USBDEV").split(":")] if getenv("USBDEV") else USB3.list_devices(dev_filter=SUPPORTED_CONTROLLERS)[0]
+vendor, device = [int(x, base=16) for x in getenv("USBDEV", "").split(":")] if getenv("USBDEV", "") else USB3.list_devices(dev_filter=SUPPORTED_CONTROLLERS)[0]
 try: dev = USB3(vendor, device, 0x81, 0x83, 0x02, 0x04, use_bot=True)
 except RuntimeError as e:
   raise RuntimeError(f'{e}. You can set USBDEV environment variable to your device\'s vendor and device ID (e.g., USBDEV="174C:2464")') from e
