@@ -106,6 +106,8 @@ class HardwareState:
         self.regs[0xC800] = 0x00
         self.regs[0xC802] = 0x00
         self.regs[0xC806] = 0x00
+        # PCIe/NVMe interrupt status - set bit 6 to trigger UART debug output
+        self.regs[0xC80A] = 0x40  # Bit 6 set for UART debug output
 
         # Various status registers that get polled
         self.regs[0xE795] = 0x01  # Flash ready
@@ -114,6 +116,13 @@ class HardwareState:
 
         # PHY Extended registers
         self.regs[0xC6B3] = 0x30  # PHY status - bits 4,5 set (main loop waits for these)
+
+        # Debug registers - force debug output for UART testing
+        # REG_CMD_CTRL_E40F bit 7: trigger debug output handler
+        self.regs[0xE40F] = 0x80  # Bit 7 set to trigger debug_output_handler
+
+        # REG_CMD_CTRL_E410: debug status auxiliary
+        self.regs[0xE410] = 0x00  # No secondary debug flags
 
     def _setup_callbacks(self):
         """Setup special read/write callbacks."""
@@ -136,6 +145,9 @@ class HardwareState:
         # Flash/DMA busy registers - auto-clear after polling
         self.read_callbacks[0xC8B8] = self._busy_reg_read
 
+        # System interrupt status - clear bit 0 after read (timer event)
+        self.read_callbacks[0xC806] = self._int_system_read
+
         # Timer CSRs
         for addr in [0xCC11, 0xCC17, 0xCC1D, 0xCC23]:
             self.read_callbacks[addr] = self._timer_csr_read
@@ -155,6 +167,17 @@ class HardwareState:
             print(ch, end='', flush=True)
         except:
             pass
+
+    def _int_system_read(self, hw: 'HardwareState', addr: int) -> int:
+        """Handle system interrupt status read."""
+        value = self.regs.get(addr, 0)
+
+        # Clear bit 0 (timer event) after being read
+        # This simulates the interrupt controller clearing the flag
+        if value & 0x01:
+            self.regs[addr] = value & ~0x01
+
+        return value
 
     def _pcie_status_read(self, hw: 'HardwareState', addr: int) -> int:
         """PCIe status - return complete after trigger."""
@@ -278,7 +301,7 @@ class HardwareState:
         else:
             self.regs[addr] = value
 
-    def tick(self, cycles: int):
+    def tick(self, cycles: int, cpu=None):
         """Advance hardware state by cycles."""
         self.cycles += cycles
 
@@ -291,6 +314,15 @@ class HardwareState:
         if self.init_stage == 1 and self.cycles > 5000:
             self.init_stage = 2
             self.usb_connected = True
+
+        # Simulate timer interrupts every ~1000 cycles
+        if self.cycles % 1000 == 0 and self.cycles > 0:
+            # Set bit 0 in system interrupt status register (timer event)
+            self.regs[0xC806] |= 0x01
+
+            # Trigger Timer 0 interrupt in CPU if connected
+            if cpu and hasattr(cpu, '_timer0_pending'):
+                cpu._timer0_pending = True
 
 
 def create_hardware_hooks(memory: 'Memory', hw: HardwareState):

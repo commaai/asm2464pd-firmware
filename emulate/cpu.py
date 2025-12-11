@@ -53,6 +53,7 @@ class CPU8051:
     # Debug/trace
     trace: bool = False
     breakpoints: set = field(default_factory=set)
+    _timer0_pending: bool = False  # Timer 0 interrupt pending flag
 
     # SFR addresses
     SFR_ACC = 0xE0
@@ -233,6 +234,39 @@ class CPU8051:
         else:
             self.write_idata(addr, value & 0xFF)
 
+    def _check_interrupts(self):
+        """Check for pending interrupts and trigger if enabled."""
+        if self.in_interrupt:
+            return  # Don't nest interrupts
+
+        # Read interrupt enable register
+        ie = self.read_sfr(0xA8)  # IE register at 0xA8
+
+        # Global interrupt enable (EA bit 7)
+        if not (ie & 0x80):
+            return
+
+        # Check Timer 0 interrupt (ET0 bit 1)
+        # In ASM2464PD, Timer0 interrupts trigger the debug output handler
+        if ie & 0x02:  # ET0 enabled
+            # Check if hardware has set a pending interrupt flag
+            if hasattr(self, '_timer0_pending') and self._timer0_pending:
+                self._timer0_pending = False
+                self._trigger_interrupt(0)  # Timer 0 interrupt vector at 0x0B
+
+    def _trigger_interrupt(self, vector: int):
+        """Trigger an interrupt with the given vector number."""
+        if self.in_interrupt:
+            return
+
+        # Push current PC onto stack
+        self.push((self.pc >> 8) & 0xFF)  # PC high
+        self.push(self.pc & 0xFF)         # PC low
+
+        # Set PC to interrupt vector address
+        self.pc = vector * 8
+        self.in_interrupt = True
+
     def step(self) -> int:
         """Execute one instruction. Returns cycles consumed."""
         if self.halted:
@@ -245,6 +279,10 @@ class CPU8051:
         opcode = self.fetch()
         cycles = self.execute(opcode)
         self.cycles += cycles
+
+        # Check for interrupts after executing instruction (so hardware can set flags)
+        self._check_interrupts()
+
         return cycles
 
     def execute(self, opcode: int) -> int:

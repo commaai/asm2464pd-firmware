@@ -84,7 +84,7 @@ class Emulator:
 
         cycles = self.cpu.step()
         self.inst_count += 1
-        self.hw.tick(cycles)
+        self.hw.tick(cycles, self.cpu)
 
         return not self.cpu.halted
 
