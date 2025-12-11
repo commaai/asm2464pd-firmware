@@ -8,8 +8,12 @@ You can use radare on the fw.bin files to get the 8051 assembly, don't forget th
 
 Code address mapping:
 - 0x0000-0x7FFF: Always maps to file offset 0x0000-0x7FFF (32KB shared)
-- 0x8000-0xFFFF in bank 0: Maps to file offset 0x8000-0xFFFF
-- 0x8000-0xFFFF in bank 1: Maps to file offset 0xFF6B + (addr - 0x8000)
+- 0x8000-0xFF6B in bank 0: Maps to file offset 0x8000-0xFFFF
+- 0x8000-0xFF6B in bank 1: Maps to file offset 0xFF6B + (addr - 0x8000)
+
+fw.bin is `cat bank0.bin bank1.bin > fw.bin`
+* bank0.bin is mapped at 0x0
+* bank1.bin is mapped as 0x8000
 
 Bank 1 file offsets: 0xFF6B-0x17F6A (mapped to code addresses 0x8000-0xFFFF)
 

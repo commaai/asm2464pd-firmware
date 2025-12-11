@@ -190,7 +190,8 @@ def main():
 
     fw_path = os.path.join(project_root, 'fw.bin')
     src_dir = os.path.join(project_root, 'src')
-    output_path = os.path.join(script_dir, 'fw.asm')
+    bank0_path = os.path.join(script_dir, 'bank0.asm')
+    bank1_path = os.path.join(script_dir, 'bank1.asm')
 
     if len(sys.argv) > 1:
         fw_path = sys.argv[1]
@@ -204,38 +205,53 @@ def main():
     known_labels = parse_header_labels(src_dir)
     print(f"Known labels: {len(known_labels)}")
 
-    # Bank 1 labels need address translation
+    # Bank 1 labels need address translation (file addr 0x10000+ -> exec addr 0x8000+)
     bank1_labels = {}
     for addr, info in known_labels.items():
         if addr >= 0x10000:
             mapped = 0x8000 + (addr - 0x10000)
             bank1_labels[mapped] = info
 
-    print(f"\nGenerating fw.asm...")
-
-    with open(output_path, 'w') as f:
+    # Generate Bank 0
+    print(f"\nGenerating bank0.asm...")
+    bank0_size = min(0x10000, len(data))
+    with open(bank0_path, 'w') as f:
         f.write(""";
-; ASM2464PD Firmware Disassembly
-; Total size: {} bytes (0x{:05x})
+; ASM2464PD Firmware - Bank 0
+; Address range: 0x0000-0x{:04x}
+; Size: {} bytes
 ;
-; This file reconstructs fw.bin exactly.
 ; Build with: ./build.sh
 ;
 
-\t.module\tfirmware
-""".format(len(data), len(data)))
-
-        # Bank 0: 0x0000-0xFFFF
-        bank0_size = min(0x10000, len(data))
+\t.module\tbank0
+""".format(bank0_size - 1, bank0_size))
         labels0 = disassemble_region(f, data, 0, bank0_size, 0, known_labels, "bank0")
 
-        # Bank 1: 0x10000+ in file, maps to 0x8000+ in memory
-        labels1 = 0
-        if len(data) > 0x10000:
+    print(f"Generated: bank0.asm ({labels0} labels)")
+
+    # Generate Bank 1
+    labels1 = 0
+    if len(data) > 0x10000:
+        bank1_size = len(data) - 0x10000
+        print(f"\nGenerating bank1.asm...")
+        with open(bank1_path, 'w') as f:
+            f.write(""";
+; ASM2464PD Firmware - Bank 1
+; File offset: 0x10000-0x{:05x}
+; Execution address: 0x8000-0x{:04x}
+; Size: {} bytes
+;
+; Build with: ./build.sh
+;
+
+\t.module\tbank1
+""".format(len(data) - 1, 0x8000 + bank1_size - 1, bank1_size))
             labels1 = disassemble_region(f, data, 0x10000, len(data), 0x8000,
                                          bank1_labels, "bank1")
+        print(f"Generated: bank1.asm ({labels1} labels)")
 
-    print(f"\nGenerated: fw.asm ({labels0 + labels1} labels)")
+    print(f"\nTotal: {labels0 + labels1} labels")
     print("Run ./build.sh to build and verify.")
 
 

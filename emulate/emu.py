@@ -22,11 +22,14 @@ from pathlib import Path
 
 # Add emulate directory to path
 sys.path.insert(0, str(Path(__file__).parent))
+# Add asm directory to path for disassembler
+sys.path.insert(0, str(Path(__file__).parent.parent / 'asm'))
 
 from cpu import CPU8051
 from memory import Memory, MemoryMap
 from peripherals import Peripherals
 from hardware import HardwareState, create_hardware_hooks
+from disasm8051 import INSTRUCTIONS
 
 
 class Emulator:
@@ -130,96 +133,134 @@ class Emulator:
               f"A={a:02X} PSW={psw:02X} SP={sp:02X} DPTR={dptr:04X}")
 
     def _get_inst_length(self, opcode: int) -> int:
-        """Get instruction length in bytes."""
-        # 1-byte instructions
-        if opcode in (0x00, 0x03, 0x04, 0x06, 0x07, 0x13, 0x14, 0x16, 0x17,
-                      0x22, 0x23, 0x32, 0x33, 0x73, 0x83, 0x84, 0x93, 0xA3,
-                      0xA4, 0xA5, 0xC3, 0xC4, 0xD3, 0xD4, 0xE4, 0xE6, 0xE7,
-                      0xF6, 0xF7) or (0x08 <= opcode <= 0x0F) or \
-           (0x18 <= opcode <= 0x1F) or (0x28 <= opcode <= 0x2F) or \
-           (0x38 <= opcode <= 0x3F) or (0x48 <= opcode <= 0x4F) or \
-           (0x58 <= opcode <= 0x5F) or (0x68 <= opcode <= 0x6F) or \
-           (0xC6 <= opcode <= 0xCF) or (0xE0 == opcode) or (0xE2 <= opcode <= 0xE3) or \
-           (0xE8 <= opcode <= 0xEF) or (0xF0 == opcode) or (0xF2 <= opcode <= 0xFF):
-            return 1
-
-        # 3-byte instructions
-        if opcode in (0x02, 0x12, 0x43, 0x53, 0x63, 0x75, 0x85, 0x90) or \
-           (0xB4 <= opcode <= 0xBF and opcode not in (0xB2, 0xB3)):
-            return 3
-
-        # All others are 2 bytes
-        return 2
+        """Get instruction length in bytes using instruction table."""
+        if opcode in INSTRUCTIONS:
+            return INSTRUCTIONS[opcode][1]  # Size is second element of tuple
+        return 1  # Default for unknown opcodes
 
     def _disassemble(self, inst_bytes: list) -> str:
-        """Simple disassembler for trace output."""
+        """Simple disassembler for trace output using full instruction set."""
         opcode = inst_bytes[0]
 
-        # Just show opcode name for now
-        opcodes = {
-            0x00: "NOP", 0x02: "LJMP", 0x03: "RR A", 0x04: "INC A",
-            0x05: "INC dir", 0x06: "INC @R0", 0x07: "INC @R1",
-            0x12: "LCALL", 0x13: "RRC A", 0x14: "DEC A",
-            0x15: "DEC dir", 0x16: "DEC @R0", 0x17: "DEC @R1",
-            0x22: "RET", 0x23: "RL A", 0x32: "RETI", 0x33: "RLC A",
-            0x40: "JC", 0x50: "JNC", 0x60: "JZ", 0x70: "JNZ",
-            0x73: "JMP @A+DPTR", 0x74: "MOV A,#",
-            0x76: "MOV @R0,#", 0x77: "MOV @R1,#",
-            0x80: "SJMP", 0x83: "MOVC A,@A+PC", 0x84: "DIV AB",
-            0x90: "MOV DPTR,#", 0x93: "MOVC A,@A+DPTR",
-            0xA3: "INC DPTR", 0xA4: "MUL AB",
-            0xB3: "CPL C", 0xC3: "CLR C", 0xC4: "SWAP A",
-            0xC5: "XCH A,dir", 0xC6: "XCH A,@R0", 0xC7: "XCH A,@R1",
-            0xD3: "SETB C", 0xD4: "DA A", 0xD6: "XCHD @R0", 0xD7: "XCHD @R1",
-            0xE0: "MOVX A,@DPTR", 0xE4: "CLR A",
-            0xE6: "MOV A,@R0", 0xE7: "MOV A,@R1",
-            0xF0: "MOVX @DPTR,A", 0xF6: "MOV @R0,A", 0xF7: "MOV @R1,A",
-        }
+        # Use full instruction table from disasm8051
+        if opcode not in INSTRUCTIONS:
+            return f"??? ({opcode:02X})"
 
-        if opcode in opcodes:
-            return opcodes[opcode]
+        mnemonic, size, operand_fmt = INSTRUCTIONS[opcode]
 
-        # AJMP/ACALL
-        if opcode & 0x1F == 0x01:
-            return f"AJMP {((opcode & 0xE0) << 3) | inst_bytes[1]:03X}"
-        if opcode & 0x1F == 0x11:
-            return f"ACALL {((opcode & 0xE0) << 3) | inst_bytes[1]:03X}"
+        # Check we have enough bytes
+        if len(inst_bytes) < size:
+            return f"??? ({opcode:02X})"
 
-        # Register operations
-        if 0x08 <= opcode <= 0x0F:
-            return f"INC R{opcode & 7}"
-        if 0x18 <= opcode <= 0x1F:
-            return f"DEC R{opcode & 7}"
-        if 0x28 <= opcode <= 0x2F:
-            return f"ADD A,R{opcode & 7}"
-        if 0x38 <= opcode <= 0x3F:
-            return f"ADDC A,R{opcode & 7}"
-        if 0x48 <= opcode <= 0x4F:
-            return f"ORL A,R{opcode & 7}"
-        if 0x58 <= opcode <= 0x5F:
-            return f"ANL A,R{opcode & 7}"
-        if 0x68 <= opcode <= 0x6F:
-            return f"XRL A,R{opcode & 7}"
-        if 0x78 <= opcode <= 0x7F:
-            return f"MOV R{opcode & 7},#{inst_bytes[1]:02X}"
-        if 0x88 <= opcode <= 0x8F:
-            return f"MOV {inst_bytes[1]:02X},R{opcode & 7}"
-        if 0x98 <= opcode <= 0x9F:
-            return f"SUBB A,R{opcode & 7}"
-        if 0xA8 <= opcode <= 0xAF:
-            return f"MOV R{opcode & 7},{inst_bytes[1]:02X}"
-        if 0xB8 <= opcode <= 0xBF:
-            return f"CJNE R{opcode & 7},#{inst_bytes[1]:02X},{inst_bytes[2]:02X}"
-        if 0xC8 <= opcode <= 0xCF:
-            return f"XCH A,R{opcode & 7}"
-        if 0xD8 <= opcode <= 0xDF:
-            return f"DJNZ R{opcode & 7},{inst_bytes[1]:02X}"
-        if 0xE8 <= opcode <= 0xEF:
-            return f"MOV A,R{opcode & 7}"
-        if 0xF8 <= opcode <= 0xFF:
-            return f"MOV R{opcode & 7},A"
+        # Format operands
+        if operand_fmt is None:
+            return mnemonic.upper()
 
-        return f"??? ({opcode:02X})"
+        # Get operand bytes
+        operands = inst_bytes[1:size]
+
+        # Handle specific operand formats
+        if operand_fmt == 'A':
+            return f"{mnemonic.upper()} A"
+        elif operand_fmt == 'C':
+            return f"{mnemonic.upper()} C"
+        elif operand_fmt == 'AB':
+            return f"{mnemonic.upper()} AB"
+        elif operand_fmt == 'DPTR':
+            return f"{mnemonic.upper()} DPTR"
+        elif operand_fmt == '@A+DPTR':
+            return f"{mnemonic.upper()} @A+DPTR"
+        elif operand_fmt == '@A+PC':
+            return f"{mnemonic.upper()} @A+PC"
+
+        # Register operands (no extra bytes)
+        elif operand_fmt in ('R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7',
+                             '@R0', '@R1', 'A,@R0', 'A,@R1', '@R0,A', '@R1,A'):
+            return f"{mnemonic.upper()} {operand_fmt.upper()}"
+
+        # DPTR with immediate 16-bit
+        elif operand_fmt == 'DPTR,#data16':
+            val = (operands[0] << 8) | operands[1]
+            return f"{mnemonic.upper()} DPTR,#{val:04X}"
+
+        # A with immediate byte
+        elif operand_fmt == 'A,#data':
+            return f"{mnemonic.upper()} A,#{operands[0]:02X}"
+        elif operand_fmt == 'A,direct':
+            return f"{mnemonic.upper()} A,{operands[0]:02X}h"
+
+        # Direct with various operands
+        elif operand_fmt == 'direct':
+            return f"{mnemonic.upper()} {operands[0]:02X}h"
+        elif operand_fmt == 'direct,A':
+            return f"{mnemonic.upper()} {operands[0]:02X}h,A"
+        elif operand_fmt == 'direct,#data':
+            return f"{mnemonic.upper()} {operands[0]:02X}h,#{operands[1]:02X}"
+        elif operand_fmt == 'direct,direct':
+            return f"{mnemonic.upper()} {operands[0]:02X}h,{operands[1]:02X}h"
+        elif operand_fmt.startswith('direct,R'):
+            reg = operand_fmt.split(',')[1]
+            return f"{mnemonic.upper()} {operands[0]:02X}h,{reg}"
+        elif operand_fmt.startswith('direct,@R'):
+            reg = operand_fmt.split(',')[1]
+            return f"{mnemonic.upper()} {operands[0]:02X}h,{reg}"
+        elif operand_fmt == 'direct,rel':
+            rel = operands[1] if operands[1] < 128 else operands[1] - 256
+            return f"{mnemonic.upper()} {operands[0]:02X}h,{rel:+d}"
+
+        # Register with immediate or direct
+        elif ',' in operand_fmt and operand_fmt.startswith(('R', '@R')):
+            reg, rest = operand_fmt.split(',', 1)
+            if rest == '#data':
+                return f"{mnemonic.upper()} {reg},#{operands[0]:02X}"
+            elif rest == 'direct':
+                return f"{mnemonic.upper()} {reg},{operands[0]:02X}h"
+            elif rest == 'rel':
+                rel = operands[0] if operands[0] < 128 else operands[0] - 256
+                return f"{mnemonic.upper()} {reg},{rel:+d}"
+
+        # Addresses
+        elif operand_fmt == 'addr16':
+            addr = (operands[0] << 8) | operands[1]
+            return f"{mnemonic.upper()} {addr:04X}h"
+        elif operand_fmt == 'addr11':
+            high_bits = (opcode >> 5) & 0x07
+            addr = (high_bits << 8) | operands[0]
+            return f"{mnemonic.upper()} {addr:03X}h"
+
+        # Relative jumps
+        elif operand_fmt == 'rel':
+            rel = operands[0] if operands[0] < 128 else operands[0] - 256
+            return f"{mnemonic.upper()} {rel:+d}"
+
+        # Bit operations
+        elif operand_fmt == 'bit':
+            return f"{mnemonic.upper()} {operands[0]:02X}h"
+        elif operand_fmt == 'bit,C':
+            return f"{mnemonic.upper()} {operands[0]:02X}h,C"
+        elif operand_fmt == 'C,bit':
+            return f"{mnemonic.upper()} C,{operands[0]:02X}h"
+        elif operand_fmt == 'C,/bit':
+            return f"{mnemonic.upper()} C,/{operands[0]:02X}h"
+        elif operand_fmt == 'bit,rel':
+            rel = operands[1] if operands[1] < 128 else operands[1] - 256
+            return f"{mnemonic.upper()} {operands[0]:02X}h,{rel:+d}"
+
+        # CJNE variants
+        elif operand_fmt == 'A,#data,rel':
+            rel = operands[1] if operands[1] < 128 else operands[1] - 256
+            return f"{mnemonic.upper()} A,#{operands[0]:02X},{rel:+d}"
+        elif operand_fmt == 'A,direct,rel':
+            rel = operands[1] if operands[1] < 128 else operands[1] - 256
+            return f"{mnemonic.upper()} A,{operands[0]:02X}h,{rel:+d}"
+        elif operand_fmt.endswith(',#data,rel'):
+            reg = operand_fmt.split(',')[0]
+            rel = operands[1] if operands[1] < 128 else operands[1] - 256
+            return f"{mnemonic.upper()} {reg},#{operands[0]:02X},{rel:+d}"
+
+        # Default: just show mnemonic with hex operands
+        operand_str = ','.join(f"{b:02X}h" for b in operands)
+        return f"{mnemonic.upper()} {operand_str}"
 
     def dump_state(self):
         """Print current CPU and memory state."""
