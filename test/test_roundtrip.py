@@ -17,8 +17,8 @@ import tempfile
 from pathlib import Path
 import pytest
 
-# Add asm directory to path for disassembler
-sys.path.insert(0, str(Path(__file__).parent.parent / 'asm'))
+# Add emulate directory to path for disassembler
+sys.path.insert(0, str(Path(__file__).parent.parent / 'emulate'))
 
 from disasm8051 import Disassembler
 

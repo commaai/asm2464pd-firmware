@@ -22,8 +22,6 @@ from pathlib import Path
 
 # Add emulate directory to path
 sys.path.insert(0, str(Path(__file__).parent))
-# Add asm directory to path for disassembler
-sys.path.insert(0, str(Path(__file__).parent.parent / 'asm'))
 
 from cpu import CPU8051
 from memory import Memory, MemoryMap
