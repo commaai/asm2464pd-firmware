@@ -214,6 +214,23 @@ class Memory:
         # Clear XDATA (optional, for clean state)
         # Note: In real hardware, XDATA may retain values
 
+        # Initialize flash buffer area (0x7000-0x7FFF) to 0xFF
+        # This simulates unprogrammed/erased flash.
+        # The firmware checks these values during init to determine
+        # PD configuration mode. If 0x7076-0x7079 == 0xFF, it enables
+        # the debug output path by setting 0x0AE5 = 0.
+        for i in range(0x7000, 0x8000):
+            self.xdata[i] = 0xFF
+
+        # Pre-initialize key variables for PD debug path
+        # The firmware init at 0x91D6 sets:
+        #   If 0x0AE5 == 0: 0x0AF0 = 0x3F (enables debug)
+        #   If 0x0AE5 != 0: 0x0AF0 = 0x00 (disables debug)
+        # Since the 0x90xx init that sets 0x0AE5 = 0 is not being called
+        # in our execution path, we pre-set the values needed for debug.
+        self.xdata[0x0AE5] = 0x00  # G_TLP_INIT_FLAG - set to 0 for debug
+        self.xdata[0x0AF0] = 0x3F  # G_FLASH_CFG - enable debug (bit 5 set)
+
 
 def create_memory_system():
     """Create and configure memory system for ASM2464PD."""
