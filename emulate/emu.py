@@ -33,7 +33,8 @@ from disasm8051 import INSTRUCTIONS
 class Emulator:
     """ASM2464PD Firmware Emulator."""
 
-    def __init__(self, trace: bool = False, log_hw: bool = False):
+    def __init__(self, trace: bool = False, log_hw: bool = False,
+                 log_uart: bool = True, usb_delay: int = 5000):
         self.memory = Memory()
         self.cpu = CPU8051(
             read_code=self.memory.read_code,
@@ -49,7 +50,8 @@ class Emulator:
         )
 
         # Hardware emulation (replaces simple stubs)
-        self.hw = HardwareState(log_reads=log_hw, log_writes=log_hw)
+        self.hw = HardwareState(log_reads=log_hw, log_writes=log_hw, log_uart=log_uart)
+        self.hw.usb_connect_delay = usb_delay
         create_hardware_hooks(self.memory, self.hw)
 
         # Statistics
@@ -300,6 +302,10 @@ def main():
                         help='Dump state on exit')
     parser.add_argument('--log-hw', '-l', action='store_true',
                         help='Log hardware MMIO access')
+    parser.add_argument('--no-uart-log', action='store_true',
+                        help='Disable UART TX logging (show raw output instead)')
+    parser.add_argument('--usb-delay', type=int, default=5000,
+                        help='Cycles before USB plug-in event (default: 5000)')
 
     args = parser.parse_args()
 
@@ -314,7 +320,8 @@ def main():
             sys.exit(1)
 
     # Create emulator
-    emu = Emulator(trace=args.trace, log_hw=args.log_hw)
+    emu = Emulator(trace=args.trace, log_hw=args.log_hw,
+                   log_uart=not args.no_uart_log, usb_delay=args.usb_delay)
 
     # Load firmware
     emu.load_firmware(str(fw_path))
