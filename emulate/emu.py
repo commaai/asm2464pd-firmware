@@ -58,6 +58,16 @@ class Emulator:
         self.inst_count = 0
         self.last_pc = 0
 
+        # Debugging: PC trace addresses (set via --trace-pc)
+        self.trace_pcs = set()
+        self.trace_pc_hits = {}  # Count hits per address
+
+        # Debugging: Watch XDATA addresses
+        self.watch_addrs = set()
+
+        # Debugging: PC hit statistics (for analysis)
+        self.pc_stats = {}  # PC -> hit count
+
     def load_firmware(self, path: str):
         """Load firmware binary."""
         with open(path, 'rb') as f:
@@ -80,6 +90,16 @@ class Emulator:
             return False
 
         self.last_pc = self.cpu.pc
+        pc = self.cpu.pc
+
+        # Track PC hit for statistics
+        if self.pc_stats is not None:
+            self.pc_stats[pc] = self.pc_stats.get(pc, 0) + 1
+
+        # Check for trace PC addresses
+        if pc in self.trace_pcs:
+            self.trace_pc_hits[pc] = self.trace_pc_hits.get(pc, 0) + 1
+            self._trace_pc_hit(pc)
 
         if self.cpu.trace:
             self._trace_instruction()
@@ -89,6 +109,61 @@ class Emulator:
         self.hw.tick(cycles, self.cpu)
 
         return not self.cpu.halted
+
+    def _trace_pc_hit(self, pc: int):
+        """Log when a traced PC is hit."""
+        bank = self.memory.read_sfr(0x96) & 1
+        hit_count = self.trace_pc_hits[pc]
+
+        # Get instruction for context
+        opcode = self.memory.read_code(pc)
+        inst_bytes = [opcode]
+        inst_len = self._get_inst_length(opcode)
+        for i in range(1, inst_len):
+            inst_bytes.append(self.memory.read_code((pc + i) & 0xFFFF))
+        mnemonic = self._disassemble(inst_bytes)
+
+        # Show CPU state
+        a = self.cpu.A
+        r7 = self.memory.read_idata(7)
+
+        print(f"[{self.hw.cycles:8d}] PC=0x{pc:04X} bank={bank} hit#{hit_count} "
+              f"{mnemonic} A=0x{a:02X} R7=0x{r7:02X}")
+
+    def setup_watch(self, addr: int, name: str = None):
+        """
+        Setup a watch on an XDATA address to log reads/writes.
+
+        Args:
+            addr: XDATA address to watch
+            name: Optional name for the address (for logging)
+        """
+        self.watch_addrs.add(addr)
+        watch_name = name or f"0x{addr:04X}"
+
+        # Create hooks that wrap existing functionality
+        orig_read = self.memory.xdata_read_hooks.get(addr)
+        orig_write = self.memory.xdata_write_hooks.get(addr)
+
+        emu = self  # Capture reference
+
+        def watch_read(a):
+            val = orig_read(a) if orig_read else emu.memory.xdata[a]
+            pc = emu.cpu.pc
+            print(f"[{emu.hw.cycles:8d}] READ  {watch_name} = 0x{val:02X} (PC=0x{pc:04X})")
+            return val
+
+        def watch_write(a, v):
+            pc = emu.cpu.pc
+            old_val = emu.memory.xdata[a]
+            print(f"[{emu.hw.cycles:8d}] WRITE {watch_name} = 0x{v:02X} (was 0x{old_val:02X}, PC=0x{pc:04X})")
+            if orig_write:
+                orig_write(a, v)
+            else:
+                emu.memory.xdata[a] = v
+
+        self.memory.xdata_read_hooks[addr] = watch_read
+        self.memory.xdata_write_hooks[addr] = watch_write
 
     def run(self, max_cycles: int = None, max_instructions: int = None) -> str:
         """
@@ -285,13 +360,57 @@ class Emulator:
                 addr = sp - i
                 print(f"  0x{addr:02X}: 0x{self.memory.read_idata(addr):02X}")
 
+    def dump_trace_stats(self):
+        """Print trace PC hit statistics."""
+        if self.trace_pc_hits:
+            print("\n=== Trace PC Hits ===")
+            for pc in sorted(self.trace_pc_hits.keys()):
+                count = self.trace_pc_hits[pc]
+                print(f"  0x{pc:04X}: {count} hits")
+
+    def dump_xdata(self, start: int, length: int = 16):
+        """Dump XDATA region."""
+        print(f"\n=== XDATA 0x{start:04X}-0x{start+length-1:04X} ===")
+        for offset in range(0, length, 16):
+            addr = start + offset
+            hex_str = ' '.join(f'{self.memory.xdata[addr+i]:02X}' for i in range(min(16, length - offset)))
+            print(f"  0x{addr:04X}: {hex_str}")
+
+    def dump_registers(self, addrs: list):
+        """Dump specific hardware register values."""
+        print("\n=== Hardware Registers ===")
+        for addr in addrs:
+            val = self.hw.regs.get(addr, 0)
+            print(f"  0x{addr:04X}: 0x{val:02X}")
+
 
 def main():
-    parser = argparse.ArgumentParser(description='ASM2464PD Firmware Emulator')
+    parser = argparse.ArgumentParser(
+        description='ASM2464PD Firmware Emulator',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic run with UART output
+  python emu.py fw.bin
+
+  # Trace specific addresses (PD task entry points)
+  python emu.py --trace-pc 0x9335 --trace-pc 0xAE89 --trace-pc 0xAF5E
+
+  # Watch memory addresses
+  python emu.py --watch 0x0A9D --watch 0x0AE1
+
+  # Debug with hardware logging
+  python emu.py --log-hw --trace-pc 0x0322
+"""
+    )
     parser.add_argument('firmware', nargs='?', default='fw.bin',
                         help='Firmware binary to load (default: fw.bin)')
     parser.add_argument('--trace', '-t', action='store_true',
-                        help='Enable instruction tracing')
+                        help='Enable full instruction tracing (verbose)')
+    parser.add_argument('--trace-pc', action='append', default=[],
+                        help='Trace when PC hits address (hex), can repeat')
+    parser.add_argument('--watch', '-w', action='append', default=[],
+                        help='Watch XDATA address for reads/writes (hex), can repeat')
     parser.add_argument('--break', '-b', dest='breakpoints', action='append',
                         default=[], help='Set breakpoint at address (hex)')
     parser.add_argument('--max-cycles', '-c', type=int, default=10000000,
@@ -304,8 +423,15 @@ def main():
                         help='Log hardware MMIO access')
     parser.add_argument('--no-uart-log', action='store_true',
                         help='Disable UART TX logging (show raw output instead)')
-    parser.add_argument('--usb-delay', type=int, default=5000,
-                        help='Cycles before USB plug-in event (default: 5000)')
+    parser.add_argument('--usb-delay', type=int, default=200000,
+                        help='Cycles before USB plug-in event (default: 200000, after init)')
+    parser.add_argument('--pd-event', type=str, default=None,
+                        choices=['source_cap', 'accept', 'ps_rdy', 'vdm'],
+                        help='Trigger PD event at USB connect')
+    parser.add_argument('--usb-cmd', type=str, default=None,
+                        help='Inject USB command: E4:addr:size (read) or E5:addr:value (write)')
+    parser.add_argument('--usb-cmd-delay', type=int, default=1000,
+                        help='Cycles after USB connect to inject command (default: 1000)')
 
     args = parser.parse_args()
 
@@ -332,6 +458,42 @@ def main():
         emu.cpu.breakpoints.add(addr)
         print(f"Breakpoint set at 0x{addr:04X}")
 
+    # Set trace PC addresses
+    for pc_str in args.trace_pc:
+        addr = int(pc_str, 16)
+        emu.trace_pcs.add(addr)
+        print(f"Tracing PC at 0x{addr:04X}")
+
+    # Set watch addresses
+    for watch_str in args.watch:
+        addr = int(watch_str, 16)
+        emu.setup_watch(addr)
+        print(f"Watching XDATA at 0x{addr:04X}")
+
+    # Configure PD event if requested
+    if args.pd_event:
+        pd_events = {
+            'source_cap': (0x01, 0x00),   # Source Capabilities
+            'accept': (0x03, 0x00),        # Accept
+            'ps_rdy': (0x06, 0x00),        # PS_RDY
+            'vdm': (0x0F, 0x00),           # VDM
+        }
+        e40f, e410 = pd_events[args.pd_event]
+        emu.hw.regs[0xE40F] = e40f
+        emu.hw.regs[0xE410] = e410
+        print(f"PD event configured: {args.pd_event} (E40F=0x{e40f:02X}, E410=0x{e410:02X})")
+
+    # Configure USB command injection if requested
+    if args.usb_cmd:
+        parts = args.usb_cmd.upper().split(':')
+        cmd_type = int(parts[0], 16)  # 0xE4 or 0xE5
+        addr = int(parts[1], 16)       # XDATA address
+        val_or_size = int(parts[2], 16) if len(parts) > 2 else 1  # Value or size
+
+        emu.hw.usb_inject_cmd = (cmd_type, addr, val_or_size)
+        emu.hw.usb_inject_delay = args.usb_cmd_delay
+        print(f"USB command injection configured: 0x{cmd_type:02X} addr=0x{addr:04X} param=0x{val_or_size:02X}")
+
     # Reset and run
     emu.reset()
     print(f"Starting execution at PC=0x{emu.cpu.pc:04X}")
@@ -350,6 +512,9 @@ def main():
 
     if args.dump:
         emu.dump_state()
+
+    # Always show trace stats if any PCs were traced
+    emu.dump_trace_stats()
 
     print(f"\nTotal: {emu.inst_count} instructions, {emu.cpu.cycles} cycles")
 

@@ -253,6 +253,11 @@ class CPU8051:
         if ie & 0x01:  # EX0 enabled
             if hasattr(self, '_ext0_pending') and self._ext0_pending:
                 self._ext0_pending = False
+                # Push return address onto stack before jumping to ISR
+                # Order matches LCALL: low byte first, high byte second
+                # So high is on top of stack, RET pops high first then low
+                self.push(self.pc & 0xFF)         # PC low byte (pushed first)
+                self.push((self.pc >> 8) & 0xFF)  # PC high byte (on top)
                 self.pc = 0x0003  # INT0 vector
                 self.in_interrupt = True
                 return
@@ -275,9 +280,10 @@ class CPU8051:
         if self.in_interrupt:
             return
 
-        # Push current PC onto stack
-        self.push((self.pc >> 8) & 0xFF)  # PC high
-        self.push(self.pc & 0xFF)         # PC low
+        # Push current PC onto stack (matches LCALL order)
+        # Low byte first, high byte second (high ends up on top)
+        self.push(self.pc & 0xFF)         # PC low (pushed first)
+        self.push((self.pc >> 8) & 0xFF)  # PC high (on top for RET)
 
         # Set PC to interrupt vector address
         self.pc = vector * 8
