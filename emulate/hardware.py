@@ -458,10 +458,11 @@ class HardwareState:
 
     def _perform_pcie_dma(self, source_addr: int, size: int):
         """
-        Perform PCIe DMA transfer from simulated PCIe space to USB buffer.
+        Perform PCIe DMA transfer to USB buffer.
 
-        For E4 read commands, this copies data from the "NVMe device" (simulated)
-        to the USB data buffer at 0x8000, where the firmware will send it to host.
+        For E4 read commands (address 0x50xxxx), reads from XDATA[xxxx].
+        For other addresses, uses simulated PCIe memory or test patterns.
+        Data is copied to USB data buffer at 0x8000.
         """
         if not self.memory:
             if self.log_pcie:
@@ -470,18 +471,23 @@ class HardwareState:
 
         dest_addr = 0x8000  # USB data buffer
 
-        # Generate simulated PCIe response data
-        # For a real device, this would be data read from NVMe configuration space
-        # For emulation, we generate recognizable test data
+        # Check if this is an E4 XDATA read (address 0x50xxxx)
+        is_xdata_read = (source_addr >> 16) == 0x50
+
         for i in range(size):
-            pcie_addr = source_addr + i
-            # Check if we have predefined data for this address
-            if pcie_addr in self.pcie_memory:
-                value = self.pcie_memory[pcie_addr]
+            if is_xdata_read:
+                # E4 command: read from chip's XDATA memory
+                # Address format: 0x50XXXX -> XDATA[XXXX]
+                xdata_addr = (source_addr + i) & 0xFFFF
+                value = self.memory.xdata[xdata_addr]
             else:
-                # Generate test pattern: address-based data
-                # Low byte of address XOR'd with offset
-                value = (pcie_addr & 0xFF) ^ (i & 0xFF)
+                # PCIe memory read (e.g., NVMe config space)
+                pcie_addr = source_addr + i
+                if pcie_addr in self.pcie_memory:
+                    value = self.pcie_memory[pcie_addr]
+                else:
+                    # Generate test pattern for unmapped PCIe addresses
+                    value = (pcie_addr & 0xFF) ^ (i & 0xFF)
 
             # Write to USB data buffer
             self.memory.xdata[dest_addr + i] = value
@@ -490,12 +496,10 @@ class HardwareState:
         # XDATA[0x0AA0] must be non-zero for success path at 0x3605
         self.memory.xdata[0x0AA0] = size if size > 0 else 1
 
-        # USB data transfer complete flag (0x00E2) is managed by read callback
-        # The firmware clears it at 0x3C9E, so we set it via read hook after polling
-
         if self.log_pcie:
-            print(f"[{self.cycles:8d}] [PCIe] DMA COMPLETE: {size} bytes copied to 0x{dest_addr:04X}")
-            # Show first few bytes
+            addr_type = "XDATA" if is_xdata_read else "PCIe"
+            xdata_addr = source_addr & 0xFFFF if is_xdata_read else source_addr
+            print(f"[{self.cycles:8d}] [PCIe] DMA COMPLETE: {size} bytes from {addr_type}[0x{xdata_addr:04X}] to 0x{dest_addr:04X}")
             if size > 0:
                 sample = ' '.join(f'{self.memory.xdata[dest_addr + i]:02X}' for i in range(min(size, 16)))
                 print(f"[{self.cycles:8d}] [PCIe] Data: {sample}")

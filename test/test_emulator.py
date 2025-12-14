@@ -254,6 +254,66 @@ class TestPCIeEmulation:
         assert status & 0x06, "PCIe completion bits should be set after polling"
 
 
+class TestUSBVendorCommands:
+    """Tests for USB vendor command emulation."""
+
+    @pytest.mark.skipif(
+        not Path(Path(__file__).parent.parent / 'fw.bin').exists(),
+        reason="fw.bin not found"
+    )
+    def test_e4_read_xdata(self):
+        """Test E4 read command returns correct XDATA values."""
+        emu = Emulator(log_uart=False, usb_delay=1000)
+        emu.load_firmware(str(Path(__file__).parent.parent / 'fw.bin'))
+        emu.reset()
+
+        # Write test data to XDATA
+        test_addr = 0x1000
+        test_data = [0xDE, 0xAD, 0xBE, 0xEF]
+        for i, val in enumerate(test_data):
+            emu.memory.xdata[test_addr + i] = val
+
+        # Inject E4 read command
+        emu.hw.inject_usb_command(0xE4, test_addr, size=len(test_data))
+
+        # Run until DMA completes
+        emu.run(max_cycles=50000)
+
+        # Verify data was copied to USB buffer at 0x8000
+        result = [emu.memory.xdata[0x8000 + i] for i in range(len(test_data))]
+        assert result == test_data, f"E4 read returned {result}, expected {test_data}"
+
+    @pytest.mark.skipif(
+        not Path(Path(__file__).parent.parent / 'fw.bin').exists(),
+        reason="fw.bin not found"
+    )
+    def test_e4_read_different_addresses(self):
+        """Test E4 read works for various XDATA addresses."""
+        emu = Emulator(log_uart=False, usb_delay=1000)
+        emu.load_firmware(str(Path(__file__).parent.parent / 'fw.bin'))
+
+        test_cases = [
+            (0x0100, [0x11, 0x22]),
+            (0x2000, [0xAA, 0xBB, 0xCC, 0xDD]),
+            (0x5000, [0x01]),
+        ]
+
+        for addr, data in test_cases:
+            emu.reset()
+
+            # Write test data
+            for i, val in enumerate(data):
+                emu.memory.xdata[addr + i] = val
+
+            # Inject E4 read command
+            emu.hw.inject_usb_command(0xE4, addr, size=len(data))
+            emu.run(max_cycles=50000)
+
+            # Verify result
+            result = [emu.memory.xdata[0x8000 + i] for i in range(len(data))]
+            assert result == data, f"E4 read at 0x{addr:04X} returned {result}, expected {data}"
+
+
 class TestTimerEmulation:
     """Tests for timer hardware emulation."""
 
