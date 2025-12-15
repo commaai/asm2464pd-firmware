@@ -34,6 +34,9 @@ extern void nvme_completion_handler(uint8_t param);  /* 0x3adb */
 extern void dma_queue_state_handler(void);  /* 0x2608 */
 extern void nvme_cmd_status_init(void);     /* 0x1196 - NVMe cmd status init */
 
+/* External from interrupt.c */
+extern void isr_usb_ep_clear_state(void);   /* 0x5476 */
+
 /* Forward declaration - USB master handler (0x10e0)
  * Called at end of endpoint dispatch loop */
 void usb_master_handler(void);
@@ -4821,6 +4824,136 @@ uint8_t check_usb_phy_link_idle_e5b1(void)
 }
 
 /*
+ * usb_setup_transfer_flag_3169 - Setup transfer flag and EP0 config bit 0
+ * Address: 0x3169-0x3178 (16 bytes)
+ *
+ * Sets the transfer flag at 0x0AF1 and sets bit 0 of EP0 config register.
+ * Called when USB state != 5 in usb_vendor_command_processor.
+ *
+ * Original disassembly:
+ *   3169: mov dptr, #0x0af1    ; G_STATE_FLAG_0AF1
+ *   316c: mov a, #0x01
+ *   316e: movx @dptr, a        ; Write 1 to 0x0AF1
+ *   316f: mov dptr, #0x9006    ; REG_USB_EP0_CONFIG
+ *   3172: movx a, @dptr        ; Read
+ *   3173: anl a, #0xfe         ; Clear bit 0
+ *   3175: orl a, #0x01         ; Set bit 0
+ *   3177: movx @dptr, a        ; Write back
+ *   3178: ret
+ */
+void usb_setup_transfer_flag_3169(void)
+{
+    uint8_t val;
+
+    G_STATE_FLAG_0AF1 = 0x01;
+
+    val = REG_USB_EP0_CONFIG;
+    val = (val & 0xFE) | 0x01;  /* Clear bit 0, then set bit 0 */
+    REG_USB_EP0_CONFIG = val;
+}
+
+/*
+ * usb_set_ep0_bit7_320d - Set bit 7 of EP0 config register
+ * Address: 0x320D-0x3213 (7 bytes)
+ *
+ * Sets bit 7 of the register pointed to by DPTR.
+ * In the calling context, DPTR is 0x9006 (REG_USB_EP0_CONFIG) from 0x3169.
+ *
+ * Original disassembly:
+ *   320d: movx a, @dptr        ; Read from DPTR (0x9006)
+ *   320e: anl a, #0x7f         ; Clear bit 7
+ *   3210: orl a, #0x80         ; Set bit 7
+ *   3212: movx @dptr, a        ; Write back
+ *   3213: ret
+ */
+void usb_set_ep0_bit7_320d(void)
+{
+    uint8_t val;
+
+    val = REG_USB_EP0_CONFIG;
+    val = (val & 0x7F) | 0x80;  /* Clear bit 7, then set bit 7 */
+    REG_USB_EP0_CONFIG = val;
+}
+
+/*
+ * vendor_dispatch_4583 - Vendor command dispatch based on flag bits
+ * Address: 0x4583-0x45C5 (67 bytes)
+ *
+ * Reads G_EP_STATUS_CTRL (0x0003) and dispatches based on bits:
+ *   - Bit 7: USB transfer setup path
+ *   - Bit 4: Alternative USB path
+ *   - Bit 3: Calls pcie_vendor_handler_35b7 with r7=0x81 (E4 handler)
+ *   - Bit 1: Calls 0x04da
+ *
+ * Original disassembly:
+ *   4583: mov dptr, #0x0003    ; G_EP_STATUS_CTRL
+ *   4586: movx a, @dptr        ; Read vendor flag
+ *   4587: mov 0x3a, a          ; Store in IDATA[0x3A]
+ *   ...
+ *   45b5: jnb acc.3, 0x45bd    ; If bit 3 clear, skip
+ *   45b8: mov r7, #0x81
+ *   45ba: lcall 0x35b7         ; Call pcie_vendor_handler
+ *   ...
+ */
+void vendor_dispatch_4583(void)
+{
+    uint8_t flags = G_EP_STATUS_CTRL;
+    I_WORK_3A = flags;
+
+    /* Bit 7 handling - USB transfer setup */
+    if (flags & 0x80) {
+        /* Complex setup path - calls 0x0502, 0x039a, etc. */
+        /* For simplicity, not fully implemented here */
+    }
+
+    /* Bit 4 handling */
+    if (flags & 0x10) {
+        /* Alternative path - calls 0x0502 with different params */
+    }
+
+    /* Bit 3 handling - E4/E5 vendor commands */
+    if (flags & 0x08) {
+        pcie_vendor_handler_35b7(0x81);
+    }
+
+    /* Bit 1 handling */
+    if (flags & 0x02) {
+        /* calls 0x04da */
+    }
+}
+
+/*
+ * pcie_vendor_handler_35b7 - PCIe vendor command handler with DMA trigger
+ * Address: 0x35B7-0x36E3 (301 bytes)
+ *
+ * Handles E4 read commands by triggering PCIe DMA.
+ * Called from vendor_dispatch_4583 with r7 parameter.
+ *
+ * Key sequence at 0x35E2-0x35F6 (DMA trigger):
+ *   35e2: mov dptr, #0xb455
+ *   35e5: mov a, #0x02
+ *   35e7: movx @dptr, a        ; Write 0x02 to 0xB455
+ *   35e8: mov a, #0x04
+ *   35ea: movx @dptr, a        ; Write 0x04 to 0xB455
+ *   35eb: mov dptr, #0xb2d5
+ *   35ee: mov a, #0x01
+ *   35f0: movx @dptr, a        ; Write 0x01 to 0xB2D5
+ *   35f1: mov dptr, #0xb296
+ *   35f4: mov a, #0x08
+ *   35f6: movx @dptr, a        ; Write 0x08 to 0xB296 (triggers DMA!)
+ */
+void pcie_vendor_handler_35b7(uint8_t param)
+{
+    (void)param;  /* r7 parameter, used in full implementation */
+
+    /* DMA trigger sequence from original firmware 0x35E2-0x35F6 */
+    REG_POWER_CTRL_B455 = 0x02;
+    REG_POWER_CTRL_B455 = 0x04;
+    REG_PCIE_CTRL_B2D5 = 0x01;
+    REG_PCIE_STATUS = 0x08;  /* Triggers DMA */
+}
+
+/*
  * usb_vendor_command_processor - Process USB vendor commands (E4/E5)
  * Address: 0x5333-0x5352 (32 bytes)
  *
@@ -4831,79 +4964,43 @@ uint8_t check_usb_phy_link_idle_e5b1(void)
  *      - Write 0x02 to 0x90E3
  *      - Read XDATA 0x0003 (vendor command flag)
  *      - If non-zero, call 0x4583 (vendor command dispatch)
- *      - Then jump to 0x5476
- *
- * For E4/E5 vendor commands:
- *   - E4 (0xE4): Read from XDATA memory
- *   - E5 (0xE5): Write to XDATA memory
- *
- * The CDB (Command Descriptor Block) is in USB registers 0x910D-0x9112:
- *   - 0x910D: Command type (0xE4 or 0xE5)
- *   - 0x910E: Size (for E4) or Value (for E5)
- *   - 0x910F: Address high byte (0x50 for XDATA)
- *   - 0x9110: Address mid byte
- *   - 0x9111: Address low byte
+ *      - Then jump to 0x5476 (isr_usb_ep_clear_state)
  *
  * Original disassembly:
  *   5333: mov r0, #0x6a
  *   5335: mov a, @r0
- *   5336: add a, #0xfb        ; compare with 5
- *   5338: jnz 0x534c          ; if != 5, different path
+ *   5336: add a, #0xfb        ; compare with 5 (add -5)
+ *   5338: jnz 0x534c          ; if != 5, goto transfer flag path
  *   533a: mov dptr, #0x90e3
  *   533d: mov a, #0x02
- *   533f: movx @dptr, a
+ *   533f: movx @dptr, a       ; Write 0x02 to 0x90E3
  *   5340: mov dptr, #0x0003
- *   5343: movx a, @dptr       ; read vendor flag
- *   5344: jz 0x5349           ; if zero, skip
- *   5346: lcall 0x4583        ; call vendor dispatch
- *   5349: ljmp 0x5476
+ *   5343: movx a, @dptr       ; Read G_EP_STATUS_CTRL
+ *   5344: jz 0x5349           ; if zero, skip dispatch
+ *   5346: lcall 0x4583        ; call vendor_dispatch_4583
+ *   5349: ljmp 0x5476         ; jump to isr_usb_ep_clear_state
+ *   534c: lcall 0x3169        ; call usb_setup_transfer_flag_3169
+ *   534f: lcall 0x320d        ; call usb_set_ep0_bit7_320d
+ *   5352: ret
  */
 void usb_vendor_command_processor(void)
 {
-    uint8_t cmd_type;
-    uint8_t size_or_value;
-    uint16_t xdata_addr;
-    __xdata uint8_t *ptr;
-    __xdata uint8_t *usb_buf;
+    uint8_t state = I_STATE_6A;
 
-    /* Read command from USB CDB registers */
-    cmd_type = REG_USB_CDB_CMD;      /* 0x910D - Command type */
-    size_or_value = REG_USB_CDB_LEN; /* 0x910E - Size or value */
-
-    /* Address is in 0x910F-0x9111 (0x50xxxx format for XDATA)
-     * We only care about the low 16 bits for XDATA address */
-    xdata_addr = ((uint16_t)REG_USB_CDB_ADDR_MID << 8) | REG_USB_CDB_ADDR_LO;
-
-    /* Write status to signal command received */
-    REG_USB_EP_STATUS_90E3 = 0x02;
-
-    usb_buf = (__xdata uint8_t *)0x8000;
-
-    if (cmd_type == 0xE4) {
-        /* E4: Read from XDATA memory
-         * Copy size_or_value bytes from xdata_addr to USB buffer at 0x8000
-         */
-        uint8_t i;
-        ptr = (__xdata uint8_t *)xdata_addr;
-
-        for (i = 0; i < size_or_value && i < 64; i++) {
-            usb_buf[i] = ptr[i];
-        }
-
-        /* Trigger PCIe DMA to send response to host */
-        REG_PCIE_STATUS = 0x06;  /* DMA complete flag */
-
-    } else if (cmd_type == 0xE5) {
-        /* E5: Write to XDATA memory
-         * Write size_or_value (single byte) to xdata_addr
-         */
-        ptr = (__xdata uint8_t *)xdata_addr;
-        *ptr = size_or_value;
-
-        /* Signal completion */
-        REG_PCIE_STATUS = 0x06;
+    if (state != 5) {
+        /* State != 5: Setup transfer flags and return */
+        usb_setup_transfer_flag_3169();
+        usb_set_ep0_bit7_320d();
+        return;
     }
 
-    /* Clear EP0 ready status after processing */
-    REG_USB_EP_READY = 0x00;
+    /* State == 5: Process vendor command */
+    REG_USB_EP_STATUS_90E3 = 0x02;
+
+    if (G_EP_STATUS_CTRL != 0) {
+        vendor_dispatch_4583();
+    }
+
+    /* Jump to clear state (in original this is ljmp, here we call) */
+    isr_usb_ep_clear_state();
 }

@@ -211,6 +211,10 @@ void usb_buffer_dispatch(void);                         /* 0xd852-0xd8ff */
 
 /* USB vendor command processing */
 void usb_vendor_command_processor(void);                /* 0x5333-0x5352 */
+void usb_setup_transfer_flag_3169(void);                /* 0x3169-0x3178 */
+void usb_set_ep0_bit7_320d(void);                       /* 0x320D-0x3213 */
+void vendor_dispatch_4583(void);                        /* 0x4583-0x45C5 */
+void pcie_vendor_handler_35b7(uint8_t param);           /* 0x35B7-0x36E3 */
 
 /* USB descriptor handling */
 void usb_get_descriptor_length(uint8_t param);          /* 0xa637-0xa650 */
