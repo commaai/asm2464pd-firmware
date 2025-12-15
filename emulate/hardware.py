@@ -248,6 +248,94 @@ class USBController:
 
         return cdb
 
+    def inject_scsi_write_command(self, lba: int, sectors: int, data: bytes):
+        """
+        Inject a 0x8A SCSI write command via MMIO registers.
+
+        This sets up the MMIO registers and RAM needed for the firmware to process
+        a SCSI write command. The firmware reads these registers and handles
+        the command through its normal code path.
+
+        Args:
+            lba: Logical Block Address to write to
+            sectors: Number of sectors to write (each sector is 512 bytes)
+            data: Data to write (will be padded to sector boundary)
+        """
+        import struct
+
+        # Build 16-byte CDB for SCSI write command
+        # Format: struct.pack('>BBQIBB', 0x8A, 0, lba, sectors, 0, 0)
+        cdb = struct.pack('>BBQIBB', 0x8A, 0x00, lba, sectors, 0x00, 0x00)
+
+        print(f"[{self.hw.cycles:8d}] [USB_CTRL] === INJECT SCSI WRITE COMMAND ===")
+        print(f"[{self.hw.cycles:8d}] [USB_CTRL] LBA={lba} sectors={sectors} data_len={len(data)}")
+        print(f"[{self.hw.cycles:8d}] [USB_CTRL] CDB: {cdb.hex()}")
+
+        # =====================================================
+        # MMIO REGISTER SETUP FOR SCSI COMMAND
+        # =====================================================
+
+        # Write CDB to USB interface registers (0x910D-0x911C)
+        for i, b in enumerate(cdb):
+            self.hw.regs[0x910D + i] = b
+
+        # USB endpoint buffers - write CDB
+        for i, b in enumerate(cdb):
+            self.hw.usb_ep_data_buf[i] = b
+            self.hw.usb_ep0_buf[i] = b
+        self.hw.usb_ep0_len = len(cdb)
+
+        # USB connection and interrupt status
+        self.hw.regs[0x9000] = 0x80  # Connected (bit 7), bit 0 CLEAR
+        self.hw.regs[0x9101] = 0x21  # Bit 5 triggers command handler path
+        self.hw.regs[0xC802] = 0x05  # USB interrupt pending
+
+        # USB endpoint status
+        self.hw.regs[0x9096] = 0x01  # EP0 has data
+        self.hw.regs[0x90E2] = 0x01  # Endpoint status bit
+
+        # Store command state
+        self.hw.usb_cmd_type = 0x8A
+        self.hw.usb_cmd_size = sectors * 512
+        self.hw.usb_cmd_pending = True
+        self.vendor_cmd_active = True
+
+        # Reset state machine
+        self.hw.usb_ce89_read_count = 0
+
+        print(f"[{self.hw.cycles:8d}] [USB_CTRL] MMIO registers configured for SCSI write")
+
+        # =====================================================
+        # RAM SETUP - populate RAM like USB hardware DMA
+        # =====================================================
+        if self.hw.memory:
+            # USB state = 5 (configured)
+            self.hw.memory.idata[0x6A] = 5
+
+            # CDB area - USB hardware writes CDB to XDATA
+            for i, b in enumerate(cdb):
+                self.hw.memory.xdata[0x0002 + i] = b
+
+            # SCSI command flag
+            self.hw.memory.xdata[0x0003] = 0x08
+
+            # Command type marker - 0x8A maps to different handler
+            self.hw.memory.xdata[0x05B1] = 0x8A
+
+            # Pad data to sector boundary and write to USB data buffer at 0x8000
+            padded_size = sectors * 512
+            padded_data = data + b'\x00' * (padded_size - len(data))
+            for i, b in enumerate(padded_data):
+                if 0x8000 + i < 0x10000:  # Stay within XDATA bounds
+                    self.hw.memory.xdata[0x8000 + i] = b
+
+            # Store data length info
+            self.hw.usb_data_len = len(padded_data)
+
+            print(f"[{self.hw.cycles:8d}] [USB_CTRL] Wrote {len(padded_data)} bytes to USB buffer at 0x8000")
+
+        return cdb
+
 
 @dataclass
 class HardwareState:
@@ -1078,6 +1166,32 @@ class HardwareState:
         # when use_direct_ram=True, so no duplicate writes needed here
 
         print(f"[{self.cycles:8d}] [USB] Vendor command ready, triggering interrupt")
+
+    def inject_scsi_write(self, lba: int, sectors: int, data: bytes):
+        """
+        Inject a 0x8A SCSI write command through MMIO registers.
+
+        This sets up the firmware's SCSI command path. Data is written
+        to the USB buffer at 0x8000 for DMA to the NVMe device.
+
+        Args:
+            lba: Logical Block Address to write to
+            sectors: Number of 512-byte sectors to write
+            data: Data to write (will be padded to sector boundary)
+        """
+        # Ensure USB is connected before injecting a command
+        if not self.usb_connected:
+            self.usb_connected = True
+            self.usb_controller.connect()
+            print(f"[{self.cycles:8d}] [USB] Auto-connected USB for SCSI command")
+
+        # Use USBController for the MMIO setup
+        cdb = self.usb_controller.inject_scsi_write_command(lba, sectors, data)
+
+        # Trigger USB interrupt
+        self._pending_usb_interrupt = True
+
+        print(f"[{self.cycles:8d}] [USB] SCSI write command ready, triggering interrupt")
 
     def _trigger_usb_interrupt(self):
         """Trigger USB interrupt to process queued command."""

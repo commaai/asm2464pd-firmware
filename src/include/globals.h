@@ -511,6 +511,19 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_BUF_XFER_START        XDATA_VAR8(0xD80C)  /* Buffer transfer start */
 
 //=============================================================================
+// PD State Machine Work Area (0x07B0-0x07E0)
+//=============================================================================
+#define G_PD_STATE_07B4         XDATA_VAR8(0x07B4)  /* PD state byte 0 */
+#define G_PD_STATE_07B5         XDATA_VAR8(0x07B5)  /* PD state byte 1 */
+#define G_PD_FLAG_07B6          XDATA_VAR8(0x07B6)  /* PD flag - checked in flp print */
+#define G_PD_INIT_07BA          XDATA_VAR8(0x07BA)  /* PD init flag - set to 1 in state init */
+#define G_PD_STATE_07BE         XDATA_VAR8(0x07BE)  /* PD state - cleared in init */
+#define G_PD_MODE_07D2          XDATA_VAR8(0x07D2)  /* PD mode - set based on E400 bit 6 */
+#define G_PD_COUNTER_07DB       XDATA_VAR8(0x07DB)  /* PD counter - cleared in init */
+#define G_PD_COUNTER_07DC       XDATA_VAR8(0x07DC)  /* PD counter - cleared in init */
+#define G_PD_STATE_07E0         XDATA_VAR8(0x07E0)  /* PD state - cleared in init */
+
+//=============================================================================
 // Command Engine Work Area (0x07B0-0x07FF)
 //=============================================================================
 #define G_CMD_SLOT_INDEX        XDATA_VAR8(0x07B7)  /* Command slot index (3-bit) */
