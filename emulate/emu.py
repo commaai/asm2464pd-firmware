@@ -101,6 +101,9 @@ class Emulator:
             self.trace_pc_hits[pc] = self.trace_pc_hits.get(pc, 0) + 1
             self._trace_pc_hit(pc)
 
+        # Check hardware trace points
+        self.hw.check_trace(pc)
+
         if self.cpu.trace:
             self._trace_instruction()
 
@@ -432,6 +435,10 @@ Examples:
                         help='Inject USB command: E4:addr:size (read) or E5:addr:value (write)')
     parser.add_argument('--usb-cmd-delay', type=int, default=1000,
                         help='Cycles after USB connect to inject command (default: 1000)')
+    parser.add_argument('--trace-vendor', action='store_true',
+                        help='Enable trace points for vendor command processing')
+    parser.add_argument('--trace-xdata', action='store_true',
+                        help='Enable XDATA write tracing for vendor-related addresses')
 
     args = parser.parse_args()
 
@@ -494,6 +501,18 @@ Examples:
         emu.hw.usb_inject_delay = args.usb_cmd_delay
         print(f"USB command injection configured: 0x{cmd_type:02X} addr=0x{addr:04X} param=0x{val_or_size:02X}")
 
+    # Enable vendor trace points if requested
+    if args.trace_vendor:
+        emu.hw.add_e4_trace_points()
+        print("Vendor command trace points enabled")
+
+    # Enable XDATA write tracing if requested
+    if args.trace_xdata:
+        emu.hw.add_vendor_xdata_traces()
+        # Store CPU reference for PC tracing
+        emu.hw._cpu_ref = emu.cpu
+        print("XDATA write tracing enabled")
+
     # Reset and run
     emu.reset()
     print(f"Starting execution at PC=0x{emu.cpu.pc:04X}")
@@ -515,6 +534,10 @@ Examples:
 
     # Always show trace stats if any PCs were traced
     emu.dump_trace_stats()
+
+    # Print XDATA trace log if enabled
+    if args.trace_xdata and emu.hw.xdata_write_log:
+        emu.hw.print_xdata_trace_log()
 
     print(f"\nTotal: {emu.inst_count} instructions, {emu.cpu.cycles} cycles")
 

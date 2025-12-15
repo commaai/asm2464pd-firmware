@@ -27,6 +27,10 @@ class Memory:
     xdata_read_hooks: Dict[int, Callable[[int], int]] = field(default_factory=dict)
     xdata_write_hooks: Dict[int, Callable[[int, int], None]] = field(default_factory=dict)
 
+    # IDATA read/write hooks (for USB state and other internal RAM emulation)
+    idata_read_hooks: Dict[int, Callable[[int], int]] = field(default_factory=dict)
+    idata_write_hooks: Dict[int, Callable[[int, int], None]] = field(default_factory=dict)
+
     # DMA/Timer sync flag polling counters (for RAM sync flags that need auto-clear)
     # These flags are set by firmware and should be cleared by DMA/timer completion
     sync_flag_polls: Dict[int, int] = field(default_factory=dict)
@@ -77,12 +81,28 @@ class Memory:
         return 0xFF
 
     def read_idata(self, addr: int) -> int:
-        """Read from IDATA (internal 256 bytes)."""
-        return self.idata[addr & 0xFF]
+        """Read from IDATA (internal 256 bytes) with hooks."""
+        addr &= 0xFF
+
+        # Check for hooks
+        if addr in self.idata_read_hooks:
+            return self.idata_read_hooks[addr](addr)
+
+        return self.idata[addr]
 
     def write_idata(self, addr: int, value: int):
-        """Write to IDATA."""
-        self.idata[addr & 0xFF] = value & 0xFF
+        """Write to IDATA with hooks."""
+        addr &= 0xFF
+        value &= 0xFF
+
+        # Check for hooks
+        if addr in self.idata_write_hooks:
+            self.idata_write_hooks[addr](addr, value)
+            # Still update backing store
+            self.idata[addr] = value
+            return
+
+        self.idata[addr] = value
 
     # Known DMA/timer sync flag addresses that need auto-clear when polled
     # These are RAM flags that firmware sets and waits for hardware to clear

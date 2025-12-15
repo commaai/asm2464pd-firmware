@@ -75,3 +75,38 @@ Functions in the header file should have addresses
 uint8_t pcie_get_link_speed(void);          /* 0x9a60-0x9a6b */
 uint8_t pcie_get_link_speed_masked(void);   /* 0x9a30-0x9a3a */
 ```
+
+## Emulator (emulate/ directory)
+
+The emulator in emulate/ provides 8051 CPU emulation for testing and analyzing firmware behavior.
+
+### CRITICAL: Hardware Emulation Philosophy
+
+The emulator MUST behave like real hardware. This means:
+- **Only modify MMIO registers** (hardware state) - never directly modify RAM/XDATA/IDATA
+- The firmware should naturally read MMIO registers and update its own RAM state
+- If a test requires specific RAM values, the emulator must set MMIO registers that cause the firmware to write those values itself
+- "Cheating" by directly writing RAM bypasses the firmware's state machines and leads to incorrect behavior
+
+Example:
+- BAD: `memory.xdata[0x05B1] = 0x04` (directly writing RAM)
+- GOOD: Set MMIO registers that cause firmware to write 0x04 to 0x05B1 during normal processing
+
+### Debugging firmware execution:
+- Add trace points and PC tracking features directly to the emulator (emulate/emu.py, emulate/hardware.py)
+- Don't create temporary test scripts; add debugging helpers as emulator features
+- Use `emu.setup_watch(addr, name)` to trace XDATA reads/writes at specific addresses
+- Use `emu.trace_pcs.add(addr)` to trace when specific PC addresses are executed
+- Enable `emu.hw.log_reads` and `emu.hw.log_writes` for MMIO debugging
+
+### Key emulator files:
+- emulate/emu.py: Main Emulator class with run(), reset(), load_firmware()
+- emulate/cpu.py: 8051 CPU emulation
+- emulate/memory.py: Memory system (code, xdata, idata, sfr)
+- emulate/hardware.py: MMIO register emulation and USB/PCIe hardware simulation
+
+### USB vendor command testing:
+- `emu.hw.inject_usb_command(cmd_type, xdata_addr, size=N)` injects E4/E5 commands
+- The hardware emulation should set MMIO registers that trigger firmware's USB state machine
+- Firmware reads USB CDB from MMIO registers (0x910D-0x9112) and processes naturally
+- Check result at XDATA[0x8000] for E4 read responses

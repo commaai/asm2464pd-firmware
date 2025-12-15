@@ -287,6 +287,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 // Flash Config Storage (0x0860-0x08FF)
 // Loaded from flash buffer at 0x7074+ during config initialization
 //=============================================================================
+#define G_SERIAL_NUM_0864       XDATA_VAR8(0x0864)  /* Serial number string start */
 #define G_FLASH_CFG_086C        XDATA_VAR8(0x086C)  /* Flash config from 0x7074 */
 #define G_FLASH_CFG_086D        XDATA_VAR8(0x086D)  /* Flash config from 0x7075 */
 #define G_FLASH_CFG_086E        XDATA_VAR8(0x086E)  /* Flash config from 0x7076 */

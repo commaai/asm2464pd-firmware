@@ -23,7 +23,7 @@ CFLAGS += --no-xinit-opt
 LDFLAGS = --code-loc 0x0000 --code-size 0x17F12
 LDFLAGS += --xram-loc 0x0000 --xram-size 0x10000
 LDFLAGS += --iram-size 0x100
-LDFLAGS += --stack-loc 0x72
+LDFLAGS += --no-std-crt0
 
 # Directories
 SRC_DIR = src
@@ -33,16 +33,18 @@ BUILD_DIR = build
 OBJ_DIR = $(BUILD_DIR)/obj
 
 # Source files
+CRT0_SRC = $(SRC_DIR)/crt0.s
 MAIN_SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/utils.c $(SRC_DIR)/interrupt.c
 DRIVER_SRCS = $(wildcard $(DRIVERS_DIR)/*.c)
 APP_SRCS = $(wildcard $(APP_DIR)/*.c)
 SRCS = $(MAIN_SRCS) $(DRIVER_SRCS) $(APP_SRCS)
 
-# Object files
+# Object files - crt0 must be linked first!
+CRT0_OBJ = $(OBJ_DIR)/crt0.rel
 MAIN_OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.rel,$(MAIN_SRCS))
 DRIVER_OBJS = $(patsubst $(DRIVERS_DIR)/%.c,$(OBJ_DIR)/drivers/%.rel,$(DRIVER_SRCS))
 APP_OBJS = $(patsubst $(APP_DIR)/%.c,$(OBJ_DIR)/app/%.rel,$(APP_SRCS))
-OBJS = $(MAIN_OBJS) $(DRIVER_OBJS) $(APP_OBJS)
+OBJS = $(CRT0_OBJ) $(MAIN_OBJS) $(DRIVER_OBJS) $(APP_OBJS)
 
 # Output files
 TARGET = $(BUILD_DIR)/firmware
@@ -64,6 +66,13 @@ $(OBJ_DIR):
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+
+# Assemble startup code
+$(CRT0_OBJ): $(CRT0_SRC) | $(OBJ_DIR)
+	$(AS) -l -o -s $<
+	mv $(SRC_DIR)/crt0.rel $(CRT0_OBJ)
+	-mv $(SRC_DIR)/crt0.lst $(OBJ_DIR)/ 2>/dev/null || true
+	-mv $(SRC_DIR)/crt0.sym $(OBJ_DIR)/ 2>/dev/null || true
 
 # Compile main source files
 $(OBJ_DIR)/%.rel: $(SRC_DIR)/%.c | $(OBJ_DIR)
