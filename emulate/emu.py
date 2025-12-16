@@ -18,6 +18,8 @@ Options:
 import sys
 import os
 import argparse
+import threading
+import time
 from pathlib import Path
 
 # Add emulate directory to path
@@ -67,6 +69,11 @@ class Emulator:
 
         # Debugging: PC hit statistics (for analysis)
         self.pc_stats = {}  # PC -> hit count
+
+        # USB device emulation
+        self.usb_device = None
+        self.usb_thread = None
+        self.usb_running = False
 
     def load_firmware(self, path: str):
         """Load firmware binary."""
@@ -386,6 +393,113 @@ class Emulator:
             val = self.hw.regs.get(addr, 0)
             print(f"  0x{addr:04X}: 0x{val:02X}")
 
+    # ============================================
+    # USB Device Emulation
+    # ============================================
+    def start_usb_device(self, driver: str = "dummy_udc", device: str = "dummy_udc.0"):
+        """
+        Start USB device emulation using raw-gadget.
+
+        This makes the emulator appear as a real USB device (VID:PID ADD1:0001)
+        that can be accessed with lsusb and python/usb.py.
+
+        Requires: sudo modprobe dummy_hcd && sudo modprobe raw_gadget
+        """
+        try:
+            from usb_device import ASM2464Device
+            from raw_gadget import check_raw_gadget_available, USBSpeed
+        except ImportError as e:
+            print(f"[USB] Failed to import USB device modules: {e}")
+            return False
+
+        # Check prerequisites
+        available, msg = check_raw_gadget_available()
+        if not available:
+            print(f"[USB] {msg}")
+            return False
+
+        print(f"[USB] Starting USB device emulation...")
+
+        # Create device with callbacks to our memory
+        self.usb_device = ASM2464Device(
+            memory_read=self._usb_memory_read,
+            memory_write=self._usb_memory_write
+        )
+
+        # Start the gadget (this connects to USB)
+        try:
+            self.usb_device.start(driver, device, USBSpeed.USB_SPEED_HIGH)
+            print(f"[USB] Device started on {device}")
+            print(f"[USB] Device should appear as ADD1:0001 in lsusb")
+
+            # Start USB event handling in background thread
+            self.usb_running = True
+            self.usb_thread = threading.Thread(target=self._usb_event_loop, daemon=True)
+            self.usb_thread.start()
+
+            return True
+        except Exception as e:
+            print(f"[USB] Failed to start device: {e}")
+            self.usb_running = False
+            return False
+
+    def stop_usb_device(self):
+        """Stop USB device emulation."""
+        self.usb_running = False
+        if self.usb_device:
+            self.usb_device.stop()
+            self.usb_device = None
+        if self.usb_thread:
+            self.usb_thread.join(timeout=1.0)
+            self.usb_thread = None
+        print("[USB] Device stopped")
+
+    def _usb_event_loop(self):
+        """Background thread for handling USB events."""
+        while self.usb_running and self.usb_device:
+            try:
+                self.usb_device.handle_events()
+            except Exception as e:
+                if self.usb_running:  # Only log if not shutting down
+                    print(f"[USB] Event error: {e}")
+                break
+
+    def _usb_memory_read(self, addr: int) -> int:
+        """
+        USB callback: Read from XDATA memory.
+
+        This is called when the USB host sends an E4 read command.
+        We return the current value from the emulator's XDATA.
+        """
+        addr &= 0xFFFF
+        if addr < 0x6000:
+            # RAM region - direct access
+            return self.memory.xdata[addr]
+        else:
+            # Hardware register region - use HW read hook
+            return self.hw.read(addr)
+
+    def _usb_memory_write(self, addr: int, value: int):
+        """
+        USB callback: Write to XDATA memory.
+
+        This is called when the USB host sends an E5 write command.
+        We write to the emulator's XDATA and optionally trigger
+        firmware processing.
+        """
+        addr &= 0xFFFF
+        value &= 0xFF
+
+        if addr < 0x6000:
+            # RAM region - direct access
+            self.memory.xdata[addr] = value
+        else:
+            # Hardware register region - use HW write hook
+            self.hw.write(addr, value)
+
+        # Log the write
+        print(f"[USB->EMU] Write 0x{addr:04X} = 0x{value:02X}")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -439,6 +553,12 @@ Examples:
                         help='Enable trace points for vendor command processing')
     parser.add_argument('--trace-xdata', action='store_true',
                         help='Enable XDATA write tracing for vendor-related addresses')
+    parser.add_argument('--usb-device', action='store_true',
+                        help='Enable USB device emulation via raw-gadget (requires root)')
+    parser.add_argument('--usb-driver', type=str, default='dummy_udc',
+                        help='UDC driver name (default: dummy_udc)')
+    parser.add_argument('--usb-device-name', type=str, default='dummy_udc.0',
+                        help='UDC device name (default: dummy_udc.0)')
 
     args = parser.parse_args()
 
@@ -513,6 +633,11 @@ Examples:
         emu.hw._cpu_ref = emu.cpu
         print("XDATA write tracing enabled")
 
+    # Start USB device if requested
+    if args.usb_device:
+        if not emu.start_usb_device(args.usb_driver, args.usb_device_name):
+            print("Failed to start USB device, continuing without it")
+
     # Reset and run
     emu.reset()
     print(f"Starting execution at PC=0x{emu.cpu.pc:04X}")
@@ -528,6 +653,10 @@ Examples:
     except Exception as e:
         print(f"\nError at PC=0x{emu.cpu.pc:04X}: {e}")
         raise
+    finally:
+        # Stop USB device if running
+        if emu.usb_device:
+            emu.stop_usb_device()
 
     if args.dump:
         emu.dump_state()
