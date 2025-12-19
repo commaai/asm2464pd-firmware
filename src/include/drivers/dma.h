@@ -5,50 +5,133 @@
  * Handles high-speed data transfers between USB, NVMe, and internal buffers
  * without CPU intervention.
  *
+ * ===========================================================================
  * ARCHITECTURE
+ * ===========================================================================
+ *
  *   USB Host <---> USB Buffer <---> DMA Engine <---> NVMe Buffer <---> NVMe SSD
  *                      |                |
- *                      v                v
- *                 XRAM Buffers    SCSI/Mass Storage
+ *                      |                v
+ *                      |          PCIe Controller
+ *                      v
+ *                 XDATA Buffers (0x8000-0xFFFF)
  *
- * TRANSFER MODES
- *   - USB to Buffer: Host writes (USB RX)
- *   - Buffer to USB: Host reads (USB TX)
- *   - Buffer to NVMe: SSD writes
- *   - NVMe to Buffer: SSD reads
+ * ===========================================================================
+ * DMA ENGINE TYPES
+ * ===========================================================================
+ * The ASM2464PD has multiple DMA engines for different purposes:
  *
+ *   1. USB DMA (0x9xxx registers):
+ *      - Transfers descriptors from ROM to USB buffer
+ *      - Triggered via 0x9092 write
+ *      - Source address set in 0x905B/0x905C
+ *      - Length set in 0x9004
+ *
+ *   2. PCIe/XDATA DMA (0xB296 register):
+ *      - Transfers data between XDATA and USB buffer
+ *      - Used for E4/E5 vendor commands
+ *      - Triggered via 0xB296 write (value 0x08)
+ *      - Source address in 0x910F-0x9111
+ *
+ *   3. SCSI/Bulk DMA (0xCExx registers):
+ *      - Transfers bulk data for Mass Storage
+ *      - State machine controlled via 0xCE89
+ *      - Parameters in 0xCE40-0xCE6F
+ *
+ *   4. Flash DMA (0xC8Ax registers):
+ *      - Transfers between SPI flash and XDATA buffer
+ *      - Buffer at 0x7000-0x7FFF
+ *
+ * ===========================================================================
+ * SCSI DMA STATE MACHINE (0xCE89)
+ * ===========================================================================
+ * The SCSI DMA uses a state machine controlled by 0xCE89 bits:
+ *
+ *   Bit 0 (USB_DMA_STATE_READY):
+ *     - SET when DMA engine ready for next transfer
+ *     - Firmware polls at 0x348C waiting for this
+ *     - CLEAR while DMA in progress
+ *
+ *   Bit 1 (USB_DMA_STATE_SUCCESS):
+ *     - SET when transfer completed successfully
+ *     - Checked at 0x3493 for enumeration path
+ *     - CLEAR on error or in-progress
+ *
+ *   Bit 2 (USB_DMA_STATE_COMPLETE):
+ *     - SET when all queued transfers complete
+ *     - Controls state 3→4→5 transitions
+ *     - Used for multi-step enumeration
+ *
+ *   State Progression (emulator behavior):
+ *     - Reads 1-2: Return 0x00 (busy)
+ *     - Reads 3-4: Return 0x01 (ready)
+ *     - Reads 5-6: Return 0x03 (ready + success)
+ *     - Reads 7+:  Return 0x07 (complete)
+ *
+ * ===========================================================================
+ * SCSI DMA CONTROL (0xCE00)
+ * ===========================================================================
+ *   Write 0x03 to start DMA transfer (at 0x3531-0x3533)
+ *   Poll until value returns 0x00 (transfer complete)
+ *   Firmware loops at 0x3534-0x3538 waiting for completion
+ *
+ * ===========================================================================
  * DMA ENGINE CORE REGISTERS (0xC8B0-0xC8DF)
+ * ===========================================================================
  *   0xC8B0  DMA_MODE          DMA mode configuration
  *   0xC8B2  DMA_CHAN_AUX      Channel auxiliary config (2 bytes)
  *   0xC8B4-B5 Transfer count (16-bit)
  *   0xC8B6  DMA_CHAN_CTRL2    Channel control 2
  *                             Bit 0: Start/busy
- *                             Bit 1: Direction
+ *                             Bit 1: Direction (0=read, 1=write)
  *                             Bit 2: Enable
- *                             Bit 7: Active
+ *                             Bit 7: Active/in-progress
  *   0xC8B7  DMA_CHAN_STATUS2  Channel status 2
- *   0xC8B8  DMA_TRIGGER       Trigger register (poll bit 0)
+ *   0xC8B8  DMA_TRIGGER       Trigger register:
+ *                             Write 0x01 to start
+ *                             Poll bit 0 until clear (complete)
+ *                             Auto-clears after 5 reads (emulator)
  *   0xC8D4  DMA_CONFIG        Global DMA configuration
  *   0xC8D6  DMA_STATUS        DMA status
  *                             Bit 2: Done flag
  *                             Bit 3: Error flag
+ *                             Default: 0x04 (done)
  *   0xC8D8  DMA_STATUS2       DMA status 2
  *
- * SCSI/MASS STORAGE DMA REGISTERS (0xCE40-0xCE6F)
+ * ===========================================================================
+ * SCSI/MASS STORAGE DMA REGISTERS (0xCE40-0xCE9F)
+ * ===========================================================================
+ *   0xCE00  SCSI_DMA_CTRL     DMA control (write 0x03 to start, poll for 0)
  *   0xCE40  SCSI_DMA_PARAM0   SCSI parameter 0
  *   0xCE41  SCSI_DMA_PARAM1   SCSI parameter 1
  *   0xCE42  SCSI_DMA_PARAM2   SCSI parameter 2
  *   0xCE43  SCSI_DMA_PARAM3   SCSI parameter 3
+ *   0xCE55  SCSI_TAG_VALUE    Transfer slot count for loop iterations
  *   0xCE5C  SCSI_DMA_COMPL    Completion status
  *                             Bit 0: Mode 0 complete
  *                             Bit 1: Mode 0x10 complete
+ *   0xCE5D  SCSI_DEBUG_MASK   Debug enable mask (0xFF = all enabled)
  *   0xCE66  SCSI_DMA_TAG_CNT  Tag count (5-bit, 0-31)
  *   0xCE67  SCSI_DMA_QUEUE    Queue status (4-bit, 0-15)
- *   0xCE6E  SCSI_DMA_CTRL     SCSI DMA control register
+ *   0xCE6C  XFER_STATUS_6C    USB controller ready (bit 7 must be SET)
+ *   0xCE6E  SCSI_DMA_CTRL2    SCSI DMA control register 2
+ *   0xCE86  XFER_STATUS       USB status (bit 4 checked at 0x349D)
+ *   0xCE88  XFER_CTRL         DMA trigger (write resets CE89 state machine)
+ *   0xCE89  USB_DMA_STATE     DMA state machine (see above)
+ *                             Bit 0: Ready, Bit 1: Success, Bit 2: Complete
  *   0xCE96  SCSI_DMA_STATUS   DMA status/completion flags
  *
- * WORK AREA GLOBALS (0x0200-0x07FF)
- *   0x0203  G_DMA_MODE_SELECT    Current DMA mode
+ * ===========================================================================
+ * TRANSFER MODES
+ * ===========================================================================
+ *   DMA_MODE_USB_RX (0x00): USB bulk OUT - host to device
+ *   DMA_MODE_USB_TX (0x01): USB bulk IN - device to host
+ *   DMA_MODE_SCSI_STATUS (0x03): SCSI status transfer
+ *
+ * ===========================================================================
+ * KEY XDATA GLOBALS
+ * ===========================================================================
+ *   0x0203  G_DMA_MODE_SELECT    Current DMA mode (0x00/0x01/0x03)
  *   0x020D  G_DMA_PARAM1         Transfer parameter 1
  *   0x020E  G_DMA_PARAM2         Transfer parameter 2
  *   0x021A-1B G_BUF_BASE         Buffer base address (16-bit)
@@ -56,22 +139,39 @@
  *   0x0564  G_EP_QUEUE_CTRL      Endpoint queue control
  *   0x0565  G_EP_QUEUE_STATUS    Endpoint queue status
  *   0x07E5  G_TRANSFER_ACTIVE    Transfer active flag
+ *   0x0AA0  G_DMA_XFER_STATUS    DMA transfer status/size
  *   0x0AA3-A4 G_STATE_COUNTER    16-bit state counter
  *
- * ADDRESS SPACES
+ * ===========================================================================
+ * BUFFER ADDRESS SPACES
+ * ===========================================================================
  *   0x0000-0x00FF: Endpoint queue descriptors
  *   0x0100-0x01FF: Transfer work areas
  *   0x0400-0x04FF: DMA configuration tables
  *   0x0A00-0x0AFF: SCSI buffer management
+ *   0x7000-0x7FFF: Flash DMA buffer (4KB)
+ *   0x8000-0x8FFF: USB/SCSI data buffer (4KB)
+ *   0xD800-0xDFFF: USB endpoint buffer (2KB)
+ *   0xF000-0xFFFF: NVMe data buffer (4KB)
  *
+ * ===========================================================================
  * TRANSFER SEQUENCE
+ * ===========================================================================
  *   1. Set transfer parameters in work area (G_DMA_MODE_SELECT, etc)
  *   2. Configure channel via dma_config_channel()
  *   3. Set buffer pointers and length
- *   4. Trigger transfer via DMA_TRIGGER (write 0x01)
- *   5. Poll DMA_TRIGGER bit 0 until clear
- *   6. Check DMA_STATUS for errors
- *   7. Clear status via dma_clear_status()
+ *   4. Trigger transfer:
+ *      - USB descriptor: Write 0x01 to 0x9092
+ *      - XDATA transfer: Write 0x08 to 0xB296
+ *      - SCSI bulk: Write 0x03 to 0xCE00
+ *      - Flash: Write 0x01 to 0xC8A9
+ *   5. Poll for completion:
+ *      - USB: Check 0xE712 bits 0,1
+ *      - XDATA: Check 0xB296 bits 1,2
+ *      - SCSI: Poll 0xCE89 or 0xCE00
+ *      - Flash: Poll 0xC8A9 bit 0
+ *   6. Check status register for errors
+ *   7. Clear status via appropriate clear function
  */
 #ifndef _DMA_H_
 #define _DMA_H_

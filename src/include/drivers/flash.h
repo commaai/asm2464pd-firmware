@@ -4,13 +4,59 @@
  * SPI Flash controller for the ASM2464PD USB4/Thunderbolt to NVMe bridge.
  * Provides hardware-accelerated SPI transactions with a 4KB DMA buffer.
  *
- * FLASH MEMORY MAP
- *   0x000000-0x00FFFF  Bank 0 firmware (64KB)
- *   0x010000-0x01FFFF  Bank 1 firmware (64KB)
+ * ===========================================================================
+ * FLASH MEMORY LAYOUT
+ * ===========================================================================
+ * Total flash size: 256KB (0x40000 bytes) typical
+ *
+ *   0x000000-0x007FFF  Bank 0 firmware, shared region (32KB)
+ *   0x008000-0x00FF6A  Bank 0 firmware, bank-specific (32KB - 0x95)
+ *   0x00FF6B-0x017F6A  Bank 1 firmware (32KB at code 0x8000-0xFFFF)
  *   0x020000-0x02FFFF  Configuration data
  *   0x030000+          Reserved/User data
  *
+ * Code Address to File Offset Mapping:
+ *   - 0x0000-0x7FFF: File offset 0x0000-0x7FFF (32KB shared)
+ *   - 0x8000-0xFF6A (Bank 0): File offset 0x8000-0xFFFF
+ *   - 0x8000-0xFF6A (Bank 1): File offset = 0xFF6B + (code_addr - 0x8000)
+ *
+ * ===========================================================================
+ * CODE ROM MIRROR (0xE400-0xE700)
+ * ===========================================================================
+ * XDATA region 0xE400-0xE700 provides read access to code ROM:
+ *
+ *   Formula: code_addr = xdata_addr - 0xDDFC
+ *
+ *   Example mappings:
+ *     XDATA 0xE423 → Code ROM 0x0627 (device descriptor)
+ *     XDATA 0xE437 → Code ROM 0x063B (language ID string)
+ *     XDATA 0xE6xx → Code ROM 0x08xx (additional descriptors)
+ *
+ * This is used for reading USB descriptors stored in code ROM without
+ * needing explicit flash read operations. The hardware provides a
+ * transparent mapping between XDATA reads and code ROM.
+ *
+ * ===========================================================================
+ * SPI FLASH COMMANDS
+ * ===========================================================================
+ *   0x03  Read Data - Sequential read from flash to buffer
+ *   0x02  Page Program - Write up to 256 bytes (must be erased first)
+ *   0x20  Sector Erase (4KB) - Erases 4KB sector to 0xFF
+ *   0xD8  Block Erase (64KB) - Erases 64KB block to 0xFF
+ *   0xC7  Chip Erase - Erases entire chip to 0xFF
+ *   0x06  Write Enable - Required before any write/erase
+ *   0x04  Write Disable - Disables write operations
+ *   0x05  Read Status - Returns status register
+ *   0x9F  Read JEDEC ID - Returns manufacturer/device ID
+ *
+ * Write Behavior:
+ *   - SPI flash can only clear bits (1→0), not set them
+ *   - Programming ANDs new value with existing: flash[addr] &= value
+ *   - Must erase before writing to set bits back to 1
+ *
+ * ===========================================================================
  * REGISTER MAP (0xC89F-0xC8AF)
+ * ===========================================================================
  *   0xC89F  FLASH_CON        Control register (transaction setup)
  *   0xC8A1  FLASH_ADDR_LO    Flash address bits 7:0
  *   0xC8A2  FLASH_ADDR_MD    Flash address bits 15:8
@@ -18,45 +64,84 @@
  *   0xC8A4  FLASH_DATA_LEN_HI  Data length high byte
  *   0xC8A6  FLASH_DIV        SPI clock divisor
  *   0xC8A9  FLASH_CSR        Control/Status register
- *                            Bit 0: Busy (poll until clear)
+ *                            Bit 0: Busy (0=idle, 1=operation in progress)
  *                            Write 0x01 to start transaction
- *   0xC8AA  FLASH_CMD        SPI command byte
+ *   0xC8AA  FLASH_CMD        SPI command byte (see command list above)
  *   0xC8AB  FLASH_ADDR_HI    Flash address bits 23:16
- *   0xC8AC  FLASH_ADDR_LEN   Address length (3 for 24-bit)
- *   0xC8AD  FLASH_MODE       Mode register
- *                            Bit 0: Enable
- *                            Bit 4: DMA mode
- *                            Bit 5: Write enable
- *   0xC8AE  FLASH_BUF_OFFSET Buffer offset in 0x7000 region
+ *   0xC8AC  FLASH_ADDR_MID   Flash address bits 15:8 (alternate)
+ *   0xC8AD  FLASH_ADDR_LOW   Flash address bits 7:0 (alternate)
+ *   0xC8AE  FLASH_DATA       Data register for byte-by-byte access
+ *                            Read: Returns byte at current address, auto-increments
+ *                            Write: Writes byte to flash (during page program)
  *
+ * ===========================================================================
  * FLASH BUFFER (0x7000-0x7FFF)
- *   4KB buffer for data transfer. CPU and flash controller share this region.
- *   Reads: Controller DMA's flash data to buffer, CPU reads buffer
- *   Writes: CPU writes buffer, controller DMA's buffer to flash
+ * ===========================================================================
+ * 4KB buffer shared between CPU and flash controller:
  *
- *   Buffer globals (0x07xx):
- *     0x07B7-0x07B8  Operation status
- *     0x07BD         Operation counter
- *     0x07C1-0x07C7  State/config
- *     0x07DF         Completion flag
- *     0x07E3         Error code
+ *   For reads:
+ *     1. Set flash address and length
+ *     2. Issue read command
+ *     3. Controller DMAs flash data to buffer
+ *     4. CPU reads from XDATA 0x7000+
  *
+ *   For writes:
+ *     1. CPU writes data to XDATA 0x7000+
+ *     2. Set flash address and length
+ *     3. Issue write enable (0x06)
+ *     4. Issue page program (0x02)
+ *     5. Controller DMAs buffer to flash
+ *
+ *   Buffer control registers (0x7041, 0x78AF-0x78B2):
+ *     0x7041  FLASH_BUF_CTRL   Buffer control (bit 6 = enable)
+ *     0x78AF-0x78B2           Buffer configuration
+ *
+ * ===========================================================================
  * TRANSACTION SEQUENCE
- *   1. Clear FLASH_CON to 0x00
- *   2. Configure FLASH_MODE
- *   3. Write address to ADDR_LO, ADDR_MD, ADDR_HI
- *   4. Write command to FLASH_CMD
- *   5. Write length to FLASH_DATA_LEN
- *   6. Write 0x01 to FLASH_CSR to start
- *   7. Poll FLASH_CSR bit 0 until clear
- *   8. Clear FLASH_MODE bits
+ * ===========================================================================
+ *   Read Operation:
+ *     1. Clear FLASH_CON to 0x00
+ *     2. Configure FLASH_MODE (enable DMA if using buffer)
+ *     3. Write address to ADDR_HI, ADDR_MID, ADDR_LO
+ *     4. Write 0x03 to FLASH_CMD
+ *     5. Write length to FLASH_DATA_LEN
+ *     6. Write 0x01 to FLASH_CSR to start
+ *     7. Poll FLASH_CSR bit 0 until clear (0x00 = complete)
+ *     8. Read data from buffer (0x7000+) or FLASH_DATA
  *
- * SPI COMMANDS
- *   0x03  Read data
- *   0x02  Page Program (max 256 bytes)
- *   0x20  Sector Erase (4KB)
- *   0x06  Write Enable
- *   0x05  Read Status
+ *   Write Operation:
+ *     1. Issue Write Enable (command 0x06)
+ *     2. Wait for completion
+ *     3. Write data to buffer or FLASH_DATA
+ *     4. Set flash address
+ *     5. Write 0x02 to FLASH_CMD (Page Program)
+ *     6. Write length to FLASH_DATA_LEN
+ *     7. Write 0x01 to FLASH_CSR to start
+ *     8. Poll FLASH_CSR bit 0 until clear
+ *
+ *   Erase Operation:
+ *     1. Issue Write Enable (command 0x06)
+ *     2. Set flash address (sector/block aligned)
+ *     3. Write erase command (0x20 sector, 0xD8 block, 0xC7 chip)
+ *     4. Write 0x01 to FLASH_CSR to start
+ *     5. Poll FLASH_CSR bit 0 until clear
+ *
+ * ===========================================================================
+ * KEY XDATA GLOBALS
+ * ===========================================================================
+ *   0x07B7-0x07B8  G_FLASH_OP_STATUS   Operation status
+ *   0x07BD         G_FLASH_OP_COUNT    Operation counter
+ *   0x07C1-0x07C7  G_FLASH_STATE       State/config variables
+ *   0x07DF         G_FLASH_COMPLETE    Completion flag
+ *   0x07E3         G_FLASH_ERROR       Error code
+ *
+ * ===========================================================================
+ * EMULATOR BEHAVIOR
+ * ===========================================================================
+ *   - Flash CSR (0xC8A9) always returns 0x00 (operations complete instantly)
+ *   - Write operations AND new value with existing (can only clear bits)
+ *   - Erase operations set bytes to 0xFF
+ *   - Code ROM mirror provides read access via 0xE4xx-0xE6xx XDATA
  */
 #ifndef _FLASH_H_
 #define _FLASH_H_

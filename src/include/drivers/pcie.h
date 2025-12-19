@@ -3,18 +3,88 @@
  *
  * PCIe interface controller for the ASM2464PD USB4/Thunderbolt to NVMe bridge.
  * Handles PCIe Transaction Layer Packet (TLP) operations for communicating
- * with downstream NVMe devices.
+ * with downstream NVMe devices, and provides DMA engine for USB vendor commands.
  *
+ * ===========================================================================
  * DATA FLOW
+ * ===========================================================================
  *   USB Host <-> USB Controller <-> DMA Engine <-> PCIe Controller <-> NVMe SSD
+ *                                       |
+ *                                       v
+ *                                   XDATA Memory
+ *                                  (0x0000-0xFFFF)
  *
+ * ===========================================================================
  * PCIe CAPABILITIES
+ * ===========================================================================
  *   PCIe Gen3/Gen4 support (up to 16 GT/s per lane)
  *   x4 lane configuration
  *   Memory-mapped NVMe registers
  *   Hardware TLP generation and completion handling
+ *   DMA engine for USB-to-XDATA transfers
  *
+ * ===========================================================================
+ * DMA FOR USB VENDOR COMMANDS (E4/E5)
+ * ===========================================================================
+ * The PCIe DMA engine handles USB vendor command data transfer:
+ *
+ * E4 READ COMMAND:
+ *   1. USB controller receives CDB: [E4, size, addr_hi, addr_mid, addr_lo, 0]
+ *   2. Firmware reads CDB from USB registers (0x910D-0x9112)
+ *   3. Firmware configures DMA source: address format 0x50XXXX (XDATA space)
+ *   4. Firmware writes 0x08 to PCIE_STATUS (0xB296) to trigger DMA
+ *   5. Hardware DMAs data from XDATA[addr] to USB buffer (0x8000)
+ *   6. Hardware sets bits 1,2 in PCIE_STATUS when complete
+ *   7. Host reads response from USB bulk endpoint
+ *
+ * E5 WRITE COMMAND:
+ *   1. USB controller receives CDB: [E5, value, addr_hi, addr_mid, addr_lo, 0]
+ *   2. Firmware reads CDB value from 0xC47A (preserved across firmware clear)
+ *   3. Firmware reads target address from 0xCEB2/0xCEB3
+ *   4. Firmware writes 0x08 to PCIE_STATUS (0xB296) to trigger
+ *   5. Hardware writes single byte to XDATA[addr]
+ *   6. No data phase needed - completes immediately
+ *
+ * DMA Trigger Values:
+ *   0x08: E4/E5 vendor command DMA (XDATA read/write)
+ *   0x0F: Standard PCIe TLP transaction
+ *
+ * ===========================================================================
+ * PCIe DMA STATUS REGISTER (0xB296)
+ * ===========================================================================
+ * This register serves dual purposes:
+ *
+ *   As Status (Read):
+ *     Bit 0: Error flag - transaction failed
+ *     Bit 1: Complete flag - checked at 0xBFE6 (ANL #0x02)
+ *     Bit 2: Done flag - checked at 0xE3A7 (JNB ACC.2)
+ *     Bits 1+2: Both set after successful completion
+ *
+ *   As Trigger (Write):
+ *     0x08: Trigger USB vendor command DMA (E4/E5)
+ *     0x0F: Trigger standard PCIe transaction
+ *
+ *   Firmware clears status by writing individual bits (0x01, 0x02, 0x04)
+ *   before triggering new transactions.
+ *
+ * ===========================================================================
+ * PCIe LINK STATE (0xB480)
+ * ===========================================================================
+ * Critical for USB enumeration path selection:
+ *
+ *   Bit 0: PCIe link active
+ *     - SET: PCIe link is up, enables descriptor DMA path at 0x185C
+ *     - CLEAR: Causes firmware at 0x20DA to clear G_PCIE_ENUM_DONE (0x0AF7)
+ *
+ *   Bit 1: PCIe tunnel ready
+ *     - SET when USB4/Thunderbolt tunnel established
+ *
+ *   When 0xB480 bit 0 is CLEAR, firmware takes alternate path that doesn't
+ *   use CEB2/CEB3 address registers. Must be SET for proper descriptor DMA.
+ *
+ * ===========================================================================
  * TLP FORMAT/TYPE CODES
+ * ===========================================================================
  *   Config Space:
  *     0x04  Type 0 Configuration Read (local device)
  *     0x05  Type 1 Configuration Read (downstream device)
@@ -24,7 +94,11 @@
  *     0x00  Memory Read Request (32-bit address)
  *     0x40  Memory Write Request (32-bit address)
  *
- * REGISTER MAP (0xB200-0xB2FF)
+ * ===========================================================================
+ * REGISTER MAP (0xB200-0xB4FF)
+ * ===========================================================================
+ *
+ * TLP Registers (0xB200-0xB25F):
  *   0xB210  PCIE_FMT_TYPE    TLP format/type byte
  *   0xB213  PCIE_TLP_CTRL    TLP control (0x01 to enable)
  *   0xB216  PCIE_TLP_LENGTH  TLP length/mode (usually 0x20)
@@ -37,13 +111,25 @@
  *   0xB22A  PCIE_LINK_STATUS Link status (speed in bits 7:5)
  *   0xB22B  PCIE_CPL_STATUS  Completion status code
  *   0xB22C  PCIE_CPL_DATA    Completion data
+ *   0xB238  PCIE_BUSY        Transaction busy flag (poll for 0)
  *   0xB254  PCIE_TRIGGER     Transaction trigger (write 0x0F)
- *   0xB296  PCIE_STATUS      Status register
- *                            Bit 0: Error flag
- *                            Bit 1: Complete flag
- *                            Bit 2: Busy flag
  *
+ * DMA Status (0xB290-0xB2FF):
+ *   0xB296  PCIE_STATUS      Status/Trigger register:
+ *                              Read: Bit 0=error, Bit 1=complete, Bit 2=done
+ *                              Write 0x08: Trigger E4/E5 DMA
+ *                              Write 0x0F: Trigger PCIe TLP
+ *
+ * Link Control (0xB400-0xB4FF):
+ *   0xB401  PCIE_TUNNEL_EN   Tunnel enable (0x01 = enabled)
+ *   0xB432  PCIE_LINK_CFG    Link configuration (0x07 = active)
+ *   0xB480  PCIE_LINK_STATE  Link state:
+ *                              Bit 0: Link active (must be SET)
+ *                              Bit 1: Tunnel ready
+ *
+ * ===========================================================================
  * TRANSACTION SEQUENCE
+ * ===========================================================================
  *   1. Setup TLP:
  *      - Write format/type to PCIE_FMT_TYPE
  *      - Write 0x01 to PCIE_TLP_CTRL (enable)
@@ -61,14 +147,49 @@
  *      - Check PCIE_STATUS bit 0 for errors
  *      - For reads: read data from PCIE_CPL_DATA
  *
- * GLOBAL VARIABLES
- *   0x05AE  PCIE_DIRECTION   Bit 0 = 0 for read, 1 for write
- *   0x05AF  PCIE_ADDR_0..3   Target PCIe address (4 bytes)
- *   0x05A6  PCIE_TXN_COUNT   Transaction counter
- *   0x06E6  STATE_FLAG       Error flag
- *   0x06EA  ERROR_CODE       Error code (0xFE = PCIe error)
+ * ===========================================================================
+ * KEY XDATA GLOBALS
+ * ===========================================================================
+ *   0x053F  G_PCIE_LINK_PORT0    PCIe link state port 0 (must be non-zero)
+ *   0x0553  G_PCIE_LINK_PORT1    PCIe link state port 1
+ *   0x05A3  G_CMD_SLOT_INDEX     Current command slot (0-9)
+ *   0x05A6  PCIE_TXN_COUNT       Transaction counter (16-bit)
+ *   0x05AE  PCIE_DIRECTION       Bit 0 = 0 for read, 1 for write
+ *   0x05AF  PCIE_ADDR_CACHE      Target PCIe address (4 bytes)
+ *   0x05B1  G_CMD_TABLE_BASE     Command table (state != 4 for DMA path)
+ *   0x06E6  STATE_FLAG           Error flag
+ *   0x06EA  ERROR_CODE           Error code (0xFE = PCIe error)
+ *   0x0AF7  G_PCIE_ENUM_DONE     PCIe enumeration complete (must be 1)
  *
+ * ===========================================================================
+ * E4/E5 ADDRESS FORMAT
+ * ===========================================================================
+ * The USB host sends addresses in a specific format:
+ *
+ *   CDB byte 2: Address bits 23:16 (always 0x50 for XDATA access)
+ *   CDB byte 3: Address bits 15:8
+ *   CDB byte 4: Address bits 7:0
+ *
+ *   Full address: 0x50XXXX where XXXX is the XDATA address
+ *
+ *   Example: To read XDATA[0x1234]:
+ *     CDB = [E4, size, 0x50, 0x12, 0x34, 0x00]
+ *     DMA copies XDATA[0x1234] to USB buffer at 0x8000
+ *
+ * ===========================================================================
+ * ISR/HANDLER CODE PATHS
+ * ===========================================================================
+ *   0x35B7: PCIe vendor handler entry (pcie_vendor_handler_35b7)
+ *   0x35DA: E4 command check
+ *   0x35DF: Call E4 read handler at 0x54BB
+ *   0x35E2: Setup PCIe registers
+ *   0x35F9: Call PCIe transfer at 0x3C1E
+ *   0x3601: Check DMA status at G_DMA_XFER_STATUS (0x0AA0)
+ *   0x36E4: Vendor handler exit
+ *
+ * ===========================================================================
  * DISPATCH TABLE (0x0570-0x0650)
+ * ===========================================================================
  *   Maps event indices to handlers. Each entry is 5 bytes.
  *   Entries marked "Bank 1" use DPX=1 for extended addressing.
  */

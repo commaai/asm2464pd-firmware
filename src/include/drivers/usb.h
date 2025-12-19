@@ -5,46 +5,184 @@
  * bridge. Implements USB Mass Storage Class using Bulk-Only Transport (BOT)
  * protocol to expose NVMe drives as SCSI devices to the host.
  *
+ * ===========================================================================
  * HARDWARE CAPABILITIES
+ * ===========================================================================
  *   USB 3.2 Gen2x2 (20 Gbps) SuperSpeed+
  *   USB4/Thunderbolt 3/4 tunneling
  *   8 configurable endpoints (EP0-EP7)
- *   Hardware DMA for bulk transfers
+ *   Hardware DMA for bulk and control transfers
  *
- * DATA FLOW
- *   USB Host <-> USB Controller <-> Endpoint Buffers <-> DMA Engine
- *                     |                    |
- *                     v                    v
- *             Status Registers      SCSI/NVMe Translation
+ * ===========================================================================
+ * USB STATE MACHINE (IDATA[0x6A])
+ * ===========================================================================
+ * The USB controller maintains a state machine for enumeration:
  *
- * ENDPOINT ARCHITECTURE
- *   EP0:     Control endpoint (enumeration, class requests)
- *   EP1-EP2: Bulk IN/OUT for Mass Storage data
- *   EP3-EP7: Reserved for additional interfaces
+ *   State 0: DISCONNECTED  - No USB connection detected
+ *   State 1: ATTACHED      - Cable connected, VBUS present
+ *   State 2: POWERED       - Bus powered, awaiting reset
+ *   State 3: DEFAULT       - Default address (0) assigned after reset
+ *   State 4: ADDRESS       - Unique device address assigned (SET_ADDRESS)
+ *   State 5: CONFIGURED    - Configuration selected, ready for data transfer
  *
+ * State Transitions via MMIO:
+ *   - 0x9000 bit 7: Cable connected detection
+ *   - 0x9000 bit 0: USB activity (SET enables USB handler at ISR 0x0E68)
+ *   - 0x9101 bits: Control different ISR code paths
+ *   - 0xCE89 bits: DMA state machine for enumeration progress
+ *   - 0x92C2 bit 6: Power state (CLEAR for ISR, SET for main loop)
+ *
+ * ===========================================================================
+ * CONTROL TRANSFER TWO-PHASE PROTOCOL
+ * ===========================================================================
+ * USB control transfers use a two-phase hardware protocol:
+ *
+ *   Phase 1 - SETUP (0x9091 bit 0):
+ *     - Hardware receives 8-byte setup packet from host
+ *     - Writes setup packet to 0x9E00-0x9E07
+ *     - Sets 0x9091 bit 0 to signal firmware
+ *     - ISR at 0xCDE7 calls 0xA5A6 (setup packet handler)
+ *     - Firmware parses bmRequestType, bRequest, wValue, wIndex, wLength
+ *     - For GET_DESCRIPTOR: sets 0x07E1 = 5, loops writing 0x01 to 0x9091
+ *     - Hardware clears bit 0 when ready for data phase
+ *
+ *   Phase 2 - DATA (0x9091 bit 1):
+ *     - Hardware sets bit 1 to indicate data phase ready
+ *     - ISR at 0xCDE7 calls 0xD088 (DMA response handler)
+ *     - Checks 0x07E1 == 5 for GET_DESCRIPTOR
+ *     - Triggers descriptor DMA from ROM to USB buffer
+ *
+ *   Setup Packet Format (0x9E00-0x9E07):
+ *     Byte 0: bmRequestType (direction[7], type[6:5], recipient[4:0])
+ *     Byte 1: bRequest (request code: 0x06 = GET_DESCRIPTOR)
+ *     Byte 2-3: wValue (descriptor type[15:8], index[7:0])
+ *     Byte 4-5: wIndex (language ID for strings)
+ *     Byte 6-7: wLength (max bytes to return)
+ *
+ * ===========================================================================
+ * DESCRIPTOR DMA ARCHITECTURE
+ * ===========================================================================
+ * USB descriptors are stored in code ROM and transferred via hardware DMA:
+ *
+ *   1. Firmware reads setup packet from 0x9E00-0x9E07
+ *   2. Determines descriptor type from wValue high byte
+ *   3. Looks up descriptor address in ROM (table at 0x0864)
+ *   4. Writes source address to 0x905B/0x905C (high/low)
+ *   5. Writes length to 0x9004 (EP0 transfer length)
+ *   6. Writes 0x01 to 0x9092 (USB DMA trigger)
+ *   7. Hardware DMAs descriptor from ROM to USB TX buffer
+ *   8. Sets 0xE712 bits 0,1 when transfer complete
+ *
+ *   Descriptor ROM Locations:
+ *     0x0627: Device descriptor (18 bytes)
+ *     0x063B: Language ID string (4 bytes)
+ *     0x58CF: USB3 Configuration descriptor (121 bytes with alt settings)
+ *     0x5948: USB2 Configuration descriptor (32 bytes, 512-byte packets)
+ *     0x593x: String descriptors
+ *
+ *   NOTE: The emulator does NOT search ROM for descriptors. The FIRMWARE
+ *   handles all descriptor lookup and DMA configuration. The hardware just
+ *   moves bytes from the address firmware specifies.
+ *
+ * ===========================================================================
+ * VENDOR COMMAND FLOW (E4 Read / E5 Write)
+ * ===========================================================================
+ * Vendor commands allow host software to read/write XDATA directly:
+ *
+ *   E4 (XDATA Read):
+ *     - Host sends CDB: [E4, size, addr_hi, addr_mid, addr_lo, 0]
+ *     - Firmware reads CDB from 0x910D-0x9112
+ *     - Configures PCIe DMA source address (0x50XXXX format)
+ *     - Triggers DMA via 0xB296 write (value 0x08)
+ *     - Hardware copies XDATA[addr] to USB buffer at 0x8000
+ *     - Host reads response from bulk endpoint
+ *
+ *   E5 (XDATA Write):
+ *     - Host sends CDB: [E5, value, addr_hi, addr_mid, addr_lo, 0]
+ *     - Firmware reads CDB and value from MMIO
+ *     - Writes single byte to XDATA[addr]
+ *     - No data phase needed
+ *
+ *   CDB Register Layout (0x910D-0x9112):
+ *     0x910D: Command type (0xE4 or 0xE5)
+ *     0x910E: Size (E4) or Value (E5)
+ *     0x910F: Address bits 23:16 (always 0x50 for XDATA)
+ *     0x9110: Address bits 15:8
+ *     0x9111: Address bits 7:0
+ *     0x9112: Reserved
+ *
+ * ===========================================================================
+ * USB DMA STATE MACHINE (0xCE89)
+ * ===========================================================================
+ * The DMA state register controls enumeration and transfer progress:
+ *
+ *   Bit 0 (USB_DMA_STATE_READY):
+ *     - Firmware polls at 0x348C waiting for this bit
+ *     - SET to exit enumeration wait loop
+ *
+ *   Bit 1 (USB_DMA_STATE_SUCCESS):
+ *     - Checked at 0x3493 for successful enumeration path
+ *     - SET indicates enumeration succeeded
+ *
+ *   Bit 2 (USB_DMA_STATE_COMPLETE):
+ *     - Controls state 3→4→5 transitions
+ *     - SET when DMA transfer complete
+ *
+ *   Read callback increments internal counter and returns appropriate
+ *   bits based on enumeration progress.
+ *
+ * ===========================================================================
  * REGISTER MAP (0x9000-0x91FF)
+ * ===========================================================================
  *   0x9000  USB_STATUS       Main status (bit 0: activity, bit 7: connected)
  *   0x9001  USB_CONTROL      Control register
- *   0x9002  USB_CONFIG       Configuration
+ *   0x9002  USB_CONFIG       Configuration (bit 1 must be CLEAR for 0x9091 check)
  *   0x9003  USB_EP0_STATUS   EP0 status
- *   0x9004  USB_EP0_LEN_LO   EP0 transfer length low
+ *   0x9004  USB_EP0_LEN_LO   EP0 transfer length low (descriptor DMA length)
  *   0x9005  USB_EP0_LEN_HI   EP0 transfer length high
- *   0x9006  USB_EP0_CONFIG   EP0 mode (bit 0: USB mode)
+ *   0x9006  USB_EP0_CONFIG   EP0 mode (bit 0: enable, bit 7: ready)
  *   0x9007  USB_SCSI_LEN_LO  SCSI buffer length low
  *   0x9008  USB_SCSI_LEN_HI  SCSI buffer length high
- *   0x9091  INT_FLAGS_EX0    Extended interrupt flags
+ *   0x905B  USB_EP_BUF_HI    DMA source address high (descriptor ROM addr)
+ *   0x905C  USB_EP_BUF_LO    DMA source address low
+ *   0x9091  USB_CTRL_PHASE   Control transfer phase (bit 0: setup, bit 1: data)
+ *   0x9092  USB_DMA_TRIGGER  Write 0x01 to start descriptor DMA
  *   0x9093  USB_EP_CFG1      Endpoint config 1
  *   0x9094  USB_EP_CFG2      Endpoint config 2
- *   0x9096  USB_EP_BASE      Indexed by endpoint number
- *   0x9101  USB_PERIPH       Peripheral status (bit 6: busy)
+ *   0x9096  USB_EP_READY     Endpoint ready flags
+ *   0x9100  USB_LINK_STATUS  USB speed (0=FS, 1=HS, 2=SS, 3=SS+)
+ *   0x9101  USB_PERIPH       Peripheral status/interrupt routing:
+ *                              Bit 0: EP0 control active
+ *                              Bit 1: Descriptor request (triggers 0x033B)
+ *                              Bit 3: Bulk transfer request
+ *                              Bit 5: Vendor command path (0x5333)
+ *                              Bit 6: USB init / suspended
+ *   0x910D-0x9112            CDB registers for vendor commands
  *   0x9118  USB_EP_STATUS    Endpoint status bitmap (8 endpoints)
  *   0x911B  USB_BUFFER_ALT   Buffer alternate
+ *   0x9E00-0x9E07            USB setup packet buffer (8 bytes)
  *
- * BUFFER CONTROL (0xD800-0xD8FF)
- *   0xD804-0xD807  Transfer status copy area
- *   0xD80C         Buffer transfer start
+ * ===========================================================================
+ * DMA/TRANSFER STATUS REGISTERS
+ * ===========================================================================
+ *   0xCE00  SCSI_DMA_CTRL    DMA control (write 0x03 to start, poll for 0)
+ *   0xCE55  SCSI_TAG_VALUE   Transfer slot count for loop iterations
+ *   0xCE86  XFER_STATUS      USB status (bit 4 checked at 0x349D)
+ *   0xCE88  XFER_CTRL        DMA trigger (write resets CE89 state)
+ *   0xCE89  USB_DMA_STATE    USB/DMA status (bits control state transitions)
+ *   0xCE6C  XFER_STATUS_6C   USB controller ready (bit 7 must be SET)
+ *   0xE712  USB_EP0_COMPLETE EP0 transfer complete (bits 0,1 = done)
  *
- * ENDPOINT DISPATCH
+ * ===========================================================================
+ * BUFFER REGIONS
+ * ===========================================================================
+ *   0x8000-0x8FFF  USB_SCSI_BUF    USB/SCSI data buffer (4KB)
+ *   0x9E00-0x9FFF  USB_CTRL_BUF    USB control transfer buffer (512 bytes)
+ *   0xD800-0xDFFF  USB_EP_BUF      USB endpoint data buffer (2KB)
+ *
+ * ===========================================================================
+ * ENDPOINT DISPATCH (ISR at 0x0E96-0x0EFB)
+ * ===========================================================================
  *   Dispatch table at CODE 0x5A6A (256 bytes) maps status byte to EP index
  *   Bit mask table at 0x5B6A (8 bytes) maps EP index to clear mask
  *   Offset table at 0x5B72 (8 bytes) maps EP index to register offset
@@ -60,27 +198,30 @@
  *   8. Clear endpoint status via bit mask write
  *   9. Loop up to 32 times
  *
- * WORK AREA GLOBALS (0x0000-0x0BFF)
- *   0x000A  EP_CHECK_FLAG         Endpoint processing check
- *   0x014E  Circular buffer index (5-bit)
- *   0x0218  Buffer address low
- *   0x0219  Buffer address high
- *   0x0464  SYS_STATUS_PRIMARY    Primary status for indexing
- *   0x0465  SYS_STATUS_SECONDARY  Secondary status
- *   0x054E  EP_CONFIG_ARRAY       Endpoint config array base
- *   0x0564  EP_QUEUE_CTRL         Endpoint queue control
- *   0x0565  EP_QUEUE_STATUS       Endpoint queue status
- *   0x05A6  PCIE_TXN_COUNT_LO     PCIe transaction count low
- *   0x05A7  PCIE_TXN_COUNT_HI     PCIe transaction count high
+ * ===========================================================================
+ * KEY XDATA GLOBALS
+ * ===========================================================================
+ *   0x05A3  G_CMD_SLOT_INDEX      Current command slot (0-9)
+ *   0x05B1  G_CMD_TABLE_BASE      Command table (10 entries × 34 bytes)
  *   0x06E6  STATE_FLAG            Processing complete/error flag
- *   0x07E4  SYS_FLAGS_BASE        System flags base (must be 1)
- *   0x0A7B  EP_DISPATCH_VAL1      First endpoint index
- *   0x0A7C  EP_DISPATCH_VAL2      Second endpoint index
- *   0x0AF2  TRANSFER_FLAG         Transfer active flag
- *   0x0AF5  EP_DISPATCH_OFFSET    Combined dispatch offset
- *   0x0AFA  TRANSFER_PARAM_LO     Transfer parameters low
- *   0x0AFB  TRANSFER_PARAM_HI     Transfer parameters high
- *   0x0B2E  USB_TRANSFER_FLAG     USB transfer in progress
+ *   0x07E1  G_USB_REQUEST_TYPE    USB request type for descriptor handler
+ *   0x07EC  G_USB_CMD_CONFIG      USB command configuration
+ *   0x0AA0  G_DMA_XFER_STATUS     DMA transfer status/size
+ *   0x0AD6  G_USB_SPEED_MODE      USB speed mode (set during enumeration)
+ *   0x0AF7  G_PCIE_ENUM_DONE      PCIe enumeration complete flag
+ *
+ * ===========================================================================
+ * ISR CODE PATHS
+ * ===========================================================================
+ *   0x0E68: Main USB ISR entry - checks 0x9000 bit 0 for USB activity
+ *   0x0E6E: USB handling path (bit 0 SET)
+ *   0x0E71: Uses 0x9118 as index into table at 0x5AC9
+ *   0x0EF4: Vendor handler path when 0x9101 bit 5 SET
+ *   0x5333: Vendor command processor
+ *   0x35B7: PCIe vendor handler for E4/E5 commands
+ *   0xA5A6: Setup packet handler (phase 1)
+ *   0xD088: DMA response handler (phase 2)
+ *   0xCDE7: Main loop checks 0x9091 for control transfer phases
  */
 #ifndef _USB_H_
 #define _USB_H_

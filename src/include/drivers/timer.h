@@ -5,47 +5,105 @@
  * USB4/Thunderbolt to NVMe bridge. Provides millisecond-resolution delays
  * and periodic polling for system events.
  *
- * HARDWARE CONFIGURATION
- *   - 4 independent hardware timers (Timer0-Timer3)
- *   - Each timer has: Divider, Control/Status, Threshold registers
- *   - Timer0: Main system tick timer, drives periodic ISR
- *   - Timer1: Protocol timeouts
- *   - Timer2: USB timing
- *   - Timer3: Idle timeout management
- *   - Clock source: 114MHz system clock
+ * ===========================================================================
+ * HARDWARE ARCHITECTURE
+ * ===========================================================================
+ * The ASM2464PD has 4 independent hardware timers:
  *
- * REGISTER MAP (0xCC10-0xCC24)
+ *   Timer0 (0xCC10-0xCC13): Main system tick timer, drives periodic ISR
+ *   Timer1 (0xCC16-0xCC19): Protocol timeouts
+ *   Timer2 (0xCC1C-0xCC1F): USB timing
+ *   Timer3 (0xCC22-0xCC25): Idle timeout management
+ *
+ * Clock source: 114MHz system clock
+ *
+ * ===========================================================================
+ * TIMER CSR REGISTER BITS
+ * ===========================================================================
+ * Each timer has a CSR (Control/Status Register) with these bits:
+ *
+ *   Bit 0: Enable - Start/stop timer counting
+ *   Bit 1: Done/Complete - Timer reached threshold
+ *          - SET by hardware when timer expires
+ *          - Firmware polls this bit waiting for completion
+ *          - Emulator auto-sets after 2+ reads to prevent infinite loops
+ *   Bit 2: Clear - Write 1 to clear Done bit and reset timer
+ *          - Resets poll count in emulator
+ *   Bits 3-7: Reserved
+ *
+ * ===========================================================================
+ * POLLING PATTERN
+ * ===========================================================================
+ * Firmware uses this polling pattern for timer/DMA operations:
+ *
+ *   1. Configure timer (write DIV, threshold, enable)
+ *   2. Poll timer CSR waiting for Done bit (bit 1) to be SET
+ *   3. When Done bit is SET, operation is complete
+ *   4. Write timer CSR with Clear bit (bit 2) to reset for next use
+ *
+ * Emulator behavior (prevents infinite loops):
+ *   - First 1-2 reads: Return current value (bit 1 CLEAR)
+ *   - After 2+ reads: Auto-set bit 1 (Done/Complete)
+ *   - Write with bit 2 SET: Clears bit 1, resets poll count
+ *
+ * ===========================================================================
+ * REGISTER MAP (0xCC10-0xCC8F)
+ * ===========================================================================
+ *
+ * Timer 0 (System tick):
  *   0xCC10  Timer0 DIV       Clock divider (bits 0-2: prescaler)
- *   0xCC11  Timer0 CSR       Control/Status (bit 1: done flag)
+ *   0xCC11  Timer0 CSR       Control/Status (see CSR bits above)
  *   0xCC12-13 Timer0 Threshold (16-bit count value, little-endian)
+ *
+ * Timer 1 (Protocol timeout):
  *   0xCC16  Timer1 DIV       Clock divider
  *   0xCC17  Timer1 CSR       Control/Status
  *   0xCC18-19 Timer1 Threshold (16-bit)
+ *
+ * Timer 2 (USB timing):
  *   0xCC1C  Timer2 DIV       Clock divider
  *   0xCC1D  Timer2 CSR       Control/Status
  *   0xCC1E-1F Timer2 Threshold (16-bit)
+ *
+ * Timer 3 (Idle timeout):
  *   0xCC22  Timer3 DIV       Clock divider
  *   0xCC23  Timer3 CSR       Control/Status
  *   0xCC24  Timer3 Idle Timeout
- *   0xCC33  Timer Status/Control (bit 2: event flag)
  *
- * TIMER CSR REGISTER BITS
- *   Bit 0: Enable - Start/stop timer counting
- *   Bit 1: Done - Timer reached threshold (write 0x02 to clear)
- *   Bit 2: Interrupt enable
- *   Bits 3-7: Reserved
+ * CPU/System Control:
+ *   0xCC32  CPU_SYS_STATE    System state (bit 0 checked during init)
+ *   0xCC33  CPU_EXEC_STAT    CPU execution status (default 0x04)
+ *                            Bit 2: Event flag (checked in ISR)
+ *   0xCC37  CPU_CTRL         CPU control register
+ *   0xCC3B-3F CPU control registers 2-5
  *
+ * Timer/DMA Combined:
+ *   0xCC81  TIMER_DMA_CTRL   Timer/DMA control
+ *   0xCC82  TIMER_DMA_ADDR_LO Address low byte
+ *   0xCC83  TIMER_DMA_ADDR_HI Address high byte
+ *   0xCC89  TIMER_DMA_STATUS Timer/DMA status
+ *                            Bit 1: Complete (auto-sets after 2+ reads)
+ *
+ * ===========================================================================
  * TIMER DIV REGISTER BITS
+ * ===========================================================================
  *   Bits 0-2: Prescaler select (divides clock by 2^N)
+ *             0 = divide by 1, 1 = divide by 2, 2 = divide by 4, etc.
  *   Bit 3: Timer enable/disable bit
  *   Bits 4-7: Reserved
  *
+ * ===========================================================================
  * TYPICAL TIMER0 CONFIGURATION (from 0xAD72)
+ * ===========================================================================
  *   - Prescaler: 3 (divide by 8)
  *   - Threshold: 0x0028 (40 counts)
  *   - Results in ~1ms tick at 114MHz / 8 / 40 ≈ 356kHz → ~2.8us per tick
  *
+ * ===========================================================================
  * TIMER0 ISR FLOW (0x4486)
+ * ===========================================================================
+ * The Timer0 ISR handles various system events:
+ *
  *   1. Save context (ACC, B, DPTR, PSW, R0-R7)
  *   2. Check 0xC806 bit 0 → timer_idle_timeout_handler (0xB4BA)
  *   3. Check 0xCC33 bit 2 → clear flag, dispatch to 0xCD10
@@ -58,14 +116,39 @@
  *   7. Check 0xC806 bit 4 → timer_system_event_stub (0xEF4E)
  *   8. Restore context and RETI
  *
- * INTERRUPT SOURCES
+ * ===========================================================================
+ * INTERRUPT STATUS REGISTERS
+ * ===========================================================================
  *   0xC806  INT_SYSTEM     System interrupt status
- *   0xCC33  CPU_EXEC_STAT  CPU execution status
+ *                          Bit 0: Idle timeout pending
+ *                          Bit 4: System event pending
  *   0xC80A  INT_PCIE_NVME  PCIe/NVMe interrupt status
- *   0xEC06  NVME_EVENT_ST  NVMe event status
+ *                          Bit 4: PCIe link event
+ *                          Bit 5: PCIe async event
+ *                          Bit 6: UART debug pending
+ *                          Bits 0-3: PCIe error flags
+ *   0xCC33  CPU_EXEC_STAT  CPU execution status
+ *                          Bit 2: Timer event flag
+ *   0xEC06  NVME_EVENT_ST  NVMe event status (bit 0)
  *   0xEC04  NVME_EVENT_ACK NVMe event acknowledge
  *
+ * ===========================================================================
+ * EMULATOR BEHAVIOR
+ * ===========================================================================
+ * The emulator implements timer behavior to prevent infinite polling loops:
+ *
+ *   Timer CSR (0xCC11/17/1D/23):
+ *     - Tracks poll count per address
+ *     - After 2+ reads, auto-sets bit 1 (Done/Complete)
+ *     - Write with bit 2 (Clear) resets poll count and clears bit 1
+ *
+ *   Timer DMA Status (0xCC89):
+ *     - Same polling behavior as timer CSR
+ *     - Auto-sets bit 1 after 2+ reads
+ *
+ * ===========================================================================
  * EVENT HANDLERS
+ * ===========================================================================
  *   - timer_idle_timeout_handler(): Detect host inactivity
  *   - timer_pcie_link_event(): PCIe link state changes
  *   - timer_nvme_completion(): Poll NVMe completion queues
