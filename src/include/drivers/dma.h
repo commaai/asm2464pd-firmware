@@ -6,41 +6,110 @@
  * without CPU intervention.
  *
  * ===========================================================================
- * ARCHITECTURE
+ * MEMORY ARCHITECTURE
  * ===========================================================================
  *
- *   USB Host <---> USB Buffer <---> DMA Engine <---> NVMe Buffer <---> NVMe SSD
- *                      |                |
- *                      |                v
- *                      |          PCIe Controller
- *                      v
- *                 XDATA Buffers (0x8000-0xFFFF)
+ * The ASM2464PD has a large internal SRAM (~6-8 MB) that is accessed via
+ * two different address spaces:
+ *
+ *   1. PCI Address Space (32-bit) - What DMA engines and PCIe devices see:
+ *      0x00200000  Data buffer start (6+ MB for bulk transfers)
+ *      0x00820000  Queue region (NVMe queues, can be repurposed)
+ *
+ *   2. 8051 XDATA Space (16-bit) - What the CPU sees:
+ *      0x8000-0x8FFF  4KB window into SRAM (maps to PCI 0x00200000+)
+ *      0xF000-0xFFFF  4KB window into SRAM (alternate view)
+ *
+ * The 8051 CPU can only see 4KB at a time through XDATA windows, but the
+ * DMA engines can address the full SRAM via 32-bit PCI addresses.
+ *
+ *   USB Host                           Internal SRAM (6-8 MB)
+ *       │                                    │
+ *       │  USB3 bulk packets                 │  PCI Address Space
+ *       │  (1024 bytes each)                 │  0x00200000+
+ *       ▼                                    ▼
+ *   ┌───────────┐                     ┌──────────────┐
+ *   │ USB       │   Hardware DMA      │  Data Buffer │
+ *   │ Controller│ ════════════════════│  (6+ MB)     │
+ *   │           │   (CE76-79 addr)    │              │
+ *   └───────────┘                     └──────────────┘
+ *                                           ▲
+ *                                           │ 4KB window
+ *                                           ▼
+ *                                     ┌──────────────┐
+ *                                     │ 8051 XDATA   │
+ *                                     │ 0x8000-0x8FFF│
+ *                                     └──────────────┘
  *
  * ===========================================================================
- * DMA ENGINE TYPES
+ * DMA ENGINE TYPES - SOURCE/DESTINATION SUMMARY
  * ===========================================================================
- * The ASM2464PD has multiple DMA engines for different purposes:
  *
- *   1. USB DMA (0x9xxx registers):
- *      - Transfers descriptors from ROM to USB buffer
- *      - Triggered via 0x9092 write
- *      - Source address set in 0x905B/0x905C
- *      - Length set in 0x9004
+ *   | Engine          | Source       | Destination  | Addressing  | Max Size |
+ *   |-----------------|--------------|--------------|-------------|----------|
+ *   | USB Descriptor  | ROM          | USB HW       | 16-bit ROM  | ~256 B   |
+ *   | SCSI/Bulk       | USB/SRAM     | SRAM/USB     | 32-bit PCI  | ~8 MB    |
+ *   | PCIe/Vendor     | XDATA        | USB buf      | 24-bit      | 255 B    |
+ *   | Flash           | SPI chip     | XDATA        | 24-bit      | 4 KB     |
+ *   | Internal        | XDATA        | XDATA        | 16-bit      | 64 KB    |
  *
- *   2. PCIe/XDATA DMA (0xB296 register):
- *      - Transfers data between XDATA and USB buffer
- *      - Used for E4/E5 vendor commands
- *      - Triggered via 0xB296 write (value 0x08)
- *      - Source address in 0x910F-0x9111
+ * ===========================================================================
+ * DMA ENGINE 1: USB Descriptor DMA (0x9092)
+ * ===========================================================================
+ *   Source:      Code ROM (descriptor tables)
+ *   Destination: USB hardware buffer (feeds directly to USB PHY)
+ *   Trigger:     Write 0x01 to 0x9092
+ *   Completion:  Check 0xE712 bits 0-1
+ *   Registers:   0x905B-905C (source addr), 0x9004 (length)
+ *   Use:         USB enumeration only, NOT for bulk data
  *
- *   3. SCSI/Bulk DMA (0xCExx registers):
- *      - Transfers bulk data for Mass Storage
- *      - State machine controlled via 0xCE89
- *      - Parameters in 0xCE40-0xCE6F
+ * ===========================================================================
+ * DMA ENGINE 2: SCSI/Bulk DMA (0xCE00-0xCE9F) - THE HIGH-SPEED PATH
+ * ===========================================================================
+ *   Source:      USB bulk endpoint OR internal SRAM
+ *   Destination: Internal SRAM OR USB bulk endpoint
+ *   Addressing:  32-bit PCI address (0x00200000+) via CE76-CE79
+ *   Trigger:     Write 0x03 to 0xCE00
+ *   Completion:  Poll 0xCE89 (state machine) or 0xCE00 (returns 0x00)
  *
- *   4. Flash DMA (0xC8Ax registers):
- *      - Transfers between SPI flash and XDATA buffer
- *      - Buffer at 0x7000-0x7FFF
+ *   THIS IS THE ONLY PATH FOR HIGH-SPEED USB TRANSFERS.
+ *   The 8051 CPU never touches bulk data bytes - it only writes the
+ *   32-bit PCI address to CE76-CE79 and triggers the transfer.
+ *
+ *   Address calculation (from SCSI LBA):
+ *     pci_addr = 0x00200000 + (lba * 512)
+ *     CE76 = (pci_addr >> 0) & 0xFF   // LSB
+ *     CE77 = (pci_addr >> 8) & 0xFF
+ *     CE78 = (pci_addr >> 16) & 0xFF
+ *     CE79 = (pci_addr >> 24) & 0xFF  // MSB
+ *
+ * ===========================================================================
+ * DMA ENGINE 3: PCIe/Vendor DMA (0xB296)
+ * ===========================================================================
+ *   Source:      XDATA (any 16-bit address)
+ *   Destination: USB buffer at 0x8000
+ *   Trigger:     Write 0x08 to 0xB296
+ *   Completion:  Check 0xB296 bits 1-2
+ *   Registers:   0x910F-9111 (24-bit source addr), 0x910E (size)
+ *   Use:         E4/E5 vendor commands (SLOW - max 255 bytes)
+ *
+ * ===========================================================================
+ * DMA ENGINE 4: Flash DMA (0xC8A9)
+ * ===========================================================================
+ *   Source:      SPI flash (external chip)
+ *   Destination: Flash buffer at XDATA 0x7000-0x7FFF
+ *   Trigger:     Write 0x01 to 0xC8A9
+ *   Completion:  Poll 0xC8A9 bit 0 until clear
+ *   Use:         Config/firmware loading at boot
+ *
+ * ===========================================================================
+ * DMA ENGINE 5: Internal Transfer DMA (0xC8B8)
+ * ===========================================================================
+ *   Source:      XDATA address
+ *   Destination: XDATA address
+ *   Trigger:     Write 0x01 to 0xC8B8
+ *   Completion:  Poll 0xC8D6 bit 2
+ *   Use:         Block memory copies within XDATA
  *
  * ===========================================================================
  * SCSI DMA STATE MACHINE (0xCE89)
@@ -115,6 +184,13 @@
  *   0xCE67  SCSI_DMA_QUEUE    Queue status (4-bit, 0-15)
  *   0xCE6C  XFER_STATUS_6C    USB controller ready (bit 7 must be SET)
  *   0xCE6E  SCSI_DMA_CTRL2    SCSI DMA control register 2
+ *   0xCE75  SCSI_BUF_LEN      Transfer length
+ *   0xCE76  SCSI_BUF_ADDR0    32-bit PCI address byte 0 (LSB)
+ *   0xCE77  SCSI_BUF_ADDR1    32-bit PCI address byte 1
+ *   0xCE78  SCSI_BUF_ADDR2    32-bit PCI address byte 2
+ *   0xCE79  SCSI_BUF_ADDR3    32-bit PCI address byte 3 (MSB)
+ *                             Example: For LBA=256, pci_addr = 0x00220000
+ *                             CE76=0x00, CE77=0x00, CE78=0x22, CE79=0x00
  *   0xCE86  XFER_STATUS       USB status (bit 4 checked at 0x349D)
  *   0xCE88  XFER_CTRL         DMA trigger (write resets CE89 state machine)
  *   0xCE89  USB_DMA_STATE     DMA state machine (see above)
@@ -143,16 +219,31 @@
  *   0x0AA3-A4 G_STATE_COUNTER    16-bit state counter
  *
  * ===========================================================================
- * BUFFER ADDRESS SPACES
+ * BUFFER ADDRESS SPACES (XDATA)
  * ===========================================================================
  *   0x0000-0x00FF: Endpoint queue descriptors
  *   0x0100-0x01FF: Transfer work areas
  *   0x0400-0x04FF: DMA configuration tables
  *   0x0A00-0x0AFF: SCSI buffer management
  *   0x7000-0x7FFF: Flash DMA buffer (4KB)
- *   0x8000-0x8FFF: USB/SCSI data buffer (4KB)
+ *   0x8000-0x8FFF: USB/SCSI data buffer (4KB window into SRAM)
+ *   0x9000-0x9FFF: MMIO - USB controller registers
+ *   0xA000-0xAFFF: NVMe IOSQ (4KB window into SRAM @ PCI 0x00820000)
+ *   0xB000-0xBFFF: NVMe ASQ/ACQ + PCIe TLP engine registers
+ *   0xC000-0xEFFF: MMIO - Various controllers
  *   0xD800-0xDFFF: USB endpoint buffer (2KB)
- *   0xF000-0xFFFF: NVMe data buffer (4KB)
+ *   0xF000-0xFFFF: NVMe data buffer (4KB window into SRAM)
+ *
+ * ===========================================================================
+ * INTERNAL SRAM (PCI Address Space)
+ * ===========================================================================
+ *   0x00200000: Data buffer start (6+ MB)
+ *               - SCSI bulk transfers land here
+ *               - GPU can DMA to/from here
+ *               - Accessed via CE76-CE79 (32-bit address)
+ *   0x00820000: Queue region (128 KB)
+ *               - NVMe submission/completion queues
+ *               - Can be repurposed for other uses
  *
  * ===========================================================================
  * TRANSFER SEQUENCE
