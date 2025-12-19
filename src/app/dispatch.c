@@ -28,6 +28,7 @@
 #include "types.h"
 #include "sfr.h"
 #include "registers.h"
+#include "globals.h"
 #include "drivers/pd.h"
 #include "drivers/flash.h"
 
@@ -158,8 +159,211 @@ void dispatch_0331(void) { jump_bank_0(0xC4B3); }
 /* 0x0336: Target 0xBF0F - reg_restore_handler */
 void dispatch_0336(void) { jump_bank_0(0xBF0F); }
 
-/* 0x033B: Target 0xCF7F - handler_cf7f */
-void dispatch_033b(void) { jump_bank_0(0xCF7F); }
+/*
+ * usb_dma_trigger_a57a - Trigger USB DMA transfer
+ * Address: 0xA57A-0xA580 (7 bytes)
+ *
+ * Writes 0x01 to REG_TLP_CMD_TRIGGER (0x9092) to start USB DMA.
+ *
+ * Original disassembly:
+ *   a57a: mov dptr, #0x9092
+ *   a57d: mov a, #0x01
+ *   a57f: movx @dptr, a
+ *   a580: ret
+ */
+static void usb_dma_trigger_a57a(void)
+{
+    REG_TLP_CMD_TRIGGER = 0x01;
+}
+
+/*
+ * usb_dma_phase_d088 - USB DMA phase handler
+ * Address: 0xD088-0xD0D8 (81 bytes)
+ *
+ * Checks G_USB_CTRL_STATE_07E1 and triggers DMA if state is 5.
+ * This is called when 0x9091 bit 1 is set (data phase ready).
+ *
+ * Key logic:
+ *   - If state == 5: call usb_dma_trigger_a57a and return
+ *   - Otherwise: perform additional state machine handling
+ *
+ * Original disassembly (simplified path for state == 5):
+ *   d088: mov dptr, #0x07e1
+ *   d08b: movx a, @dptr        ; read state
+ *   d08c: mov r7, a
+ *   d08d: cjne a, #0x05, d094  ; if state != 5, skip
+ *   d090: lcall 0xa57a         ; trigger DMA
+ *   d093: ret
+ */
+static void usb_dma_phase_d088(void)
+{
+    uint8_t state = G_USB_CTRL_STATE_07E1;
+
+    if (state == 0x05) {
+        /* State 5: Ready to send descriptor, trigger DMA */
+        usb_dma_trigger_a57a();
+        return;
+    }
+
+    /* For other states, the original has more complex handling.
+     * States 4 and 2 have special paths; otherwise calls 0xA57A anyway.
+     * For now, trigger DMA for these as well to match basic behavior. */
+    usb_dma_trigger_a57a();
+}
+
+/*
+ * usb_setup_phase_a5a6 - USB setup phase handler
+ * Address: 0xA5A6-0xA5E8 (67 bytes)
+ *
+ * Called when USB setup packet is received (0x9091 bit 0 set).
+ * Initializes USB control transfer state.
+ *
+ * Key operations:
+ *   - Clear G_USB_CTRL_STATE_07E1 to 0
+ *   - Set G_TLP_STATE_07E9 to 1
+ *   - Clear bit 1 of REG_USB_CONFIG (0x9002)
+ *   - Various other state initializations
+ *   - Write 0x01 to 0x9091 to acknowledge setup phase
+ *
+ * Original disassembly (key parts):
+ *   a5a6: clr a
+ *   a5a7: mov dptr, #0x07e1
+ *   a5aa: movx @dptr, a        ; clear 0x07E1
+ *   a5ab: mov dptr, #0x07e9
+ *   a5ae: inc a                ; a = 1
+ *   a5af: movx @dptr, a        ; set 0x07E9 = 1
+ *   a5b0: mov dptr, #0x9002
+ *   a5b3: movx a, @dptr
+ *   a5b4: anl a, #0xfd         ; clear bit 1
+ *   a5b6: movx @dptr, a
+ *   ...
+ *   a5e2: mov dptr, #0x9091
+ *   a5e5: mov a, #0x01
+ *   a5e7: movx @dptr, a        ; acknowledge setup phase
+ */
+static void usb_setup_phase_a5a6(void)
+{
+    uint8_t val;
+
+    /* Clear USB control state */
+    G_USB_CTRL_STATE_07E1 = 0;
+
+    /* Set TLP state to 1 */
+    G_TLP_STATE_07E9 = 1;
+
+    /* Clear bit 1 of REG_USB_CONFIG */
+    val = REG_USB_CONFIG;
+    val &= 0xFD;
+    REG_USB_CONFIG = val;
+
+    /* Check G_PHY_LANE_CFG_0AE4 - if zero, do additional setup */
+    if (G_PHY_LANE_CFG_0AE4 == 0) {
+        /* Clear bit 0 of REG_POWER_MISC_CTRL (0x92C4) */
+        val = REG_POWER_MISC_CTRL;
+        val &= 0xFE;
+        REG_POWER_MISC_CTRL = val;
+
+        /* Write 0x04 then 0x02 to REG_TIMER1_CSR (0xCC17) */
+        REG_TIMER1_CSR = 0x04;
+        REG_TIMER1_CSR = 0x02;
+    }
+
+    /* Clear system flags */
+    G_SYS_FLAGS_07EB = 0;
+
+    /* Check and clear bit 2 of 0x9220 if set */
+    val = XDATA_REG8(0x9220);
+    if (val & 0x04) {
+        val &= 0xFB;
+        XDATA_REG8(0x9220) = val;
+    }
+
+    /* Clear TLP address offset */
+    G_TLP_ADDR_OFFSET_LO = 0;
+
+    /* Acknowledge setup phase by writing 0x01 to 0x9091 */
+    REG_INT_FLAGS_EX0 = 0x01;
+}
+
+/*
+ * handler_cde7 - USB control transfer handler
+ * Address: 0xCDE7-0xCE3C (86 bytes)
+ *
+ * Main USB control transfer state machine. Called via dispatch_033b from
+ * the external interrupt handler when USB peripheral status bit 1 is set.
+ *
+ * Checks REG_INT_FLAGS_EX0 (0x9091) bits and calls appropriate handlers:
+ *   - Bit 0 set AND bit 2 clear: Setup phase - call usb_setup_phase_a5a6
+ *   - Bit 1 set (with 0x9002 bit 1 clear): Data phase - call usb_dma_phase_d088
+ *   - Bit 2 set: Status phase - call 0xDCD5 handler
+ *   - Bit 3 set: Call 0xB286 handler
+ *   - Bit 4 set: Call 0xB612 handler
+ *
+ * Original disassembly:
+ *   cde7: mov dptr, #0x9091
+ *   cdea: movx a, @dptr
+ *   cdeb: jnb acc.0, cdf5      ; if bit 0 clear, skip setup phase
+ *   cdee: movx a, @dptr
+ *   cdef: jb acc.2, cdf5       ; if bit 2 set, skip setup phase
+ *   cdf2: lcall 0xa5a6         ; call setup phase handler
+ *   cdf5: mov dptr, #0x9002
+ *   cdf8: movx a, @dptr
+ *   cdf9: jb acc.1, ce0c       ; if 0x9002 bit 1 set, skip data phase
+ *   cdfc: mov dptr, #0x9091
+ *   cdff: movx a, @dptr
+ *   ce00: jnb acc.1, ce0c      ; if bit 1 clear, skip data phase
+ *   ce03: lcall 0xd088         ; call DMA phase handler
+ *   ce06: mov dptr, #0x9091
+ *   ce09: mov a, #0x02
+ *   ce0b: movx @dptr, a        ; acknowledge data phase
+ *   ce0c: ... (status phase handling)
+ *   ce3c: ret
+ */
+static void handler_cde7(void)
+{
+    uint8_t flags;
+
+    /* Check for setup phase: bit 0 set AND bit 2 clear */
+    flags = REG_INT_FLAGS_EX0;
+    if ((flags & 0x01) && !(flags & 0x04)) {
+        usb_setup_phase_a5a6();
+    }
+
+    /* Check for data phase: 0x9002 bit 1 clear AND 0x9091 bit 1 set */
+    if (!(REG_USB_CONFIG & 0x02)) {
+        flags = REG_INT_FLAGS_EX0;
+        if (flags & 0x02) {
+            usb_dma_phase_d088();
+            /* Acknowledge data phase */
+            REG_INT_FLAGS_EX0 = 0x02;
+        }
+    }
+
+    /* Check for status phase: bit 2 set */
+    flags = REG_INT_FLAGS_EX0;
+    if (flags & 0x04) {
+        /* TODO: Call status phase handler at 0xDCD5 */
+        /* For now, just acknowledge */
+        REG_INT_FLAGS_EX0 = 0x04;
+    }
+
+    /* Check bit 3 */
+    flags = REG_INT_FLAGS_EX0;
+    if (flags & 0x08) {
+        /* TODO: Call handler at 0xB286 */
+        REG_INT_FLAGS_EX0 = 0x08;
+    }
+
+    /* Check bit 4 */
+    flags = REG_INT_FLAGS_EX0;
+    if (flags & 0x10) {
+        /* TODO: Call handler at 0xB612 */
+        REG_INT_FLAGS_EX0 = 0x10;
+    }
+}
+
+/* 0x033B: Target 0xCDE7 - USB control transfer handler */
+void dispatch_033b(void) { handler_cde7(); }
 
 /* 0x0340: Target 0xBF8E - buffer_dispatch_bf8e */
 void buffer_dispatch_bf8e(void) { jump_bank_0(0xBF8E); }  /* was: dispatch_0340 */

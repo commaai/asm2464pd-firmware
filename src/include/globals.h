@@ -268,6 +268,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_FLASH_OP_COUNTER      XDATA_VAR8(0x07BD)  /* Flash operation counter */
 #define G_SYS_FLAGS_BASE        XDATA_VAR8(0x07E4)  /* Flags base */
 #define G_TRANSFER_ACTIVE       XDATA_VAR8(0x07E5)  /* Transfer active flag */
+#define G_USB_CTRL_STATE_07E1   XDATA_VAR8(0x07E1)  /* USB control transfer state (5=ready to send) */
 #define G_XFER_FLAG_07EA        XDATA_VAR8(0x07EA)  /* Transfer flag 0x07EA (set in SCSI DMA) */
 #define G_SYS_FLAGS_07EB        XDATA_VAR8(0x07EB)  /* System flags 0x07EB */
 #define G_SYS_FLAGS_07EC        XDATA_VAR8(0x07EC)  /* System flags 0x07EC */

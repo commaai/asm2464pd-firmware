@@ -560,49 +560,56 @@ state_ready:
         EA = 1;
 
         /*
-         * USB Status Handler - Check for pending descriptor requests
-         * Original firmware: 0xCDF5-0xCE0B
+         * USB Setup Packet Handler - Process pending control transfers
+         * Original firmware: 0xA600-0xA6A5
          *
-         * Checks 0x9002 bit 1 (should be CLEAR) and 0x9091 bit 1 (should be SET)
-         * If conditions met, calls descriptor handler (0xD088) which checks 0x07E1
+         * When G_TLP_STATE_07E9 == 1, there's a pending setup packet to process.
+         * This dispatches based on bmRequestType and bRequest fields.
+         * For GET_DESCRIPTOR (bmRequestType=0x80, bRequest=0x06), configures DMA
+         * and sets G_USB_CTRL_STATE_07E1 = 5 to indicate data is ready.
          */
-        if (!(REG_USB_CONFIG & 0x02)) {  /* 0x9002 bit 1 is CLEAR */
-            if (REG_INT_FLAGS_EX0 & 0x02) {  /* 0x9091 bit 1 is SET */
-                /* Descriptor handler - check 0x07E1 (0xD088-0xD093) */
-                if (XDATA8(0x07E1) == 0x05) {
-                    /* Read setup packet from MMIO to get descriptor request */
-                    uint8_t desc_type = XDATA_REG8(0x9E03);  /* wValue high = descriptor type */
-                    uint8_t desc_index = XDATA_REG8(0x9E02); /* wValue low = descriptor index */
-                    uint8_t req_len = XDATA_REG8(0x9E06);    /* wLength low */
-                    uint8_t desc_len;
-                    __code const uint8_t *desc_ptr;
+        if (G_TLP_STATE_07E9 == 1) {
+            uint8_t bmRequestType = XDATA_REG8(0x9E00);
+            uint8_t bRequest = XDATA_REG8(0x9E01);
 
-                    /* Look up the descriptor in code ROM */
-                    desc_ptr = usb_get_descriptor(desc_type, desc_index, &desc_len);
+            /* Standard device request (bmRequestType bit 7 = 1 means IN direction) */
+            if (bmRequestType == 0x80 && bRequest == 0x06) {
+                /* GET_DESCRIPTOR request */
+                uint8_t desc_type = XDATA_REG8(0x9E03);  /* wValue high = descriptor type */
+                uint8_t desc_index = XDATA_REG8(0x9E02); /* wValue low = descriptor index */
+                uint8_t req_len = XDATA_REG8(0x9E06);    /* wLength low */
+                uint8_t desc_len;
+                __code const uint8_t *desc_ptr;
 
-                    if (desc_ptr != 0) {
-                        /* Use minimum of requested length and descriptor length */
-                        if (req_len < desc_len) {
-                            desc_len = req_len;
-                        }
+                /* Look up the descriptor in code ROM */
+                desc_ptr = usb_get_descriptor(desc_type, desc_index, &desc_len);
 
-                        /* Configure DMA source address (code ROM address of descriptor) */
-                        REG_USB_EP_BUF_HI = (uint8_t)((uint16_t)desc_ptr >> 8);
-                        REG_USB_EP_BUF_LO = (uint8_t)((uint16_t)desc_ptr & 0xFF);
-
-                        /* Configure transfer length */
-                        REG_USB_EP0_LEN_L = desc_len;
+                if (desc_ptr != 0) {
+                    /* Use minimum of requested length and descriptor length */
+                    if (req_len < desc_len) {
+                        desc_len = req_len;
                     }
 
-                    /* Trigger USB descriptor send (0xA57A-0xA580) */
-                    XDATA_REG8(0x9092) = 0x01;
+                    /* Configure DMA source address (code ROM address of descriptor) */
+                    REG_USB_EP_BUF_HI = (uint8_t)((uint16_t)desc_ptr >> 8);
+                    REG_USB_EP_BUF_LO = (uint8_t)((uint16_t)desc_ptr & 0xFF);
 
-                    /* Clear descriptor pending state */
-                    XDATA8(0x07E1) = 0x00;
+                    /* Configure transfer length */
+                    REG_USB_EP0_LEN_L = desc_len;
+
+                    /* Mark descriptor as ready to send */
+                    G_USB_CTRL_STATE_07E1 = 0x05;
+
+                    /* Trigger USB DMA to send descriptor (0xA57A) */
+                    REG_TLP_CMD_TRIGGER = 0x01;
+
+                    /* Clear descriptor ready state after triggering */
+                    G_USB_CTRL_STATE_07E1 = 0x00;
                 }
-                /* Acknowledge the interrupt by writing 0x02 to 0x9091 */
-                REG_INT_FLAGS_EX0 = 0x02;
             }
+
+            /* Clear pending state */
+            G_TLP_STATE_07E9 = 0;
         }
 
         /* Call event handler (0x3041) */

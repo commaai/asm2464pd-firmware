@@ -138,6 +138,34 @@ __code const uint8_t usb_string_descriptor_3[20] = {
 };
 
 /*
+ * BOS Descriptor (Binary Object Store)
+ * Required for USB 3.0 devices to advertise SuperSpeed capabilities
+ */
+__code const uint8_t usb_bos_descriptor[22] = {
+    /* BOS Descriptor Header */
+    0x05,        /* bLength (5 bytes) */
+    0x0F,        /* bDescriptorType (BOS) */
+    0x16, 0x00,  /* wTotalLength (22 bytes) */
+    0x02,        /* bNumDeviceCaps (2 capability descriptors) */
+
+    /* USB 2.0 Extension Descriptor */
+    0x07,        /* bLength (7 bytes) */
+    0x10,        /* bDescriptorType (Device Capability) */
+    0x02,        /* bDevCapabilityType (USB 2.0 Extension) */
+    0x02, 0x00, 0x00, 0x00,  /* bmAttributes (LPM supported) */
+
+    /* SuperSpeed USB Device Capability */
+    0x0A,        /* bLength (10 bytes) */
+    0x10,        /* bDescriptorType (Device Capability) */
+    0x03,        /* bDevCapabilityType (SuperSpeed USB) */
+    0x00,        /* bmAttributes */
+    0x0E, 0x00,  /* wSpeedsSupported (FS, HS, SS) */
+    0x01,        /* bFunctionalitySupport (Full Speed minimum) */
+    0x0A,        /* bU1DevExitLat (10us) */
+    0xFF, 0x07   /* wU2DevExitLat (2047us) */
+};
+
+/*
  * Get descriptor pointer and length by type and index
  * Returns pointer to descriptor in code ROM, sets *length
  */
@@ -170,6 +198,10 @@ __code const uint8_t* usb_get_descriptor(uint8_t type, uint8_t index, uint8_t *l
                     *length = 0;
                     return (void*)0;
             }
+
+        case 0x0F:  /* BOS descriptor */
+            *length = sizeof(usb_bos_descriptor);
+            return usb_bos_descriptor;
 
         default:
             *length = 0;
