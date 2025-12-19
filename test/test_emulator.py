@@ -2101,13 +2101,15 @@ class TestUSBDescriptorInit:
             for addr in found_in_regs:
                 print(f"  0x{addr:04X}")
 
-    def test_descriptor_processing_code_path(self, firmware_emulator):
+    def test_descriptor_processing_code_path(self, original_firmware_emulator):
         """
-        Verify the firmware executes the descriptor processing code at 0x43A3.
-        """
-        emu, fw_name = firmware_emulator
+        Verify the original firmware executes the descriptor processing code at 0x43A3.
 
-        # Track key points in the descriptor processing code
+        Note: This test uses hardcoded addresses specific to original firmware.
+        """
+        emu = original_firmware_emulator
+
+        # Track key points in the descriptor processing code (original firmware addresses)
         trace_points = {
             0x43A3: "descriptor_loop_start",
             0x43A6: "loop_body",
@@ -2131,13 +2133,13 @@ class TestUSBDescriptorInit:
         finally:
             sys.stdout = old_stdout
 
-        print(f"\n[{fw_name}] Descriptor init code execution:")
+        print(f"\n[original] Descriptor init code execution:")
         for addr, name in sorted(trace_points.items()):
             hits = emu.trace_pc_hits.get(addr, 0)
             if hits > 0:
                 print(f"  0x{addr:04X} ({name}): {hits} hits")
 
-        assert emu.trace_pc_hits.get(0x43A3, 0) > 0, f"[{fw_name}] Should execute descriptor init at 0x43A3"
+        assert emu.trace_pc_hits.get(0x43A3, 0) > 0, "[original] Should execute descriptor init at 0x43A3"
 
     def test_usb_mmio_writes_during_init(self, firmware_emulator):
         """
@@ -2786,9 +2788,9 @@ class TestUSBDescriptorDMA:
             'non_zero': sum(1 for b in result if b != 0)
         }
 
-    def test_device_descriptor_via_dma(self, original_firmware_emulator):
+    def test_device_descriptor_via_dma(self, firmware_emulator):
         """Verify device descriptor is handled by firmware via DMA."""
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2796,13 +2798,13 @@ class TestUSBDescriptorDMA:
         r = self._request_descriptor(emu, 0x0100, 18)  # Type 1 (device)
 
         # Device descriptor should start with 0x12 (length=18) and 0x01 (type=device)
-        assert r['result'][0] == 0x12, f"Device descriptor bLength should be 0x12, got 0x{r['result'][0]:02X}"
-        assert r['result'][1] == 0x01, f"Device descriptor bDescriptorType should be 0x01, got 0x{r['result'][1]:02X}"
-        assert r['triggered'], "DMA should be triggered for device descriptor"
+        assert r['result'][0] == 0x12, f"[{fw_name}] Device descriptor bLength should be 0x12, got 0x{r['result'][0]:02X}"
+        assert r['result'][1] == 0x01, f"[{fw_name}] Device descriptor bDescriptorType should be 0x01, got 0x{r['result'][1]:02X}"
+        assert r['triggered'], f"[{fw_name}] DMA should be triggered for device descriptor"
 
-    def test_config_descriptor_via_dma(self, original_firmware_emulator):
+    def test_config_descriptor_via_dma(self, firmware_emulator):
         """Verify config descriptor is handled by firmware via DMA."""
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2810,13 +2812,13 @@ class TestUSBDescriptorDMA:
         r = self._request_descriptor(emu, 0x0200, 9)  # Type 2 (config), 9 bytes header
 
         # Config descriptor should start with 0x09 (length) and 0x02 (type)
-        assert r['result'][0] == 0x09, f"Config descriptor bLength should be 0x09, got 0x{r['result'][0]:02X}"
-        assert r['result'][1] == 0x02, f"Config descriptor bDescriptorType should be 0x02, got 0x{r['result'][1]:02X}"
-        assert r['triggered'], "DMA should be triggered for config descriptor"
+        assert r['result'][0] == 0x09, f"[{fw_name}] Config descriptor bLength should be 0x09, got 0x{r['result'][0]:02X}"
+        assert r['result'][1] == 0x02, f"[{fw_name}] Config descriptor bDescriptorType should be 0x02, got 0x{r['result'][1]:02X}"
+        assert r['triggered'], f"[{fw_name}] DMA should be triggered for config descriptor"
 
-    def test_string_descriptor_language_via_dma(self, original_firmware_emulator):
+    def test_string_descriptor_language_via_dma(self, firmware_emulator):
         """Verify string descriptor (language IDs) is handled by firmware via DMA."""
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2824,13 +2826,13 @@ class TestUSBDescriptorDMA:
         r = self._request_descriptor(emu, 0x0300, 4)  # Type 3 (string), index 0
 
         # String descriptor should have type 0x03
-        assert r['result'][1] == 0x03, f"String descriptor bDescriptorType should be 0x03, got 0x{r['result'][1]:02X}"
-        assert r['result'][0] > 0, "String descriptor bLength should be > 0"
-        assert r['triggered'], "DMA should be triggered for string descriptor"
+        assert r['result'][1] == 0x03, f"[{fw_name}] String descriptor bDescriptorType should be 0x03, got 0x{r['result'][1]:02X}"
+        assert r['result'][0] > 0, f"[{fw_name}] String descriptor bLength should be > 0"
+        assert r['triggered'], f"[{fw_name}] DMA should be triggered for string descriptor"
 
-    def test_string_descriptor_index1_via_dma(self, original_firmware_emulator):
+    def test_string_descriptor_index1_via_dma(self, firmware_emulator):
         """Verify string descriptor index 1 is handled by firmware via DMA."""
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2838,12 +2840,12 @@ class TestUSBDescriptorDMA:
         r = self._request_descriptor(emu, 0x0301, 64)  # Type 3 (string), index 1
 
         # String descriptor should have type 0x03
-        assert r['result'][1] == 0x03, f"String descriptor bDescriptorType should be 0x03, got 0x{r['result'][1]:02X}"
-        assert r['triggered'], "DMA should be triggered for string descriptor"
+        assert r['result'][1] == 0x03, f"[{fw_name}] String descriptor bDescriptorType should be 0x03, got 0x{r['result'][1]:02X}"
+        assert r['triggered'], f"[{fw_name}] DMA should be triggered for string descriptor"
 
-    def test_bos_descriptor_via_dma(self, original_firmware_emulator):
+    def test_bos_descriptor_via_dma(self, firmware_emulator):
         """Verify BOS descriptor is handled by firmware via DMA."""
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2851,8 +2853,8 @@ class TestUSBDescriptorDMA:
         r = self._request_descriptor(emu, 0x0F00, 5)  # Type 15 (BOS)
 
         # BOS descriptor should have type 0x0F or at least return some data
-        assert r['result'][1] == 0x0F or r['non_zero'] > 0, "BOS descriptor should be returned"
-        assert r['triggered'], "DMA should be triggered for BOS descriptor"
+        assert r['result'][1] == 0x0F or r['non_zero'] > 0, f"[{fw_name}] BOS descriptor should be returned"
+        assert r['triggered'], f"[{fw_name}] DMA should be triggered for BOS descriptor"
 
 
 class TestSCSIVendorCommands:
@@ -2887,10 +2889,10 @@ class TestSCSIVendorCommands:
                 for i, byte in enumerate(data[:len(data)]):
                     emu.memory.xdata[0x8000 + i] = byte
 
-    def test_e1_config_write_cdb_setup(self, original_firmware_emulator):
+    def test_e1_config_write_cdb_setup(self, firmware_emulator):
         """Verify E1 Config Write command sets up MMIO registers correctly."""
         import struct
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2902,14 +2904,14 @@ class TestSCSIVendorCommands:
         self._inject_scsi_cmd(emu, 0xE1, cdb, config_data, is_write=True)
 
         # Verify MMIO registers were set
-        assert emu.hw.regs.get(0x910D, 0) == 0xE1, "CDB[0] should be 0xE1"
-        assert emu.hw.regs.get(0x910E, 0) == 0x50, "CDB[1] should be 0x50"
-        assert emu.memory.xdata[0x0002] == 0xE1, "XDATA CDB opcode should be 0xE1"
+        assert emu.hw.regs.get(0x910D, 0) == 0xE1, f"[{fw_name}] CDB[0] should be 0xE1"
+        assert emu.hw.regs.get(0x910E, 0) == 0x50, f"[{fw_name}] CDB[1] should be 0x50"
+        assert emu.memory.xdata[0x0002] == 0xE1, f"[{fw_name}] XDATA CDB opcode should be 0xE1"
 
-    def test_e3_firmware_write_cdb_setup(self, original_firmware_emulator):
+    def test_e3_firmware_write_cdb_setup(self, firmware_emulator):
         """Verify E3 Firmware Write command sets up MMIO registers correctly."""
         import struct
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2922,14 +2924,14 @@ class TestSCSIVendorCommands:
         self._inject_scsi_cmd(emu, 0xE3, cdb, fw_data, is_write=True)
 
         # Verify MMIO registers were set
-        assert emu.hw.regs.get(0x910D, 0) == 0xE3, "CDB[0] should be 0xE3"
-        assert emu.hw.regs.get(0x910E, 0) == 0x50, "CDB[1] should be 0x50"
-        assert emu.memory.xdata[0x0002] == 0xE3, "XDATA CDB opcode should be 0xE3"
+        assert emu.hw.regs.get(0x910D, 0) == 0xE3, f"[{fw_name}] CDB[0] should be 0xE3"
+        assert emu.hw.regs.get(0x910E, 0) == 0x50, f"[{fw_name}] CDB[1] should be 0x50"
+        assert emu.memory.xdata[0x0002] == 0xE3, f"[{fw_name}] XDATA CDB opcode should be 0xE3"
 
-    def test_e8_commit_cdb_setup(self, original_firmware_emulator):
+    def test_e8_commit_cdb_setup(self, firmware_emulator):
         """Verify E8 Reset/Commit command sets up MMIO registers correctly."""
         import struct
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2940,14 +2942,14 @@ class TestSCSIVendorCommands:
         self._inject_scsi_cmd(emu, 0xE8, cdb, b'', is_write=False)
 
         # Verify MMIO registers were set
-        assert emu.hw.regs.get(0x910D, 0) == 0xE8, "CDB[0] should be 0xE8"
-        assert emu.hw.regs.get(0x910E, 0) == 0x51, "CDB[1] should be 0x51"
-        assert emu.memory.xdata[0x0002] == 0xE8, "XDATA CDB opcode should be 0xE8"
+        assert emu.hw.regs.get(0x910D, 0) == 0xE8, f"[{fw_name}] CDB[0] should be 0xE8"
+        assert emu.hw.regs.get(0x910E, 0) == 0x51, f"[{fw_name}] CDB[1] should be 0x51"
+        assert emu.memory.xdata[0x0002] == 0xE8, f"[{fw_name}] XDATA CDB opcode should be 0xE8"
 
-    def test_vendor_cmd_magic_value(self, original_firmware_emulator):
+    def test_vendor_cmd_magic_value(self, firmware_emulator):
         """Verify vendor commands set the magic value at 0xEA90."""
         import struct
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2955,12 +2957,12 @@ class TestSCSIVendorCommands:
         cdb = struct.pack('>BBB', 0xE1, 0x50, 0x00) + bytes(12)
         self._inject_scsi_cmd(emu, 0xE1, cdb, bytes(128), is_write=True)
 
-        assert emu.memory.xdata[0xEA90] == 0x5A, "Magic value at 0xEA90 should be 0x5A"
+        assert emu.memory.xdata[0xEA90] == 0x5A, f"[{fw_name}] Magic value at 0xEA90 should be 0x5A"
 
-    def test_vendor_cmd_usb_state(self, original_firmware_emulator):
+    def test_vendor_cmd_usb_state(self, firmware_emulator):
         """Verify vendor commands set USB state to 0x02."""
         import struct
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2968,16 +2970,16 @@ class TestSCSIVendorCommands:
         cdb = struct.pack('>BBB', 0xE1, 0x50, 0x00) + bytes(12)
         self._inject_scsi_cmd(emu, 0xE1, cdb, bytes(128), is_write=True)
 
-        assert emu.memory.idata[0x6A] == 0x02, "USB state at IDATA[0x6A] should be 0x02"
+        assert emu.memory.idata[0x6A] == 0x02, f"[{fw_name}] USB state at IDATA[0x6A] should be 0x02"
 
 
 class TestPatchFlowSequence:
     """Tests for the patch.py firmware update sequence."""
 
-    def test_e1_followed_by_e3_sequence(self, original_firmware_emulator):
+    def test_e1_followed_by_e3_sequence(self, firmware_emulator):
         """Verify E1 config write followed by E3 firmware write works."""
         import struct
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -2997,12 +2999,12 @@ class TestPatchFlowSequence:
             emu.run(max_cycles=400000)
 
             # Verify both commands were processed (CDB changed)
-            assert emu.memory.xdata[0x0002] == 0xE3, "Last CDB opcode should be E3"
+            assert emu.memory.xdata[0x0002] == 0xE3, f"[{fw_name}] Last CDB opcode should be E3"
 
-    def test_different_config_blocks(self, original_firmware_emulator):
+    def test_different_config_blocks(self, firmware_emulator):
         """Verify E1 can write to different config blocks (0 and 1)."""
         import struct
-        emu = original_firmware_emulator
+        emu, fw_name = firmware_emulator
         emu.run(max_cycles=200000)  # Boot
         emu.hw.usb_controller.connect(speed=2)
         emu.run(max_cycles=300000)
@@ -3015,11 +3017,11 @@ class TestPatchFlowSequence:
         if hasattr(emu.hw, 'inject_scsi_vendor_cmd'):
             emu.hw.inject_scsi_vendor_cmd(0xE1, cdb0, bytes(128), is_write=True)
             emu.run(max_cycles=400000)
-            assert emu.hw.regs.get(0x910F, 0) == 0x00, "Block 0 indicator"
+            assert emu.hw.regs.get(0x910F, 0) == 0x00, f"[{fw_name}] Block 0 indicator"
 
             emu.hw.inject_scsi_vendor_cmd(0xE1, cdb1, bytes(128), is_write=True)
             emu.run(max_cycles=400000)
-            assert emu.hw.regs.get(0x910F, 0) == 0x01, "Block 1 indicator"
+            assert emu.hw.regs.get(0x910F, 0) == 0x01, f"[{fw_name}] Block 1 indicator"
 
 
 if __name__ == "__main__":
