@@ -1762,7 +1762,7 @@ void mem_write_via_ptr(uint8_t value)
 
 void dptr_calc_work43(void)
 {
-    /* DPTR = 0x007C + I_WORK_43 - handled inline by callers */
+    /* DPTR = 0x007C + I_CMD_SLOT_INDEX - handled inline by callers */
 }
 
 /*
@@ -2255,7 +2255,7 @@ uint8_t param_stub(uint8_t p1, uint16_t p2)
 }
 
 /*
- * state_ptr_calc_014e - Calculate state pointer from I_WORK_43
+ * state_ptr_calc_014e - Calculate state pointer from I_CMD_SLOT_INDEX
  * Address: 0x15a0-0x15ab (12 bytes)
  *
  * Disassembly:
@@ -2267,11 +2267,11 @@ uint8_t param_stub(uint8_t p1, uint16_t p2)
  *   15a9: mov DPH, a         ; DPH = A
  *   15ab: ret
  *
- * Returns pointer to XDATA at (0x014e + I_WORK_43).
+ * Returns pointer to XDATA at (0x014e + I_CMD_SLOT_INDEX).
  */
 __xdata uint8_t * state_ptr_calc_014e(void)
 {
-    return (__xdata uint8_t *)(0x014e + I_WORK_43);
+    return (__xdata uint8_t *)(0x014e + I_CMD_SLOT_INDEX);
 }
 
 void power_config_wrapper(void)

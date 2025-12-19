@@ -1681,7 +1681,7 @@ void power_state_handler(void)
  *   1. Read G_SCSI_CMD_PARAM_0470, check bit 3
  *   2. If bit 3 set:
  *      - Call get_ep_config_indexed to get divider (EP config value)
- *      - Compute G_XFER_DIV_0476 = ceil(I_WORK_3F / divider)
+ *      - Compute G_XFER_DIV_0476 = ceil(I_TRANSFER_COUNT / divider)
  *   3. Check REG_BUF_CFG_9000 bit 0
  *   4. If bit 0 set:
  *      - Call helper_15b7 (increments DPTR)
@@ -1706,10 +1706,10 @@ void state_transfer_calc_120d(void)
     /* Get divider from EP config array */
     divider = get_ep_config_indexed();
 
-    /* Compute quotient = I_WORK_3F / divider */
+    /* Compute quotient = I_TRANSFER_COUNT / divider */
     if (divider != 0) {
-        quotient = I_WORK_3F / divider;
-        remainder = I_WORK_3F % divider;
+        quotient = I_TRANSFER_COUNT / divider;
+        remainder = I_TRANSFER_COUNT % divider;
 
         /* If there's a remainder, round up */
         if (remainder != 0) {
@@ -1727,16 +1727,16 @@ void state_transfer_calc_120d(void)
         return;  /* Bit 0 not set, nothing to do */
     }
 
-    /* Calculate slot pointer: 0x009F + I_WORK_43 */
+    /* Calculate slot pointer: 0x009F + I_CMD_SLOT_INDEX */
     /* Using helper_15b7 pattern internally */
-    slot_ptr = (__xdata uint8_t *)(0x009F + I_WORK_43);
+    slot_ptr = (__xdata uint8_t *)(0x009F + I_CMD_SLOT_INDEX);
 
     /* Read slot value */
     slot_val = *slot_ptr;
 
     if (slot_val == 0xFF) {
         /* Slot is uninitialized - compute new value */
-        /* Calculate address 0x009F + I_WORK_43 and store quotient */
+        /* Calculate address 0x009F + I_CMD_SLOT_INDEX and store quotient */
         *slot_ptr = quotient;
 
         /* Clear G_NVME_PARAM_053A */
@@ -1765,8 +1765,8 @@ void state_transfer_calc_120d(void)
  * Algorithm:
  *   1. Check if param >= 0x40, if so return 0 (out of bounds)
  *   2. Write I_WORK_40 to REG_SCSI_DMA_STATUS_L and G_STATE_HELPER_41
- *   3. Write I_WORK_40 + I_WORK_3F to G_STATE_HELPER_42
- *   4. Call addr_setup_0059 with 0x59 + I_WORK_43
+ *   3. Write I_WORK_40 + I_TRANSFER_COUNT to G_STATE_HELPER_42
+ *   4. Call addr_setup_0059 with 0x59 + I_CMD_SLOT_INDEX
  *   5. Call mem_write_via_ptr with I_WORK_40
  *   6. Call helper_166a with I_WORK_40 (writes to computed slot)
  *   7. Write 1 to slot and return 1
@@ -1792,21 +1792,21 @@ uint8_t state_transfer_setup_12aa(uint8_t param)
     /* Store I_WORK_40 to state helper variables */
     G_STATE_HELPER_41 = I_WORK_40;
 
-    /* Compute and store I_WORK_40 + I_WORK_3F */
-    sum = I_WORK_40 + I_WORK_3F;
+    /* Compute and store I_WORK_40 + I_TRANSFER_COUNT */
+    sum = I_WORK_40 + I_TRANSFER_COUNT;
     G_STATE_HELPER_42 = sum;
 
-    /* Call addr_setup_0059 with 0x59 + I_WORK_43 */
-    /* This sets up address at 0x0059 + I_WORK_43 */
-    addr_setup_0059(0x59 + I_WORK_43);
+    /* Call addr_setup_0059 with 0x59 + I_CMD_SLOT_INDEX */
+    /* This sets up address at 0x0059 + I_CMD_SLOT_INDEX */
+    addr_setup_0059(0x59 + I_CMD_SLOT_INDEX);
 
     /* Call mem_write_via_ptr with I_WORK_40 */
     /* This increments pointer and writes I_WORK_40 */
     mem_write_via_ptr(I_WORK_40);
 
-    /* Call helper_166a: writes I_WORK_40 to DPTR, then computes new DPTR = 0x7C + I_WORK_43 */
+    /* Call helper_166a: writes I_WORK_40 to DPTR, then computes new DPTR = 0x7C + I_CMD_SLOT_INDEX */
     /* This stores I_WORK_40 to the current address, then computes slot pointer */
-    slot_ptr = (__xdata uint8_t *)(0x007C + I_WORK_43);
+    slot_ptr = (__xdata uint8_t *)(0x007C + I_CMD_SLOT_INDEX);
 
     /* helper_15b6: write A to DPTR and increment DPTR */
     /* Write 1 to slot */
@@ -1848,15 +1848,15 @@ __xdata uint8_t *scsi_get_ctrl_ptr_1b3b(void)
  * Address: 0x120b-0x120c (2 bytes)
  *
  * Disassembly:
- *   120b: inc 0x3f              ; I_WORK_3F++
+ *   120b: inc 0x3f              ; I_TRANSFER_COUNT++
  *   120d: ...                   ; falls through to state_transfer_calc_120d
  *
- * This is an entry point that increments I_WORK_3F before falling through
+ * This is an entry point that increments I_TRANSFER_COUNT before falling through
  * to state_transfer_calc_120d.
  */
 void state_inc_and_calc_120b(void)
 {
-    I_WORK_3F++;
+    I_TRANSFER_COUNT++;
     state_transfer_calc_120d();
 }
 
@@ -1866,21 +1866,21 @@ void state_inc_and_calc_120b(void)
  *
  * Disassembly:
  *   15a0: mov a, #0x4e        ; A = 0x4E
- *   15a2: add a, 0x43         ; A = 0x4E + I_WORK_43
+ *   15a2: add a, 0x43         ; A = 0x4E + I_CMD_SLOT_INDEX
  *   15a4: mov 0x82, a         ; DPL = A
  *   15a6: clr a
  *   15a7: addc a, #0x01       ; DPH = 0x01 + carry
  *   15a9: mov 0x83, a
  *   15ab: ret
  *
- * Computes DPTR = 0x014E + I_WORK_43
- * This accesses the G_USB_INDEX_COUNTER array at 0x014E indexed by I_WORK_43.
+ * Computes DPTR = 0x014E + I_CMD_SLOT_INDEX
+ * This accesses the G_USB_INDEX_COUNTER array at 0x014E indexed by I_CMD_SLOT_INDEX.
  *
  * Returns: Pointer to USB index array element
  */
 __xdata uint8_t *get_usb_index_ptr_15a0(void)
 {
-    uint8_t low = 0x4E + I_WORK_43;
+    uint8_t low = 0x4E + I_CMD_SLOT_INDEX;
     uint16_t addr = 0x0100 + low;  /* Base is 0x0100 */
     if (low < 0x4E) {
         addr += 0x0100;  /* Handle overflow carry */

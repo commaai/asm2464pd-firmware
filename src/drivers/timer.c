@@ -653,10 +653,10 @@ void timer_trigger_e726(void)
  *      - If clear: R7 = (IDATA[0x61] != 0) ? 0x05 : 0x04
  *   4. Write R7 to REG_PCIE_FMT_TYPE (0xB210)
  *   5. Write 0x01 to REG_PCIE_TLP_CTRL (0xB213)
- *   6. Check I_WORK_65 and return via other helpers
+ *   6. Check I_EP_MODE and return via other helpers
  *
  * Side effects:
- *   - Sets up I_WORK_65 result code
+ *   - Sets up I_EP_MODE result code
  *   - Writes to REG_PCIE_FMT_TYPE and REG_PCIE_TLP_CTRL
  */
 void delay_loop_adb0(void)
@@ -671,7 +671,7 @@ void delay_loop_adb0(void)
     /* Loop 12 times - helper_9a53 does status polling */
     for (i = 0; i < 12; i++) {
         /* Placeholder for helper_9a53(i) call */
-        /* This helper updates I_WORK_65 based on polling result */
+        /* This helper updates I_EP_MODE based on polling result */
     }
 
     /* Determine TLP type based on IDATA values */
@@ -689,7 +689,7 @@ void delay_loop_adb0(void)
     /* Write 0x01 to PCIe TLP control register */
     REG_PCIE_TLP_CTRL = 0x01;
 
-    /* I_WORK_65 is left with result from polling loop
+    /* I_EP_MODE is left with result from polling loop
      * 0 = success, non-zero = error */
 }
 
@@ -768,12 +768,12 @@ void timer_clear_ctrl_bit1(void)
  * delay_short_e89d - Short delay with IDATA setup
  * Address: 0xe89d-0xe8a8 (12 bytes)
  *
- * Sets I_WORK_65 = 0x0F, I_WORK_60 = 0, then calls delay loop at 0xadb0.
- * The result is left in R7 (via I_WORK_65).
+ * Sets I_EP_MODE = 0x0F, I_WORK_60 = 0, then calls delay loop at 0xadb0.
+ * The result is left in R7 (via I_EP_MODE).
  */
 void delay_short_e89d(void)
 {
-    I_WORK_65 = 0x0F;
+    I_EP_MODE = 0x0F;
     *(__idata uint8_t *)0x60 = 0;
     delay_loop_adb0();
 }

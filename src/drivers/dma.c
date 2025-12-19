@@ -893,7 +893,7 @@ void dma_init_channel_with_config(uint8_t config)
 uint8_t dma_write_to_scsi_ce96(void)
 {
     uint8_t val41 = I_WORK_41;
-    uint8_t val47 = I_WORK_47;
+    uint8_t val47 = I_PRODUCT_CAP;
     uint8_t reg_val;
 
     REG_SCSI_DMA_CMD_REG = val41;
@@ -1183,7 +1183,7 @@ uint16_t transfer_calc_work43_offset(__xdata uint8_t *dptr)
     /* Write IDATA 0x41 to caller's DPTR first */
     *dptr = I_WORK_41;
     /* Return computed address */
-    return 0x007C + I_WORK_43;
+    return 0x007C + I_CMD_SLOT_INDEX;
 }
 
 /*

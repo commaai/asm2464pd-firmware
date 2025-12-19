@@ -1222,20 +1222,20 @@ uint8_t cmd_extract_bits67_write(uint8_t val)
  * Address: 0x99f6-0x99ff (10 bytes)
  *
  * Sets up idata work variables for EP configuration.
- * Sets I_WORK_65=0x0F, I_WORK_63=0, increments R0 to 0x64.
+ * Sets I_EP_MODE=0x0F, I_EP_CONFIG_HI=0, increments R0 to 0x64.
  *
  * Original disassembly:
  *   99f6: mov r0, #0x65       ; R0 = 0x65
- *   99f8: mov @r0, #0x0f      ; I_WORK_65 = 0x0F (mode flags)
+ *   99f8: mov @r0, #0x0f      ; I_EP_MODE = 0x0F (mode flags)
  *   99fa: mov r0, #0x63       ; R0 = 0x63
- *   99fc: mov @r0, #0x00      ; I_WORK_63 = 0
+ *   99fc: mov @r0, #0x00      ; I_EP_CONFIG_HI = 0
  *   99fe: inc r0              ; R0 = 0x64 (for caller to use)
  *   99ff: ret
  */
 void cfg_init_ep_mode(void)
 {
-    I_WORK_65 = 0x0F;
-    I_WORK_63 = 0;
+    I_EP_MODE = 0x0F;
+    I_EP_CONFIG_HI = 0;
     /* R0 left at 0x64 for caller to store config low byte */
 }
 
@@ -1249,15 +1249,15 @@ void cfg_init_ep_mode(void)
  * Original disassembly:
  *   99d8: movx a, @dptr       ; Read config value
  *   99d9: mov r0, #0x63       ; R0 = 0x63
- *   99db: mov @r0, #0x00      ; I_WORK_63 = 0 (high byte)
+ *   99db: mov @r0, #0x00      ; I_EP_CONFIG_HI = 0 (high byte)
  *   99dd: inc r0              ; R0 = 0x64
- *   99de: mov @r0, a          ; I_WORK_64 = config value (low byte)
+ *   99de: mov @r0, a          ; I_EP_CONFIG_LO = config value (low byte)
  *   99df: ret
  */
 void cfg_store_ep_config(uint8_t val)
 {
-    I_WORK_63 = 0;
-    I_WORK_64 = val;
+    I_EP_CONFIG_HI = 0;
+    I_EP_CONFIG_LO = val;
 }
 
 /*
@@ -1360,7 +1360,7 @@ void cfg_clear_ep_regs(void)
  * Address: 0x9a00-0x9a08 (9 bytes)
  *
  * Called after cfg_init_ep_mode (which sets R0=0x65).
- * Stores (param+2) to I_WORK_64 and carry bit to I_WORK_63.
+ * Stores (param+2) to I_EP_CONFIG_LO and carry bit to I_EP_CONFIG_HI.
  *
  * Original disassembly:
  *   9a00: add a, #0x02    ; A = A + 2 (sets carry)
@@ -1375,8 +1375,8 @@ void cfg_clear_ep_regs(void)
 void cfg_store_ep_with_carry(uint8_t val)
 {
     uint16_t result = (uint16_t)val + 2;
-    I_WORK_64 = (uint8_t)result;         /* Low byte (val+2) */
-    I_WORK_63 = (result > 255) ? 1 : 0;  /* Carry bit */
+    I_EP_CONFIG_LO = (uint8_t)result;         /* Low byte (val+2) */
+    I_EP_CONFIG_HI = (result > 255) ? 1 : 0;  /* Carry bit */
 }
 
 /*
@@ -1565,7 +1565,7 @@ loop_977c:
     pcie_store_r6_to_05a6(r6_val);
     r7_val = r6_val;
 
-    /* lcall 0xe77a - lookup helper - reads config to I_WORK_61/62 */
+    /* lcall 0xe77a - lookup helper - reads config to I_PCIE_TXN_DATA_0/1 */
     /* This function is in bank 1 at 0xe77a, not yet implemented */
     /* For now, skip this call */
 
@@ -1578,7 +1578,7 @@ loop_977c:
     /* 0x9799: Call 0xd02a with R7=4 */
     /* This is power_state_machine_d02a - a complex wait/poll function */
     /* For now, simulate the check */
-    if (I_WORK_64 != 0) {
+    if (I_EP_CONFIG_LO != 0) {
         return;  /* Exit on error */
     }
 
@@ -1743,7 +1743,7 @@ loop_98a0:
     pcie_set_byte_enables_0f();
 
     /* 0x9a10 then add 0x0a, call 0x9a02 */
-    temp = I_WORK_64 + 0x0A;
+    temp = I_EP_CONFIG_LO + 0x0A;
     cfg_store_ep_with_carry(temp);
 
     /* Setup R4:R5:R6:R7 = 0:4:0:0 and call 0x990c */
@@ -1791,7 +1791,7 @@ loop_98c8:
     pcie_set_byte_enables_0f();
 
     /* Add 1, call 0x99b5 */
-    temp = I_WORK_64 + 1;
+    temp = I_EP_CONFIG_LO + 1;
     pcie_add_2_to_idata(temp);
 
     /* Setup R4:R5:R6:R7 = 0x10:0x03:0x10:0x03 and call 0x990c */

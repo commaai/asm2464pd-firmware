@@ -127,10 +127,10 @@
  *   I_WORK_51 (0x51) - loop counter
  *   I_WORK_55 (0x55) - state/mode
  *   I_WORK_56 (0x56) - secondary state
- *   I_WORK_57 (0x57) - CDB addr low
- *   I_WORK_58 (0x58) - CDB value/addr mid
- *   I_WORK_59 (0x59) - CDB addr high byte 1
- *   I_WORK_5A (0x5A) - CDB addr high byte 0
+ *   I_VENDOR_CDB_ADDR_LO (0x57) - CDB addr low
+ *   I_VENDOR_CDB_VALUE (0x58) - CDB value/addr mid
+ *   I_VENDOR_CDB_ADDR_HI1 (0x59) - CDB addr high byte 1
+ *   I_VENDOR_CDB_ADDR_HI0 (0x5A) - CDB addr high byte 0
  */
 
 /*
@@ -533,7 +533,7 @@ void vendor_cmd_e5_xdata_write(void)
     /* Parse CDB and loop */
     /* r1 = 0x6c offset, call helper_b720 */
     /* This sets up the CDB address parsing */
-    /* The actual XDATA write uses address from I_WORK_57-5A */
+    /* The actual XDATA write uses address from I_VENDOR_CDB_ADDR_LO-5A */
 
     r7 = 0x00;
 
@@ -542,17 +542,17 @@ void vendor_cmd_e5_xdata_write(void)
         r7 = 0x01;
     }
 
-    /* Get value to write from I_WORK_57 (CDB byte 1) */
-    value = I_WORK_57;
+    /* Get value to write from I_VENDOR_CDB_ADDR_LO (CDB byte 1) */
+    value = I_VENDOR_CDB_ADDR_LO;
 
     /* Execute the actual XDATA write */
     /* The real firmware calls 0xea7c here which performs the write */
-    /* using the address from I_WORK_58/59/5A */
+    /* using the address from I_VENDOR_CDB_VALUE/59/5A */
     {
         uint16_t addr;
         __xdata uint8_t *dst;
 
-        addr = ((uint16_t)I_WORK_59 << 8) | I_WORK_58;
+        addr = ((uint16_t)I_VENDOR_CDB_ADDR_HI1 << 8) | I_VENDOR_CDB_VALUE;
         dst = (__xdata uint8_t *)addr;
         *dst = value;
     }
@@ -568,7 +568,7 @@ void vendor_cmd_e5_xdata_write(void)
     r7 &= 0x01;
     if (r7 != 0) {
         /* Store value to vendor data storage */
-        G_VENDOR_DATA_0AB5 = I_WORK_58;
+        G_VENDOR_DATA_0AB5 = I_VENDOR_CDB_VALUE;
     }
 
 end_helper:
@@ -662,14 +662,14 @@ void vendor_cmd_e4_xdata_read(void)
     r6 = ptr[3];  /* Addr mid */
     r7 = ptr[4];  /* Addr low */
 
-    I_WORK_5A = r7;
-    I_WORK_59 = r6;
-    I_WORK_58 = r5;
-    I_WORK_57 = r4;
+    I_VENDOR_CDB_ADDR_HI0 = r7;
+    I_VENDOR_CDB_ADDR_HI1 = r6;
+    I_VENDOR_CDB_VALUE = r5;
+    I_VENDOR_CDB_ADDR_LO = r4;
 
     /* Call shift_merge_store - shift and merge to get state */
     ptr = &G_VENDOR_CDB_BASE;
-    state = shift_merge_store(ptr, I_WORK_58);
+    state = shift_merge_store(ptr, I_VENDOR_CDB_VALUE);
 
     /* Store state to I_WORK_55 */
     I_WORK_55 = state;
@@ -819,11 +819,11 @@ uint8_t flash_read_execute(uint8_t addr_hi, uint8_t addr_lo) __naked
 
         ; Setup idata work variables
         mov  r0, #0x65
-        mov  @r0, #0x07     ; I_WORK_65 = 0x07
+        mov  @r0, #0x07     ; I_EP_MODE = 0x07
         mov  r0, #0x63
-        mov  @r0, #0x00     ; I_WORK_63 = 0x00
+        mov  @r0, #0x00     ; I_EP_CONFIG_HI = 0x00
         inc  r0
-        mov  @r0, #0x06     ; I_WORK_64 = 0x06
+        mov  @r0, #0x06     ; I_EP_CONFIG_LO = 0x06
 
         ; Setup r4-r7 with address (r6=addr_hi, r7=addr_lo, r4=r5=0)
         mov  a, r5

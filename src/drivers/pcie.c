@@ -237,8 +237,8 @@ uint8_t pcie_init_alt(void)
  */
 void pcie_set_idata_params(void)
 {
-    I_WORK_65 = 0x0F;
-    I_WORK_63 = 0x00;
+    I_EP_MODE = 0x0F;
+    I_EP_CONFIG_HI = 0x00;
     /* Note: original leaves R0 pointing to 0x64, but that's an artifact */
 }
 
@@ -258,8 +258,8 @@ void pcie_set_idata_params(void)
  */
 void pcie_clear_address_regs(void)
 {
-    I_WORK_63 = 0;
-    I_WORK_64 = 0;
+    I_EP_CONFIG_HI = 0;
+    I_EP_CONFIG_LO = 0;
 }
 
 /*
@@ -1030,7 +1030,7 @@ void pcie_tunnel_enable(void)
     pcie_lane_config(0x0F);
 
     /* Clear IDATA[0x62] */
-    I_WORK_62 = 0;
+    I_PCIE_TXN_DATA_1 = 0;
 
     /* Clear max log entries */
     G_MAX_LOG_ENTRIES = 0x00;
@@ -3178,7 +3178,7 @@ void pcie_handler_e890(void)
  *
  * Reads transaction count from G_PCIE_TXN_COUNT_LO, looks up entry in
  * the 34-byte transaction table at 0x05B7, and stores bytes 0 and 1
- * of the entry to I_WORK_61 and I_WORK_62.
+ * of the entry to I_PCIE_TXN_DATA_0 and I_PCIE_TXN_DATA_1.
  *
  * Original disassembly:
  *   e775: mov dptr, #0x05a6  ; G_PCIE_TXN_COUNT_LO
@@ -3186,11 +3186,11 @@ void pcie_handler_e890(void)
  *   e779: mov r7, a
  *   e77a: lcall 0x99bc       ; DPTR = 0x05b7 + R7*0x22
  *   e77d: movx a, @dptr      ; Read byte from table
- *   e77e: mov r0, #0x61      ; I_WORK_61
+ *   e77e: mov r0, #0x61      ; I_PCIE_TXN_DATA_0
  *   e780: mov @r0, a         ; Store to idata 0x61
  *   e781: lcall 0x9980       ; DPTR = 0x05b8 + R7*0x22
  *   e784: movx a, @dptr      ; Read byte from table
- *   e785: inc r0             ; I_WORK_62
+ *   e785: inc r0             ; I_PCIE_TXN_DATA_1
  *   e786: mov @r0, a         ; Store to idata 0x62
  *   e787: ret
  */
@@ -3199,8 +3199,8 @@ void pcie_txn_setup_e775(void)
     uint8_t count = G_PCIE_TXN_COUNT_LO;
     __xdata uint8_t *entry = G_PCIE_TXN_TABLE + (count * G_PCIE_TXN_ENTRY_SIZE);
 
-    I_WORK_61 = entry[0];
-    I_WORK_62 = entry[1];
+    I_PCIE_TXN_DATA_0 = entry[0];
+    I_PCIE_TXN_DATA_1 = entry[1];
 }
 
 /*

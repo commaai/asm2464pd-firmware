@@ -27,13 +27,13 @@ void scsi_dma_mode_setup(void);
 extern void nvme_completion_handler(uint8_t param);
 /* usb_poll_wait is in app/dispatch.h */
 
-/* SCSI slot address helpers - indexed by I_WORK_22 */
-static __xdata uint8_t *get_slot_addr_71(void) { return &G_SCSI_SLOT_71_BASE[I_WORK_22]; }
-static __xdata uint8_t *get_slot_addr_4e(void) { return &G_SCSI_SLOT_4E_BASE[I_WORK_22]; }
-static __xdata uint8_t *get_slot_addr_7c(void) { return &G_SCSI_SLOT_7C_BASE[I_WORK_22]; }
-static __xdata uint8_t *get_addr_from_slot(uint8_t base) { return ((__xdata uint8_t *)base) + I_WORK_22; }
-static __xdata uint8_t *get_addr_low(uint8_t offset) { return ((__xdata uint8_t *)offset) + I_WORK_22; }
-static uint8_t get_ep_config_4e(void) { return G_SCSI_SLOT_4E_BASE[I_WORK_22]; }
+/* SCSI slot address helpers - indexed by I_SCSI_SLOT_INDEX */
+static __xdata uint8_t *get_slot_addr_71(void) { return &G_SCSI_SLOT_71_BASE[I_SCSI_SLOT_INDEX]; }
+static __xdata uint8_t *get_slot_addr_4e(void) { return &G_SCSI_SLOT_4E_BASE[I_SCSI_SLOT_INDEX]; }
+static __xdata uint8_t *get_slot_addr_7c(void) { return &G_SCSI_SLOT_7C_BASE[I_SCSI_SLOT_INDEX]; }
+static __xdata uint8_t *get_addr_from_slot(uint8_t base) { return ((__xdata uint8_t *)base) + I_SCSI_SLOT_INDEX; }
+static __xdata uint8_t *get_addr_low(uint8_t offset) { return ((__xdata uint8_t *)offset) + I_SCSI_SLOT_INDEX; }
+static uint8_t get_ep_config_4e(void) { return G_SCSI_SLOT_4E_BASE[I_SCSI_SLOT_INDEX]; }
 
 /* External functions - some have non-standard signatures for binary compatibility */
 extern uint8_t usb_read_transfer_params_hi(void);
@@ -898,7 +898,7 @@ void scsi_csw_write_residue(void)
  */
 static void scsi_pcie_send_status(uint8_t param)
 {
-    I_WORK_65 = 3;
+    I_EP_MODE = 3;
     pcie_setup_transaction(G_PCIE_TXN_COUNT_LO);
 
     /* Store status */
@@ -1454,10 +1454,10 @@ void scsi_queue_scan_handler(void)
 
         /* Get entry at current index via 0x1ce4 */
         dptr_calc_04b7_work23();
-        I_WORK_22 = G_USB_INDEX_COUNTER;  /* Read slot value */
+        I_SCSI_SLOT_INDEX = G_USB_INDEX_COUNTER;  /* Read slot value */
 
         /* Check if entry matches current USB index */
-        if (G_USB_INDEX_COUNTER == I_WORK_22) {
+        if (G_USB_INDEX_COUNTER == I_SCSI_SLOT_INDEX) {
             /* Clear entry via 0x1ce4 */
             dptr_calc_04b7_work23();
 
@@ -2599,7 +2599,7 @@ void scsi_send_csw(uint8_t status, uint8_t param)
  * Input: param in R7 (0 = initialize, non-0 = active transfer check)
  * Output: result in R7 (0 = not ready, 1 = ready/success)
  *
- * Uses: I_WORK_3F (transfer count), I_WORK_40-46 (work vars)
+ * Uses: I_TRANSFER_COUNT (transfer count), I_WORK_40-46 (work vars)
  * Reads: CE51/CE55/CE60/CE6E (SCSI DMA registers)
  * Writes: G_0470-0476 (command state), G_053A (NVMe param)
  */
@@ -2608,13 +2608,13 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
     uint8_t val;
     __xdata uint8_t *ptr;
 
-    /* Copy slot index from I_QUEUE_IDX to I_WORK_43 */
-    I_WORK_43 = I_QUEUE_IDX;
+    /* Copy slot index from I_QUEUE_IDX to I_CMD_SLOT_INDEX */
+    I_CMD_SLOT_INDEX = I_QUEUE_IDX;
 
     if (param != 0) {
         /* Active transfer check path (param != 0) */
-        /* Read SCSI tag index into I_WORK_3F */
-        I_WORK_3F = REG_SCSI_TAG_IDX;
+        /* Read SCSI tag index into I_TRANSFER_COUNT */
+        I_TRANSFER_COUNT = REG_SCSI_TAG_IDX;
 
         /* Check slot table at 0x0171 + slot */
         ptr = get_slot_addr_71();
@@ -2635,14 +2635,14 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
             /* Clear NVMe parameter */
             G_NVME_PARAM_053A = 0;
         }
-        /* Fall through to check I_WORK_3F value */
+        /* Fall through to check I_TRANSFER_COUNT value */
     } else {
         /* Transfer initialization path (param == 0) */
         val = G_SCSI_CMD_PARAM_0470;
 
         if (val & 0x01) {
             /* Bit 0 set - use G_DMA_LOAD_PARAM2 directly */
-            I_WORK_3F = G_DMA_LOAD_PARAM2;
+            I_TRANSFER_COUNT = G_DMA_LOAD_PARAM2;
         } else {
             /* Calculate from endpoint config table */
             uint8_t ep_idx = G_SYS_STATUS_SECONDARY;
@@ -2652,7 +2652,7 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
             /* Load transfer params and calculate count */
             /* dma_load_transfer_params does: R7 = 16-bit div result */
             /* Simplified: just use the base count */
-            I_WORK_3F = base_count;
+            I_TRANSFER_COUNT = base_count;
 
             /* Call again and check if remainder is non-zero */
             /* If so, increment count */
@@ -2666,15 +2666,15 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
             uint8_t mult = get_ep_config_4e();
 
             if (mult != 0) {
-                /* G_XFER_DIV_0476 = I_WORK_3F / mult */
-                G_XFER_DIV_0476 = I_WORK_3F / mult;
+                /* G_XFER_DIV_0476 = I_TRANSFER_COUNT / mult */
+                G_XFER_DIV_0476 = I_TRANSFER_COUNT / mult;
 
                 /* Check remainder, if non-zero increment */
-                if ((I_WORK_3F % mult) != 0) {
+                if ((I_TRANSFER_COUNT % mult) != 0) {
                     G_XFER_DIV_0476++;
                 }
             } else {
-                G_XFER_DIV_0476 = I_WORK_3F;
+                G_XFER_DIV_0476 = I_TRANSFER_COUNT;
             }
 
             /* Check USB status for slot table update */
@@ -2696,7 +2696,7 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
                 ptr = get_addr_from_slot(0x9F);
                 val = *ptr;
                 /* Swap nibbles and subtract 1, compare with R7 (slot high) */
-                uint8_t swapped = ((I_WORK_43 >> 4) | (I_WORK_43 << 4)) - 1;
+                uint8_t swapped = ((I_CMD_SLOT_INDEX >> 4) | (I_CMD_SLOT_INDEX << 4)) - 1;
                 if (val == swapped) {
                     /* Set bit 7 of C414 */
                     REG_NVME_DATA_CTRL = (REG_NVME_DATA_CTRL & 0x7F) | 0x80;
@@ -2709,8 +2709,8 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
     }
 
     /* Check transfer count range */
-    /* if I_WORK_3F >= 0x81, return 0 */
-    if (I_WORK_3F == 0 || I_WORK_3F > 0x80) {
+    /* if I_TRANSFER_COUNT >= 0x81, return 0 */
+    if (I_TRANSFER_COUNT == 0 || I_TRANSFER_COUNT > 0x80) {
         /* Call dma_setup_transfer(0, 0x24, 0x05) and return 0 */
         dma_setup_transfer(0, 0x24, 0x05);
         return 0;
@@ -2721,12 +2721,12 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
     if (val & 0x04) {
         /* Simple path - store helpers */
         G_STATE_HELPER_41 = 0;
-        G_STATE_HELPER_42 = I_WORK_3F & 0x1F;
+        G_STATE_HELPER_42 = I_TRANSFER_COUNT & 0x1F;
         return 1;
     }
 
-    /* Check if I_WORK_3F == 1 (single transfer) */
-    if (I_WORK_3F == 1) {
+    /* Check if I_TRANSFER_COUNT == 1 (single transfer) */
+    if (I_TRANSFER_COUNT == 1) {
         /* Read CE60 into I_WORK_40 */
         I_WORK_40 = REG_XFER_STATUS_CE60;
 
@@ -2738,10 +2738,10 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
         /* Write to SCSI DMA status register */
         REG_SCSI_DMA_STATUS_L = I_WORK_40;
         G_STATE_HELPER_41 = I_WORK_40;
-        G_STATE_HELPER_42 = I_WORK_40 + I_WORK_3F;
+        G_STATE_HELPER_42 = I_WORK_40 + I_TRANSFER_COUNT;
 
         /* Call helpers with calculated addresses */
-        ptr = get_addr_low(0x59 + I_WORK_43);
+        ptr = get_addr_low(0x59 + I_CMD_SLOT_INDEX);
         /* FUN_CODE_1755 would write here */
 
         ptr = get_slot_addr_4e();
@@ -2759,54 +2759,54 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
 
     /* Multi-transfer path - read tag status */
     ptr = get_addr_from_slot(0x9F);
-    I_WORK_42 = *ptr;
-    I_WORK_44 = get_ep_config_4e();
+    I_TAG_STATUS = *ptr;
+    I_MULTIPLIER = get_ep_config_4e();
 
-    /* Complex state machine based on I_WORK_42 and I_WORK_44 */
+    /* Complex state machine based on I_TAG_STATUS and I_MULTIPLIER */
     /* Simplified: just return success for valid transfers */
-    if (I_WORK_42 < 2) {
+    if (I_TAG_STATUS < 2) {
         /* Simple case */
         G_STATE_HELPER_41 = I_WORK_41;
-        G_STATE_HELPER_42 = (I_WORK_41 + I_WORK_3F) & 0x1F;
-        return I_WORK_3F;
+        G_STATE_HELPER_42 = (I_WORK_41 + I_TRANSFER_COUNT) & 0x1F;
+        return I_TRANSFER_COUNT;
     }
 
     /* Tag chain case - check slot table for match */
     ptr = get_slot_addr_71();
-    if (*ptr != I_WORK_42) {
-        /* Mismatch - special handling based on I_WORK_44 */
+    if (*ptr != I_TAG_STATUS) {
+        /* Mismatch - special handling based on I_MULTIPLIER */
         return 0;
     }
 
     /* Chain traversal loop */
-    I_WORK_46 = 0;
+    I_CHAIN_FLAG = 0;
     do {
-        /* Read chain entry from 0x002F + I_WORK_45 */
-        uint8_t chain_val = *(__xdata uint8_t *)(0x002F + I_WORK_43);
-        I_WORK_45 = chain_val;
+        /* Read chain entry from 0x002F + I_CHAIN_INDEX */
+        uint8_t chain_val = *(__xdata uint8_t *)(0x002F + I_CMD_SLOT_INDEX);
+        I_CHAIN_INDEX = chain_val;
 
-        if (I_WORK_45 == 0x21) {
+        if (I_CHAIN_INDEX == 0x21) {
             break;  /* End of chain */
         }
 
         /* Check slot at 0x0517 + chain_val */
-        if (*(__xdata uint8_t *)(0x0517 + I_WORK_45) == 0) {
-            I_WORK_46 = 1;
+        if (*(__xdata uint8_t *)(0x0517 + I_CHAIN_INDEX) == 0) {
+            I_CHAIN_FLAG = 1;
             break;
         }
     } while (1);
 
     /* Calculate product with cap */
-    I_WORK_47 = I_WORK_42 * I_WORK_44;
-    if (I_WORK_47 > 0x20) {
-        I_WORK_47 = 0x20;
+    I_PRODUCT_CAP = I_TAG_STATUS * I_MULTIPLIER;
+    if (I_PRODUCT_CAP > 0x20) {
+        I_PRODUCT_CAP = 0x20;
     }
 
     /* Final state update */
     G_STATE_HELPER_41 = I_WORK_41;
-    G_STATE_HELPER_42 = (I_WORK_41 + I_WORK_3F) & 0x1F;
+    G_STATE_HELPER_42 = (I_WORK_41 + I_TRANSFER_COUNT) & 0x1F;
 
-    return I_WORK_3F;
+    return I_TRANSFER_COUNT;
 }
 
 /*

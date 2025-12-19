@@ -48,7 +48,7 @@ __idata __at(0x18) uint8_t I_WORK_18;         /* Work variable 0x18 */
 __idata __at(0x19) uint8_t I_WORK_19;         /* Work variable 0x19 */
 __idata __at(0x21) uint8_t I_LOG_INDEX;       /* Log index */
 #define I_WORK_21 I_LOG_INDEX  /* Alias for work variable 0x21 */
-__idata __at(0x22) uint8_t I_WORK_22;         /* Work variable 0x22 - slot value */
+__idata __at(0x22) uint8_t I_SCSI_SLOT_INDEX;  /* SCSI command slot index (0-9) */
 __idata __at(0x23) uint8_t I_WORK_23;         /* Work variable 0x23 */
 __idata __at(0x38) uint8_t I_WORK_38;         /* Work variable 0x38 */
 __idata __at(0x39) uint8_t I_WORK_39;         /* Work variable 0x39 */
@@ -57,31 +57,31 @@ __idata __at(0x3B) uint8_t I_WORK_3B;         /* Work variable 0x3B */
 __idata __at(0x3C) uint8_t I_WORK_3C;         /* Work variable 0x3C */
 __idata __at(0x3D) uint8_t I_WORK_3D;         /* Work variable 0x3D */
 __idata __at(0x3E) uint8_t I_WORK_3E;         /* Work variable 0x3E */
-__idata __at(0x3F) uint8_t I_WORK_3F;         /* Work variable 0x3F - transfer count */
+__idata __at(0x3F) uint8_t I_TRANSFER_COUNT;   /* Transfer count */
 __idata __at(0x40) uint8_t I_WORK_40;         /* Work variable 0x40 */
 __idata __at(0x41) uint8_t I_WORK_41;         /* Work variable 0x41 */
-__idata __at(0x42) uint8_t I_WORK_42;         /* Work variable 0x42 - tag status */
-__idata __at(0x43) uint8_t I_WORK_43;         /* Work variable 0x43 - slot index */
-__idata __at(0x44) uint8_t I_WORK_44;         /* Work variable 0x44 - multiplier */
-__idata __at(0x45) uint8_t I_WORK_45;         /* Work variable 0x45 - chain index */
-__idata __at(0x46) uint8_t I_WORK_46;         /* Work variable 0x46 - chain flag */
-__idata __at(0x47) uint8_t I_WORK_47;         /* Work variable 0x47 - product cap */
+__idata __at(0x42) uint8_t I_TAG_STATUS;       /* Command tag status */
+__idata __at(0x43) uint8_t I_CMD_SLOT_INDEX;   /* Command slot index */
+__idata __at(0x44) uint8_t I_MULTIPLIER;       /* Multiplier value */
+__idata __at(0x45) uint8_t I_CHAIN_INDEX;      /* DMA chain index */
+__idata __at(0x46) uint8_t I_CHAIN_FLAG;       /* DMA chain flag */
+__idata __at(0x47) uint8_t I_PRODUCT_CAP;      /* Product capabilities */
 __idata __at(0x4D) uint8_t I_FLASH_STATE_4D;  /* Flash state dispatch value */
 __idata __at(0x51) uint8_t I_WORK_51;         /* Work variable 0x51 */
-__idata __at(0x61) uint8_t I_WORK_61;         /* Work variable 0x61 - PCIe txn data byte 0 */
-__idata __at(0x62) uint8_t I_WORK_62;         /* Work variable 0x62 - PCIe txn data byte 1 */
+__idata __at(0x61) uint8_t I_PCIE_TXN_DATA_0;  /* PCIe transaction data byte 0 */
+__idata __at(0x62) uint8_t I_PCIE_TXN_DATA_1;  /* PCIe transaction data byte 1 */
 __idata __at(0x52) uint8_t I_WORK_52;         /* Work variable 0x52 */
 __idata __at(0x53) uint8_t I_WORK_53;         /* Work variable 0x53 */
 __idata __at(0x54) uint8_t I_WORK_54;         /* Work variable 0x54 */
 __idata __at(0x55) uint8_t I_WORK_55;         /* Work variable 0x55 */
 __idata __at(0x56) uint8_t I_WORK_56;         /* Work variable 0x56 */
-__idata __at(0x57) uint8_t I_WORK_57;         /* Work variable 0x57 - vendor CDB addr low */
-__idata __at(0x58) uint8_t I_WORK_58;         /* Work variable 0x58 - vendor CDB value/addr mid */
-__idata __at(0x59) uint8_t I_WORK_59;         /* Work variable 0x59 - vendor CDB addr high byte 1 */
-__idata __at(0x5A) uint8_t I_WORK_5A;         /* Work variable 0x5A - vendor CDB addr high byte 0 */
-__idata __at(0x63) uint8_t I_WORK_63;         /* Work variable 0x63 - EP config high byte */
-__idata __at(0x64) uint8_t I_WORK_64;         /* Work variable 0x64 - EP config low byte */
-__idata __at(0x65) uint8_t I_WORK_65;         /* Work variable 0x65 - EP mode */
+__idata __at(0x57) uint8_t I_VENDOR_CDB_ADDR_LO;   /* Vendor CDB address low byte */
+__idata __at(0x58) uint8_t I_VENDOR_CDB_VALUE;     /* Vendor CDB value / address mid */
+__idata __at(0x59) uint8_t I_VENDOR_CDB_ADDR_HI1;  /* Vendor CDB address high byte 1 */
+__idata __at(0x5A) uint8_t I_VENDOR_CDB_ADDR_HI0;  /* Vendor CDB address high byte 0 */
+__idata __at(0x63) uint8_t I_EP_CONFIG_HI;     /* Endpoint config high byte */
+__idata __at(0x64) uint8_t I_EP_CONFIG_LO;     /* Endpoint config low byte */
+__idata __at(0x65) uint8_t I_EP_MODE;          /* Endpoint mode */
 /*
  * USB State Machine (IDATA 0x6A)
  * Tracks current USB device state per USB 2.0 specification.
@@ -142,7 +142,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_WORK_0128             XDATA_VAR8(0x0128)  /* Work variable 0x0128 */
 #define G_INIT_STATE_00E5       XDATA_VAR8(0x00E5)  /* Initialization state flag 2 */
 #define G_USB_INDEX_COUNTER     XDATA_VAR8(0x014E)  /* USB index counter (5-bit) */
-/* SCSI slot arrays (indexed by I_WORK_22) */
+/* SCSI slot arrays (indexed by I_SCSI_SLOT_INDEX) */
 #define G_SCSI_SLOT_4E_BASE     ((__xdata uint8_t *)0x004E)  /* SCSI slot config base */
 #define G_SCSI_SLOT_71_BASE     ((__xdata uint8_t *)0x0171)  /* SCSI slot ctrl base */
 #define G_SCSI_SLOT_7C_BASE     ((__xdata uint8_t *)0x017C)  /* SCSI slot status base */

@@ -382,7 +382,7 @@ uint8_t power_state_machine_d02a(uint8_t max_iterations)
 
         /* Check if delay returned error (R7 != 0 in assembly) */
         /* The delay function modifies IDATA[0x65], if non-zero it's an error */
-        if (I_WORK_65 != 0) {
+        if (I_EP_MODE != 0) {
             return 0xFF;  /* Failure */
         }
 
