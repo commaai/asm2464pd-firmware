@@ -544,6 +544,38 @@ access to the full 6-8MB internal SRAM regardless of 8051's 64KB limitation.
 - GPU DMA (bus master): ~4 GB/s to internal SRAM
 - 8051 CPU only handles control path, not data movement
 
+### Tinygrad USB Buffer Sizes (Actual Usage)
+
+From `~/tinygrad/tinygrad/runtime/support/usb.py`:
+
+```python
+# Line 47-48: Per-stream buffers
+self.buf_data_in = [(ctypes.c_uint8 * 0x1000)() ...]   # 4 KB per stream
+self.buf_data_out = [(ctypes.c_uint8 * 0x80000)() ...] # 512 KB per stream
+
+# Line 158-159: SCSI write chunking
+for i in range(0, len(buf), 0x10000):  # 64 KB chunks
+    self.exec_ops([ScsiWriteOp(buf[i:i+0x10000], lba), ...])
+```
+
+**Actual Buffer Sizes Used:**
+| Buffer | Size | Notes |
+|--------|------|-------|
+| USB Data Out | 512 KB | Host→Device per stream |
+| USB Data In | 4 KB | Device→Host per stream |
+| SCSI Write Chunk | 64 KB | Per SCSI WRITE(16) command |
+| Max Streams | 31 | USB3 bulk streams |
+
+**Why 64KB SCSI chunks?**
+- 64 KB = 128 sectors × 512 bytes
+- Matches standard NVMe maximum transfer size per command
+- Allows firmware to process completion between chunks
+- Reliable across all USB host controllers
+
+**Total Concurrent Bandwidth:**
+- 31 streams × 512 KB = **~16 MB** in flight
+- But individual SCSI writes are 64 KB each
+
 ### Caveats
 
 1. **GPU driver complexity:** Need custom GPU driver or modify existing one to DMA to bridge addresses
