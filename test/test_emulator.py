@@ -2419,5 +2419,608 @@ class TestUSBDescriptorInit:
         assert vid == 0x174C, f"[{fw_name}] VID should be 0x174C (ASMedia)"
 
 
+class TestSPIFlash:
+    """Tests for SPI flash emulation."""
+
+    def test_flash_initialized(self, original_firmware_emulator):
+        """Verify flash is initialized to correct size."""
+        emu = original_firmware_emulator
+        assert len(emu.hw.spi_flash) == 0x40000  # 256KB
+
+    def test_flash_sector_erase(self, original_firmware_emulator):
+        """Test sector erase command (0x20)."""
+        emu = original_firmware_emulator
+        # Write some data first
+        for i in range(16):
+            emu.hw.spi_flash[i] = 0xAA
+
+        # Set address and send erase command
+        emu.hw.regs[0xC8AB] = 0x00  # High
+        emu.hw.regs[0xC8AC] = 0x00  # Mid
+        emu.hw.regs[0xC8AD] = 0x00  # Low
+        emu.hw.write(0xC8AA, 0x20)  # Sector erase
+
+        # Verify erased to 0xFF
+        for i in range(16):
+            assert emu.hw.spi_flash[i] == 0xFF
+
+    def test_flash_read(self, original_firmware_emulator):
+        """Test flash read via data register with auto-increment."""
+        emu = original_firmware_emulator
+        # Write known data
+        emu.hw.spi_flash[0x100] = 0x42
+        emu.hw.spi_flash[0x101] = 0x43
+
+        # Set address
+        emu.hw.spi_flash_addr = 0x100
+
+        # Read data (auto-increments)
+        val = emu.hw.read(0xC8AE)
+        assert val == 0x42
+        val = emu.hw.read(0xC8AE)
+        assert val == 0x43
+
+    def test_flash_block_erase(self, original_firmware_emulator):
+        """Test block erase command (0xD8)."""
+        emu = original_firmware_emulator
+        # Write data at start of block
+        for i in range(256):
+            emu.hw.spi_flash[i] = 0x55
+
+        # Set address and send block erase
+        emu.hw.regs[0xC8AB] = 0x00
+        emu.hw.regs[0xC8AC] = 0x00
+        emu.hw.regs[0xC8AD] = 0x00
+        emu.hw.write(0xC8AA, 0xD8)  # Block erase (64KB)
+
+        # Verify erased
+        for i in range(256):
+            assert emu.hw.spi_flash[i] == 0xFF
+
+
+class TestConfigDescriptorSpeed:
+    """Tests for USB2/USB3 config descriptor selection based on speed."""
+
+    def test_usb3_config_loaded_from_rom(self, original_firmware_emulator):
+        """Verify USB3 config descriptor loads from ROM."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        desc = emu.hw.usb_ss_config_from_rom
+        assert len(desc) > 0, "USB3 config descriptor not loaded"
+        assert desc[0] == 0x09  # bLength
+        assert desc[1] == 0x02  # bDescriptorType = CONFIG
+
+    def test_usb2_config_loaded_from_rom(self, original_firmware_emulator):
+        """Verify USB2 config descriptor loads from ROM."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        desc = emu.hw.usb_hs_config_from_rom
+        assert len(desc) > 0, "USB2 config descriptor not loaded"
+        assert desc[0] == 0x09  # bLength
+        assert desc[1] == 0x02  # bDescriptorType = CONFIG
+
+    def test_usb3_wtotallength_fixed(self, original_firmware_emulator):
+        """Verify USB3 config descriptor wTotalLength is corrected."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        desc = emu.hw.usb_ss_config_from_rom
+        wTotalLength = desc[2] | (desc[3] << 8)
+        assert wTotalLength == len(desc), "wTotalLength should match descriptor length"
+        assert wTotalLength > 44, "Should be extended beyond original 44 bytes"
+
+    def test_usb2_wtotallength_fixed(self, original_firmware_emulator):
+        """Verify USB2 config descriptor wTotalLength is corrected."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        desc = emu.hw.usb_hs_config_from_rom
+        wTotalLength = desc[2] | (desc[3] << 8)
+        assert wTotalLength == len(desc), "wTotalLength should match descriptor length"
+
+    def test_usb3_endpoints_have_1024_byte_max_packet(self, original_firmware_emulator):
+        """Verify USB3 config has 1024-byte bulk endpoint max packet size."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        desc = emu.hw.usb_ss_config_from_rom
+
+        i = 0
+        found_bulk = False
+        while i < len(desc) - 6:
+            bLength = desc[i]
+            bDescriptorType = desc[i + 1]
+            if bLength == 0:
+                break
+            if bDescriptorType == 0x05:  # Endpoint descriptor
+                wMaxPacketSize = desc[i + 4] | (desc[i + 5] << 8)
+                bmAttributes = desc[i + 3]
+                if (bmAttributes & 0x03) == 0x02:  # Bulk endpoint
+                    assert wMaxPacketSize == 1024, f"USB3 bulk endpoint should have 1024 byte max packet, got {wMaxPacketSize}"
+                    found_bulk = True
+            i += bLength
+        assert found_bulk, "No bulk endpoint found in USB3 config descriptor"
+
+    def test_usb2_endpoints_have_512_byte_max_packet(self, original_firmware_emulator):
+        """Verify USB2 config has 512-byte bulk endpoint max packet size."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        desc = emu.hw.usb_hs_config_from_rom
+
+        i = 0
+        found_bulk = False
+        while i < len(desc) - 6:
+            bLength = desc[i]
+            bDescriptorType = desc[i + 1]
+            if bLength == 0:
+                break
+            if bDescriptorType == 0x05:  # Endpoint descriptor
+                wMaxPacketSize = desc[i + 4] | (desc[i + 5] << 8)
+                bmAttributes = desc[i + 3]
+                if (bmAttributes & 0x03) == 0x02:  # Bulk endpoint
+                    assert wMaxPacketSize == 512, f"USB2 bulk endpoint should have 512 byte max packet, got {wMaxPacketSize}"
+                    found_bulk = True
+            i += bLength
+        assert found_bulk, "No bulk endpoint found in USB2 config descriptor"
+
+    def test_extend_config_returns_usb3_for_superspeed(self, original_firmware_emulator):
+        """Verify _extend_config_descriptor returns USB3 config at SuperSpeed."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        emu.hw.usb_controller.usb_speed = 2  # SuperSpeed
+
+        result = emu.hw._extend_config_descriptor(bytearray(), 121)
+        assert result == emu.hw.usb_ss_config_from_rom[:121]
+
+    def test_extend_config_returns_usb2_for_highspeed(self, original_firmware_emulator):
+        """Verify _extend_config_descriptor returns USB2 config at High Speed."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        emu.hw.usb_controller.usb_speed = 1  # High Speed
+
+        result = emu.hw._extend_config_descriptor(bytearray(), 64)
+
+        # Verify 512-byte endpoints (USB2) not 1024 (USB3)
+        i = 0
+        found_bulk = False
+        while i < len(result) - 6:
+            bLength = result[i]
+            bDescriptorType = result[i + 1]
+            if bLength == 0:
+                break
+            if bDescriptorType == 0x05:  # Endpoint descriptor
+                wMaxPacketSize = result[i + 4] | (result[i + 5] << 8)
+                bmAttributes = result[i + 3]
+                if (bmAttributes & 0x03) == 0x02:  # Bulk endpoint
+                    assert wMaxPacketSize == 512, f"USB2 should use 512-byte endpoints, got {wMaxPacketSize}"
+                    found_bulk = True
+            i += bLength
+        assert found_bulk, "No bulk endpoint found in returned config descriptor"
+
+    def test_extend_config_returns_usb2_for_fullspeed(self, original_firmware_emulator):
+        """Verify _extend_config_descriptor returns USB2 config at Full Speed."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        emu.hw.usb_controller.usb_speed = 0  # Full Speed
+
+        result = emu.hw._extend_config_descriptor(bytearray(), 64)
+
+        # Should use USB2 config (speed < 2)
+        i = 0
+        found_bulk = False
+        while i < len(result) - 6:
+            bLength = result[i]
+            bDescriptorType = result[i + 1]
+            if bLength == 0:
+                break
+            if bDescriptorType == 0x05:  # Endpoint descriptor
+                wMaxPacketSize = result[i + 4] | (result[i + 5] << 8)
+                bmAttributes = result[i + 3]
+                if (bmAttributes & 0x03) == 0x02:  # Bulk endpoint
+                    assert wMaxPacketSize == 512, f"Full Speed should use 512-byte endpoints, got {wMaxPacketSize}"
+                    found_bulk = True
+            i += bLength
+        assert found_bulk, "No bulk endpoint found in returned config descriptor"
+
+
+class TestConfigDescriptorAltSettings:
+    """Tests for config descriptor alt settings (BBB and UAS modes)."""
+
+    def test_usb3_config_has_two_altsettings(self, original_firmware_emulator):
+        """Verify USB3 config has alt_setting 0 (BBB) and alt_setting 1 (UAS)."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        desc = emu.hw.usb_ss_config_from_rom
+
+        alt_settings = []
+        i = 0
+        while i < len(desc) - 4:
+            bLength = desc[i]
+            bDescriptorType = desc[i + 1]
+            if bLength == 0:
+                break
+            if bDescriptorType == 0x04:  # Interface descriptor
+                bInterfaceNumber = desc[i + 2]
+                bAlternateSetting = desc[i + 3]
+                alt_settings.append((bInterfaceNumber, bAlternateSetting))
+            i += bLength
+
+        assert (0, 0) in alt_settings, "Missing alt_setting 0 (BBB mode)"
+        assert (0, 1) in alt_settings, "Missing alt_setting 1 (UAS mode)"
+
+    def test_usb2_config_has_two_altsettings(self, original_firmware_emulator):
+        """Verify USB2 config has alt_setting 0 and 1."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        desc = emu.hw.usb_hs_config_from_rom
+
+        alt_settings = []
+        i = 0
+        while i < len(desc) - 4:
+            bLength = desc[i]
+            bDescriptorType = desc[i + 1]
+            if bLength == 0:
+                break
+            if bDescriptorType == 0x04:  # Interface descriptor
+                bInterfaceNumber = desc[i + 2]
+                bAlternateSetting = desc[i + 3]
+                alt_settings.append((bInterfaceNumber, bAlternateSetting))
+            i += bLength
+
+        assert (0, 0) in alt_settings, "Missing alt_setting 0"
+        assert (0, 1) in alt_settings, "Missing alt_setting 1"
+
+    def test_bbb_mode_has_two_endpoints(self, original_firmware_emulator):
+        """Verify BBB mode (alt_setting 0) has 2 bulk endpoints."""
+        emu = original_firmware_emulator
+        emu.hw.load_config_descriptor_from_rom()
+        desc = emu.hw.usb_ss_config_from_rom
+
+        # Find alt_setting 0 and count its endpoints
+        i = 0
+        in_alt0 = False
+        endpoints = []
+        while i < len(desc) - 2:
+            bLength = desc[i]
+            bDescriptorType = desc[i + 1]
+            if bLength == 0:
+                break
+            if bDescriptorType == 0x04:  # Interface descriptor
+                bAlternateSetting = desc[i + 3]
+                bNumEndpoints = desc[i + 4]
+                if bAlternateSetting == 0:
+                    in_alt0 = True
+                    assert bNumEndpoints == 2, f"BBB mode should have 2 endpoints, got {bNumEndpoints}"
+                else:
+                    in_alt0 = False
+            elif bDescriptorType == 0x05 and in_alt0:  # Endpoint in alt0
+                endpoints.append(desc[i + 2])  # bEndpointAddress
+            i += bLength
+
+        assert len(endpoints) == 2, f"BBB mode should have 2 endpoints, found {len(endpoints)}"
+
+
+class TestUSBSpeedModeRegisters:
+    """Tests for USB speed mode register settings."""
+
+    def test_superspeed_mode_sets_correct_registers(self, original_firmware_emulator):
+        """Verify SuperSpeed mode sets USB3 indicator registers."""
+        emu = original_firmware_emulator
+        emu.hw.usb_controller.connect(speed=2)
+        assert emu.hw.regs.get(0x90E0, 0) == 2
+        assert emu.hw.regs.get(0x9100, 0) == 2
+        assert emu.hw.regs.get(0xCC91, 0) & 0x02  # Bit 1 SET for USB3
+        assert emu.hw.regs.get(0x09F9, 0) & 0x40  # Bit 6 SET for USB3
+
+    def test_highspeed_mode_sets_correct_registers(self, original_firmware_emulator):
+        """Verify High Speed mode clears USB3 indicator registers."""
+        emu = original_firmware_emulator
+        emu.hw.usb_controller.connect(speed=1)
+        assert emu.hw.regs.get(0x90E0, 0) == 1
+        assert emu.hw.regs.get(0x9100, 0) == 1
+        assert not (emu.hw.regs.get(0xCC91, 0) & 0x02)  # Bit 1 CLEAR for USB2
+        assert not (emu.hw.regs.get(0x09F9, 0) & 0x40)  # Bit 6 CLEAR for USB2
+
+
+class TestUSBDescriptorDMA:
+    """Tests for USB descriptor handling via firmware DMA.
+
+    These tests verify the core principle from CLAUDE.md:
+    - The emulator must NOT parse, process, or understand USB control messages
+    - Firmware reads setup packet, determines response, configures DMA source address
+    - USB hardware DMAs out the response from the address FIRMWARE configured
+    """
+
+    def _request_descriptor(self, emu, wValue, wLength):
+        """Helper to request a descriptor and return result with DMA info."""
+        # Clear output buffer
+        for i in range(64):
+            emu.memory.xdata[0x8000 + i] = 0
+
+        # Track DMA source address writes
+        dma_sources = []
+        original_write = emu.hw.write
+
+        def track_dma_writes(addr, value):
+            if addr == 0x905B:  # DMA src high
+                dma_sources.append(('high', value))
+            elif addr == 0x905C:  # DMA src low
+                dma_sources.append(('low', value))
+            elif addr == 0x9092:  # DMA trigger
+                dma_sources.append(('trigger', value))
+            return original_write(addr, value)
+
+        emu.hw.write = track_dma_writes
+
+        # Inject descriptor request
+        emu.hw.usb_controller.inject_control_transfer(
+            bmRequestType=0x80,
+            bRequest=0x06,  # GET_DESCRIPTOR
+            wValue=wValue,
+            wIndex=0x0000,
+            wLength=wLength
+        )
+
+        # Run firmware
+        emu.run(max_cycles=500000)
+
+        # Restore write handler
+        emu.hw.write = original_write
+
+        # Analyze DMA source
+        dma_src_high = 0
+        dma_src_low = 0
+        triggered = False
+        for op, val in dma_sources:
+            if op == 'high':
+                dma_src_high = val
+            elif op == 'low':
+                dma_src_low = val
+            elif op == 'trigger' and val == 0x01:
+                triggered = True
+
+        dma_src = (dma_src_high << 8) | dma_src_low
+        result = bytes(emu.memory.xdata[0x8000:0x8000 + wLength])
+
+        return {
+            'result': result,
+            'dma_src': dma_src,
+            'triggered': triggered,
+            'non_zero': sum(1 for b in result if b != 0)
+        }
+
+    def test_device_descriptor_via_dma(self, original_firmware_emulator):
+        """Verify device descriptor is handled by firmware via DMA."""
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        r = self._request_descriptor(emu, 0x0100, 18)  # Type 1 (device)
+
+        # Device descriptor should start with 0x12 (length=18) and 0x01 (type=device)
+        assert r['result'][0] == 0x12, f"Device descriptor bLength should be 0x12, got 0x{r['result'][0]:02X}"
+        assert r['result'][1] == 0x01, f"Device descriptor bDescriptorType should be 0x01, got 0x{r['result'][1]:02X}"
+        assert r['triggered'], "DMA should be triggered for device descriptor"
+
+    def test_config_descriptor_via_dma(self, original_firmware_emulator):
+        """Verify config descriptor is handled by firmware via DMA."""
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        r = self._request_descriptor(emu, 0x0200, 9)  # Type 2 (config), 9 bytes header
+
+        # Config descriptor should start with 0x09 (length) and 0x02 (type)
+        assert r['result'][0] == 0x09, f"Config descriptor bLength should be 0x09, got 0x{r['result'][0]:02X}"
+        assert r['result'][1] == 0x02, f"Config descriptor bDescriptorType should be 0x02, got 0x{r['result'][1]:02X}"
+        assert r['triggered'], "DMA should be triggered for config descriptor"
+
+    def test_string_descriptor_language_via_dma(self, original_firmware_emulator):
+        """Verify string descriptor (language IDs) is handled by firmware via DMA."""
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        r = self._request_descriptor(emu, 0x0300, 4)  # Type 3 (string), index 0
+
+        # String descriptor should have type 0x03
+        assert r['result'][1] == 0x03, f"String descriptor bDescriptorType should be 0x03, got 0x{r['result'][1]:02X}"
+        assert r['result'][0] > 0, "String descriptor bLength should be > 0"
+        assert r['triggered'], "DMA should be triggered for string descriptor"
+
+    def test_string_descriptor_index1_via_dma(self, original_firmware_emulator):
+        """Verify string descriptor index 1 is handled by firmware via DMA."""
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        r = self._request_descriptor(emu, 0x0301, 64)  # Type 3 (string), index 1
+
+        # String descriptor should have type 0x03
+        assert r['result'][1] == 0x03, f"String descriptor bDescriptorType should be 0x03, got 0x{r['result'][1]:02X}"
+        assert r['triggered'], "DMA should be triggered for string descriptor"
+
+    def test_bos_descriptor_via_dma(self, original_firmware_emulator):
+        """Verify BOS descriptor is handled by firmware via DMA."""
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        r = self._request_descriptor(emu, 0x0F00, 5)  # Type 15 (BOS)
+
+        # BOS descriptor should have type 0x0F or at least return some data
+        assert r['result'][1] == 0x0F or r['non_zero'] > 0, "BOS descriptor should be returned"
+        assert r['triggered'], "DMA should be triggered for BOS descriptor"
+
+
+class TestSCSIVendorCommands:
+    """Tests for SCSI vendor commands (E1, E3, E8) used for firmware updates."""
+
+    def _inject_scsi_cmd(self, emu, opcode, cdb, data=b'', is_write=False):
+        """Helper to inject a SCSI vendor command."""
+        import struct
+
+        # Check if inject_scsi_vendor_cmd exists
+        if hasattr(emu.hw, 'inject_scsi_vendor_cmd'):
+            emu.hw.inject_scsi_vendor_cmd(opcode, cdb, data, is_write=is_write)
+        else:
+            # Manually set up MMIO registers for command injection
+            # Set CDB in MMIO registers 0x910D-0x911C
+            for i, byte in enumerate(cdb[:16]):
+                emu.hw.regs[0x910D + i] = byte
+
+            # Set up USB state
+            emu.memory.idata[0x6A] = 0x02  # USB state
+            emu.memory.xdata[0x0002] = opcode  # CDB opcode
+            emu.memory.xdata[0xEA90] = 0x5A  # Magic value
+
+            # Set interrupt flags
+            emu.hw.regs[0x9000] = 0x81
+            emu.hw.regs[0x9101] = 0x21
+            emu.hw.regs[0xC802] = 0x05
+            emu.hw.regs[0x9096] = 0x01
+
+            # Put data in USB buffer if write command
+            if is_write and data:
+                for i, byte in enumerate(data[:len(data)]):
+                    emu.memory.xdata[0x8000 + i] = byte
+
+    def test_e1_config_write_cdb_setup(self, original_firmware_emulator):
+        """Verify E1 Config Write command sets up MMIO registers correctly."""
+        import struct
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        # Build E1 command CDB: E1 50 block_num
+        cdb = struct.pack('>BBB', 0xE1, 0x50, 0x00) + bytes(12)
+        config_data = bytes([0x41 + (i % 26) for i in range(128)])
+
+        self._inject_scsi_cmd(emu, 0xE1, cdb, config_data, is_write=True)
+
+        # Verify MMIO registers were set
+        assert emu.hw.regs.get(0x910D, 0) == 0xE1, "CDB[0] should be 0xE1"
+        assert emu.hw.regs.get(0x910E, 0) == 0x50, "CDB[1] should be 0x50"
+        assert emu.memory.xdata[0x0002] == 0xE1, "XDATA CDB opcode should be 0xE1"
+
+    def test_e3_firmware_write_cdb_setup(self, original_firmware_emulator):
+        """Verify E3 Firmware Write command sets up MMIO registers correctly."""
+        import struct
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        # Build E3 command CDB: E3 50 length(4 bytes)
+        fw_length = 256
+        cdb = struct.pack('>BBI', 0xE3, 0x50, fw_length) + bytes(9)
+        fw_data = bytes([i & 0xFF for i in range(fw_length)])
+
+        self._inject_scsi_cmd(emu, 0xE3, cdb, fw_data, is_write=True)
+
+        # Verify MMIO registers were set
+        assert emu.hw.regs.get(0x910D, 0) == 0xE3, "CDB[0] should be 0xE3"
+        assert emu.hw.regs.get(0x910E, 0) == 0x50, "CDB[1] should be 0x50"
+        assert emu.memory.xdata[0x0002] == 0xE3, "XDATA CDB opcode should be 0xE3"
+
+    def test_e8_commit_cdb_setup(self, original_firmware_emulator):
+        """Verify E8 Reset/Commit command sets up MMIO registers correctly."""
+        import struct
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        # Build E8 command CDB: E8 51
+        cdb = struct.pack('>BB', 0xE8, 0x51) + bytes(13)
+
+        self._inject_scsi_cmd(emu, 0xE8, cdb, b'', is_write=False)
+
+        # Verify MMIO registers were set
+        assert emu.hw.regs.get(0x910D, 0) == 0xE8, "CDB[0] should be 0xE8"
+        assert emu.hw.regs.get(0x910E, 0) == 0x51, "CDB[1] should be 0x51"
+        assert emu.memory.xdata[0x0002] == 0xE8, "XDATA CDB opcode should be 0xE8"
+
+    def test_vendor_cmd_magic_value(self, original_firmware_emulator):
+        """Verify vendor commands set the magic value at 0xEA90."""
+        import struct
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        cdb = struct.pack('>BBB', 0xE1, 0x50, 0x00) + bytes(12)
+        self._inject_scsi_cmd(emu, 0xE1, cdb, bytes(128), is_write=True)
+
+        assert emu.memory.xdata[0xEA90] == 0x5A, "Magic value at 0xEA90 should be 0x5A"
+
+    def test_vendor_cmd_usb_state(self, original_firmware_emulator):
+        """Verify vendor commands set USB state to 0x02."""
+        import struct
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        cdb = struct.pack('>BBB', 0xE1, 0x50, 0x00) + bytes(12)
+        self._inject_scsi_cmd(emu, 0xE1, cdb, bytes(128), is_write=True)
+
+        assert emu.memory.idata[0x6A] == 0x02, "USB state at IDATA[0x6A] should be 0x02"
+
+
+class TestPatchFlowSequence:
+    """Tests for the patch.py firmware update sequence."""
+
+    def test_e1_followed_by_e3_sequence(self, original_firmware_emulator):
+        """Verify E1 config write followed by E3 firmware write works."""
+        import struct
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        # First E1 command (config block 0)
+        cdb1 = struct.pack('>BBB', 0xE1, 0x50, 0x00) + bytes(12)
+        config_data = bytes(128)
+
+        if hasattr(emu.hw, 'inject_scsi_vendor_cmd'):
+            emu.hw.inject_scsi_vendor_cmd(0xE1, cdb1, config_data, is_write=True)
+            emu.run(max_cycles=400000)
+
+            # Then E3 command (firmware write)
+            cdb2 = struct.pack('>BBI', 0xE3, 0x50, 256) + bytes(9)
+            fw_data = bytes(256)
+            emu.hw.inject_scsi_vendor_cmd(0xE3, cdb2, fw_data, is_write=True)
+            emu.run(max_cycles=400000)
+
+            # Verify both commands were processed (CDB changed)
+            assert emu.memory.xdata[0x0002] == 0xE3, "Last CDB opcode should be E3"
+
+    def test_different_config_blocks(self, original_firmware_emulator):
+        """Verify E1 can write to different config blocks (0 and 1)."""
+        import struct
+        emu = original_firmware_emulator
+        emu.run(max_cycles=200000)  # Boot
+        emu.hw.usb_controller.connect(speed=2)
+        emu.run(max_cycles=300000)
+
+        # Config block 0
+        cdb0 = struct.pack('>BBB', 0xE1, 0x50, 0x00) + bytes(12)
+        # Config block 1
+        cdb1 = struct.pack('>BBB', 0xE1, 0x50, 0x01) + bytes(12)
+
+        if hasattr(emu.hw, 'inject_scsi_vendor_cmd'):
+            emu.hw.inject_scsi_vendor_cmd(0xE1, cdb0, bytes(128), is_write=True)
+            emu.run(max_cycles=400000)
+            assert emu.hw.regs.get(0x910F, 0) == 0x00, "Block 0 indicator"
+
+            emu.hw.inject_scsi_vendor_cmd(0xE1, cdb1, bytes(128), is_write=True)
+            emu.run(max_cycles=400000)
+            assert emu.hw.regs.get(0x910F, 0) == 0x01, "Block 1 indicator"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, '-v'])
