@@ -190,5 +190,8 @@ debug:
 	@echo "OBJS: $(OBJS)"
 
 flash: $(BUILD_DIR)/firmware_wrapped.bin
+	@echo "Resetting to bootloader..."
+	@python3 ~/openpilot/tinygrad_repo/extra/usbgpu/debug.py -bn
 	@echo "Flashing firmware to device..."
 	@python3 flash.py $<
+	@python3 ~/openpilot/tinygrad_repo/extra/usbgpu/debug.py -rn

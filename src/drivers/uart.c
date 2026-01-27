@@ -159,6 +159,7 @@ void uart_puts(__code const char *str)
 
     while ((ch = *str++) != '\0') {
         REG_UART_THR = ch;
+        for(volatile int i = 0; i < 150; i++); // this helps somewhat, it comes through with like 50% corruption
     }
 }
 

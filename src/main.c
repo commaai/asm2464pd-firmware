@@ -469,6 +469,10 @@ void main_loop(void)
     state_init_4ffb();               /* 0x4ffb -> Sets G_EVENT_FLAGS = 0x04, then 0x87 via dispatch_0520 */
     usb_power_init();                /* 0x0327 */
 
+    uart_newline();
+    uart_puts("robbetesttest\n");
+    while(1);
+
     /* One-time event flags check (0x1F96-0x1FAD) - only runs on first pass */
     events = G_EVENT_FLAGS;
     if (events & EVENT_FLAGS_ANY) {  /* 0x83 mask */
