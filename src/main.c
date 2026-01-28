@@ -461,6 +461,12 @@ void main_loop(void)
     /* Clear loop state flag at entry */
     G_LOOP_STATE = 0x00;
 
+    // Setup uart. This is done at 0xe597 in the original fw, but doesn't look like it's implemented here yet.
+    // This seems to turn off parity and enable the FIFO?
+    REG_UART_FCR |= (1 << 1);
+    REG_UART_LCR &= ~(1 << 3);
+    // XDATA_REG8(0xCA2E) |= (1 << 0); // this is also done in the same function but doesn't seem necessary?
+
     /* One-time initialization - called once before main loop (0x1F7C-0x1FAD) */
     timer_link_status_handler();     /* 0x527a */
     phy_config_link_params();        /* 0x04c6 */
@@ -468,10 +474,6 @@ void main_loop(void)
     main_polling_handler();          /* 0x04a8 */
     state_init_4ffb();               /* 0x4ffb -> Sets G_EVENT_FLAGS = 0x04, then 0x87 via dispatch_0520 */
     usb_power_init();                /* 0x0327 */
-
-    uart_newline();
-    uart_puts("robbetesttest\n");
-    while(1);
 
     /* One-time event flags check (0x1F96-0x1FAD) - only runs on first pass */
     events = G_EVENT_FLAGS;
