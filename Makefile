@@ -188,3 +188,7 @@ debug:
 	@echo "LDFLAGS: $(LDFLAGS)"
 	@echo "SRCS: $(SRCS)"
 	@echo "OBJS: $(OBJS)"
+
+flash: $(BUILD_DIR)/firmware_wrapped.bin
+	@echo "Flashing firmware to device..."
+	@python3 flash.py $<
