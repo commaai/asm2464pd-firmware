@@ -535,6 +535,125 @@ static void pd_internal_state_init_b806(void)
 }
 
 /*
+ * Helper: 0x967c - Set bit 6 of register at current DPTR
+ * Reads @DPTR, clears bit 6, sets bit 6, writes back
+ */
+static void helper_set_bit6(__xdata uint8_t *reg)
+{
+    uint8_t val = *reg;
+    val = (val & 0xBF) | 0x40;
+    *reg = val;
+}
+
+/*
+ * Helper: 0x955b - Set bit 0 of register at current DPTR
+ * Reads @DPTR, clears bit 0, sets bit 0, writes back
+ */
+static void helper_set_bit0(__xdata uint8_t *reg)
+{
+    uint8_t val = *reg;
+    val = (val & 0xFE) | 0x01;
+    *reg = val;
+}
+
+/*
+ * Helper: 0x9574 - Reset DMA controller
+ * Clears CC88 bits 0-2, writes 0 to CC8A
+ */
+static void helper_dma_reset_9574(void)
+{
+    REG_XFER_DMA_CTRL &= 0xF8;  /* Clear bits 0-2 */
+    REG_XFER_DMA_ADDR_LO = 0;
+}
+
+/*
+ * Helper: 0x94a3 - Start DMA with value (inc DPTR version)
+ * Writes value to CC8B, then writes 1 to CC89 to start
+ */
+static void helper_dma_start_94a3(uint8_t value)
+{
+    REG_XFER_DMA_ADDR_HI = value;
+    REG_XFER_DMA_CMD = XFER_DMA_CMD_START;
+}
+
+/*
+ * Helper: 0x95a2 - Clear DMA completion flag
+ * Writes 2 to CC89
+ */
+static void helper_dma_clear_95a2(void)
+{
+    REG_XFER_DMA_CMD = XFER_DMA_CMD_DONE;
+}
+
+/*
+ * Helper: 0x9666 - Write to E420 and read E409 masked
+ * Writes value to E420, reads E409 & 0xF1, returns value
+ */
+static uint8_t helper_e420_write_9666(uint8_t value)
+{
+    REG_CMD_TRIGGER = value;
+    return REG_CMD_CTRL_E409 & 0xF1;
+}
+
+/*
+ * Helper: 0x9545 - Extract bit 7 to bit 0
+ * swap a, rrc 3x, AND 0x01
+ * This extracts bit 7: swap puts bit 7 in bit 3, then rrc 3x puts it in bit 0
+ */
+static uint8_t helper_extract_bit7_9545(uint8_t value)
+{
+    /* swap moves bits 4-7 to bits 0-3, then shift right 3 extracts bit 7 as bit 0 */
+    return ((value >> 4) >> 3) & 0x01;
+}
+
+/*
+ * Helper: 0xd7fd - PD command config initialization
+ * Address: 0xD7FD-0xD83A (62 bytes)
+ *
+ * Sets bit 7 of E40B, then if bit 7 sticks, configures E401, E406, E407, E408
+ *
+ * Original disassembly:
+ *   d7fd: mov dptr, #0xe40b
+ *   d800: movx a, @dptr
+ *   d801: anl a, #0x7f
+ *   d803: orl a, #0x80
+ *   d805: movx @dptr, a       ; E40B = (E40B & 0x7F) | 0x80
+ *   d806: movx a, @dptr       ; re-read E40B
+ *   d807: anl a, #0x80        ; check bit 7
+ *   d809: lcall 0x9545        ; extract bit 7 to bit 0
+ *   d80c: jz 0xd83a           ; if 0, return
+ *   d80e-d81c: Configure E401 (two read-modify-writes)
+ *   d81d-d82b: Configure E406 (two read-modify-writes)
+ *   d82c-d832: Configure E407
+ *   d833-d839: Configure E408
+ *   d83a: ret
+ */
+static void helper_pd_cmd_config_d7fd(void)
+{
+    /* d7fd-d805: Set bit 7 of E40B */
+    REG_CMD_CONFIG = (REG_CMD_CONFIG & 0x7F) | 0x80;
+
+    /* d806-d80c: Read E40B, check if bit 7 is set */
+    if (helper_extract_bit7_9545(REG_CMD_CONFIG & 0x80) == 0) {
+        return;  /* Bit 7 not set, return */
+    }
+
+    /* d80e-d81c: Configure E401 (two separate read-modify-writes) */
+    REG_CMD_CTRL_E401 = (REG_CMD_CTRL_E401 & 0xF8) | 0x04;
+    REG_CMD_CTRL_E401 = (REG_CMD_CTRL_E401 & 0x07) | 0xB0;
+
+    /* d81d-d82b: Configure E406 (two separate read-modify-writes) */
+    REG_CMD_CTRL_E406 = (REG_CMD_CTRL_E406 & 0xF0) | 0x06;
+    REG_CMD_CTRL_E406 = (REG_CMD_CTRL_E406 & 0x0F) | 0xA0;
+
+    /* d82c-d832: Configure E407 */
+    REG_CMD_CTRL_E407 = (REG_CMD_CTRL_E407 & 0xE0) | 0x15;
+
+    /* d833-d839: Configure E408 */
+    REG_CMD_CTRL_E408 = (REG_CMD_CTRL_E408 & 0xE0) | 0x1C;
+}
+
+/*
  * pd_usb_init_b02f - PD/USB Initialization Helper
  * Address: 0xB02F-0xB0FD (207 bytes)
  *
@@ -543,119 +662,129 @@ static void pd_internal_state_init_b806(void)
  *
  * Original disassembly:
  *   b02f: mov dptr, #0xe40b      ; REG_CMD_CONFIG
- *   b032: lcall 0x967c           ; helper
+ *   b032: lcall 0x967c           ; set bit 6 of E40B
  *   b035: mov dptr, #0xe40a
  *   b038: mov a, #0x0f
- *   b03a: movx @dptr, a          ; write 0x0F to REG_CMD_CFG_E40A
- *   b03b: mov dptr, #0xe413
- *   b03e: movx a, @dptr
- *   b03f: anl a, #0xfe           ; clear bit 0
- *   b041: movx @dptr, a
- *   b042: movx a, @dptr
- *   b043: anl a, #0xfd           ; clear bit 1
- *   b045: movx @dptr, a
- *   b046: mov dptr, #0xe400
- *   b049: movx a, @dptr
- *   b04a: anl a, #0x7f           ; clear bit 7
- *   b04c: movx @dptr, a
- *   ... (continues with polling loops and more register writes)
+ *   b03a: movx @dptr, a          ; write 0x0F to E40A
+ *   b03b-b045: clear bits 0,1 of E413
+ *   b046-b04c: clear bit 7 of E400
+ *   b04d: lcall 0x9574           ; reset DMA
+ *   b050-b052: lcall 0x94a3(0x0a); start DMA
+ *   b055-b059: poll CC89 bit 1   ; wait for DMA complete
+ *   b05c: lcall 0x95a2           ; clear completion flag
+ *   b05f-b062: set bit 0 of E40B
+ *   b065-b06b: reset DMA, start with 0x3C
+ *   b06e-b072: poll CC89 bit 1
+ *   b075: lcall 0x95a2           ; clear completion flag
+ *   b078-b084: poll E402 bit 3
+ *   ... (more register configuration)
  *   b0fd: ret
  */
 static void pd_usb_init_b02f(void)
 {
-    uint8_t val;
+    /* b02f-b032: Set bit 6 of REG_CMD_CONFIG (E40B) */
+    helper_set_bit6(&REG_CMD_CONFIG);
 
-    /* Write 0x0F to REG_CMD_CFG_E40A (0xB035-0xB03A) */
+    /* b035-b03a: Write 0x0F to REG_CMD_CFG_E40A */
     REG_CMD_CFG_E40A = 0x0F;
 
-    /* Read REG_CMD_CFG_E413, clear bit 0, write back (0xB03B-0xB041) */
-    val = REG_CMD_CFG_E413;
-    val &= 0xFE;  /* Clear bit 0 */
-    REG_CMD_CFG_E413 = val;
+    /* b03b-b041: Clear bit 0 of E413 */
+    REG_CMD_CFG_E413 &= 0xFE;
 
-    /* Read REG_CMD_CFG_E413, clear bit 1, write back (0xB042-0xB045) */
-    val = REG_CMD_CFG_E413;
-    val &= 0xFD;  /* Clear bit 1 */
-    REG_CMD_CFG_E413 = val;
+    /* b042-b045: Clear bit 1 of E413 */
+    REG_CMD_CFG_E413 &= 0xFD;
 
-    /* Read REG_CMD_CTRL_E400, clear bit 7, write back (0xB046-0xB04C) */
-    val = REG_CMD_CTRL_E400;
-    val &= 0x7F;  /* Clear bit 7 */
-    REG_CMD_CTRL_E400 = val;
+    /* b046-b04c: Clear bit 7 of E400 */
+    REG_CMD_CTRL_E400 &= 0x7F;
 
-    /* Poll REG_USB_STATUS_CC89 until bit 1 is set (0xB055-0xB059) */
-    while (!(REG_USB_STATUS_CC89 & 0x02)) {
-        /* Wait for USB ready */
+    /* b04d: Reset DMA controller */
+    helper_dma_reset_9574();
+
+    /* b050-b052: Start DMA with value 0x0A */
+    helper_dma_start_94a3(0x0A);
+
+    /* b055-b059: Poll CC89 bit 1 until set (DMA complete) */
+    while (!(REG_XFER_DMA_CMD & XFER_DMA_CMD_DONE)) {
+        /* Wait for DMA ready */
     }
 
-    /* Poll REG_USB_STATUS_CC89 again until bit 1 is set (0xB06E-0xB072) */
-    while (!(REG_USB_STATUS_CC89 & 0x02)) {
-        /* Wait for USB ready */
+    /* b05c: Clear DMA completion flag */
+    helper_dma_clear_95a2();
+
+    /* b05f-b062: Set bit 0 of E40B */
+    helper_set_bit0(&REG_CMD_CONFIG);
+
+    /* b065: Reset DMA controller again */
+    helper_dma_reset_9574();
+
+    /* b068-b06b: Start DMA with value 0x3C */
+    helper_dma_start_94a3(0x3C);
+
+    /* b06e-b072: Poll CC89 bit 1 until set (DMA complete) */
+    while (!(REG_XFER_DMA_CMD & XFER_DMA_CMD_DONE)) {
+        /* Wait for DMA ready */
     }
 
-    /* Poll REG_CMD_STATUS_E402 until bit 3 is clear (0xB078-0xB084) */
+    /* b075: Clear DMA completion flag */
+    helper_dma_clear_95a2();
+
+    /* b078-b084: Poll E402 bit 3 until clear */
     while (REG_CMD_STATUS_E402 & 0x08) {
         /* Wait for command not busy */
     }
 
-    /* Read REG_CMD_CTRL_E409, clear bit 0, write back (0xB086-0xB08C) */
-    val = REG_CMD_CTRL_E409;
-    val &= 0xFE;  /* Clear bit 0 */
-    REG_CMD_CTRL_E409 = val;
+    /* b086-b08c: Clear bit 0 of E409 */
+    REG_CMD_CTRL_E409 &= 0xFE;
 
-    /* Write 0xA1 to REG_CMD_CFG_E411 (0xB09E-0xB0A3) */
+    /* b08d: Set bit 6 of E409 */
+    helper_set_bit6(&REG_CMD_CTRL_E409);
+
+    /* b090-b097: Write 0x40 to E420, read E409 & 0xF1, OR with 0x06, write to E409 */
+    REG_CMD_CTRL_E409 = helper_e420_write_9666(0x40) | 0x06;
+
+    /* b098-b09b: Set bit 6 of E400 */
+    helper_set_bit6(&REG_CMD_CTRL_E400);
+
+    /* b09e-b0a3: Write 0xA1 to E411 */
     REG_CMD_CFG_E411 = 0xA1;
 
-    /* Write 0x79 to REG_CMD_CFG_E412 (0xB0A4-0xB0A7) */
+    /* b0a4-b0a7: Write 0x79 to E412 */
     REG_CMD_CFG_E412 = 0x79;
 
-    /* Read REG_CMD_CTRL_E400, and with 0xC3, or with 0x3C, write back (0xB0A8-0xB0B0) */
-    val = REG_CMD_CTRL_E400;
-    val = (val & 0xC3) | 0x3C;
-    REG_CMD_CTRL_E400 = val;
+    /* b0a8-b0b0: Read E400, AND 0xC3, OR 0x3C, write back */
+    REG_CMD_CTRL_E400 = (REG_CMD_CTRL_E400 & 0xC3) | 0x3C;
 
-    /* Read REG_CMD_CTRL_E409, clear bit 7, write back (0xB0B1-0xB0B7) */
-    val = REG_CMD_CTRL_E409;
-    val &= 0x7F;  /* Clear bit 7 */
-    REG_CMD_CTRL_E409 = val;
+    /* b0b1-b0b7: Clear bit 7 of E409 */
+    REG_CMD_CTRL_E409 &= 0x7F;
 
-    /* Read REG_INT_CTRL (0xC809), clear bit 5, set bit 5, write back (0xB0B8-0xB0C0) */
-    val = REG_INT_CTRL;
-    val = (val & 0xDF) | 0x20;  /* Clear bit 5, then set bit 5 */
-    REG_INT_CTRL = val;
+    /* b0b8-b0c0: Toggle bit 5 of C809 (clear then set) */
+    REG_INT_CTRL = (REG_INT_CTRL & 0xDF) | 0x20;
 
-    /* Write 0x8A to REG_CMD_CFG_E40E (0xB0C4-0xB0C9) */
+    /* b0c1: Call helper 0xd7fd */
+    helper_pd_cmd_config_d7fd();
+
+    /* b0c4-b0c9: Write 0x8A to E40E */
     REG_CMD_CFG_E40E = 0x8A;
 
-    /* Poll REG_PHY_MODE_E302 until bits 6,7 are set (0xB0CA-0xB0D5) */
+    /* b0ca-b0d5: Poll E302 until bits 6,7 are set */
     while ((REG_PHY_MODE_E302 & 0xC0) == 0) {
         /* Wait for PHY ready */
     }
 
-    /* Read REG_CMD_CTRL_E400, clear bit 7, set bit 7, write back (0xB0D7-0xB0DF) */
-    val = REG_CMD_CTRL_E400;
-    val = (val & 0x7F) | 0x80;  /* Clear bit 7, then set bit 7 */
-    REG_CMD_CTRL_E400 = val;
+    /* b0d7-b0df: Set bit 7 of E400 */
+    REG_CMD_CTRL_E400 = (REG_CMD_CTRL_E400 & 0x7F) | 0x80;
 
-    /* Read REG_CMD_CONFIG (0xE40B), clear bit 0, write back (0xB0E0-0xB0E6) */
-    val = REG_CMD_CONFIG;
-    val &= 0xFE;  /* Clear bit 0 */
-    REG_CMD_CONFIG = val;
+    /* b0e0-b0e6: Clear bit 0 of E40B */
+    REG_CMD_CONFIG &= 0xFE;
 
-    /* Read REG_PD_CTRL_E66A, clear bit 4, write back (0xB0E7-0xB0ED) */
-    val = REG_PD_CTRL_E66A;
-    val &= 0xEF;  /* Clear bit 4 */
-    REG_PD_CTRL_E66A = val;
+    /* b0e7-b0ed: Clear bit 4 of E66A */
+    REG_PD_CTRL_E66A &= 0xEF;
 
-    /* Write 0x28 to REG_CMD_CFG_E40D (0xB0EE-0xB0F3) */
+    /* b0ee-b0f3: Write 0x28 to E40D */
     REG_CMD_CFG_E40D = 0x28;
 
-    /* Read REG_CMD_CFG_E413, and with 0x8F, or with 0x60, write back (0xB0F4-0xB0FC) */
-    val = REG_CMD_CFG_E413;
-    val = (val & 0x8F) | 0x60;
-    REG_CMD_CFG_E413 = val;
-
-    /* Return (0xB0FD) */
+    /* b0f4-b0fc: Set bits 5,6 of E413, clear bit 4 */
+    REG_CMD_CFG_E413 = (REG_CMD_CFG_E413 & 0x8F) | 0x60;
 }
 
 /*

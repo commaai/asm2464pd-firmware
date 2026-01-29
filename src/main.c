@@ -310,6 +310,29 @@ void process_init_table(void)
 {
     /* Perform equivalent initialization that the table would do */
 
+    /* Critical: Initialize state variables that affect USB init path */
+    G_LINK_CFG_BIT_0AE7 = 0;  /* Must be 0 for USB init path */
+    G_LOOP_STATE = 0;         /* Main loop state */
+
+    /* Initialize flash config area (0x7074-0x707D) to zeros.
+     * This matches the original firmware behavior where the XDATA flash config
+     * region starts initialized to zeros (the CODE area at 0x7000 in fw.bin
+     * is all zeros). The bootloader likely initializes XDATA to zeros.
+     *
+     * Critical: G_FLASH_CFG_FLAGS (0x707D) bit 6 must be 0 for USB init path.
+     * If bit 6 is set, event_state_handler sets G_LINK_CFG_BIT_0AE7=1 which
+     * blocks dispatch_04d5 from being called. */
+    G_FLASH_PWR_PROFILE = 0x00;     /* 0x7074 */
+    G_FLASH_VOLT_MODE = 0x00;       /* 0x7075 */
+    G_FLASH_PWR_PDO_0 = 0x00;       /* 0x7076 */
+    G_FLASH_PWR_PDO_1 = 0x00;       /* 0x7077 */
+    G_FLASH_PWR_PDO_2 = 0x00;       /* 0x7078 */
+    G_FLASH_PWR_PDO_3 = 0x00;       /* 0x7079 */
+    G_FLASH_THERMAL_THRESH = 0x00;  /* 0x707A */
+    G_FLASH_FAN_MODE = 0x00;        /* 0x707B */
+    G_FLASH_LED_MODE = 0x00;        /* 0x707C */
+    G_FLASH_CFG_FLAGS = 0x00;       /* 0x707D - critical for USB init */
+
     /* Initialize xfer state region (0x0AF0) */
     G_XFER_STATE_0AF3 = 0x00;
 
@@ -461,6 +484,10 @@ void main_loop(void)
     /* Clear loop state flag at entry */
     G_LOOP_STATE = 0x00;
 
+    /* Set bit 0 of CC32 - CPU execution active flag
+     * Original: 0x2f85: mov dptr, #0xcc32 / 0x2f88: lcall 0x5418 */
+    reg_set_bit_0_cpu_exec();
+
     // Setup uart. This is done at 0xe597 in the original fw, but doesn't look like it's implemented here yet.
     // This seems to turn off parity and enable the FIFO?
     REG_UART_FCR |= (1 << 1);
@@ -475,16 +502,35 @@ void main_loop(void)
     state_init_4ffb();               /* 0x4ffb -> Sets G_EVENT_FLAGS = 0x04, then 0x87 via dispatch_0520 */
     usb_power_init();                /* 0x0327 */
 
+    /* DEBUG: Print state variables after usb_power_init */
+    uart_puts("[pi:e1=");
+    uart_puthex(G_TLP_BASE_LO);
+    uart_puts(",fa=");
+    uart_puthex(G_EVENT_CTRL_09FA);
+    uart_puts("]");
+
     /* One-time event flags check (0x1F96-0x1FAD) - only runs on first pass */
     events = G_EVENT_FLAGS;
     if (events & EVENT_FLAGS_ANY) {  /* 0x83 mask */
         if (events & (EVENT_FLAG_ACTIVE | EVENT_FLAG_PENDING)) {  /* 0x81 mask */
+            uart_puts("[EH]");
             event_state_handler();       /* 0x048a */
         }
         pd_debug_print_flp();            /* 0x05e3 -> Bank1:0xB103 */
+        uart_puts("[ES]");
         error_state_config();            /* 0x0566 */
+        uart_puts("[PR]");
         phy_register_config();           /* 0x050c */
     }
+
+    /* DEBUG: Show critical init state variables */
+    uart_puts("[ae7=");
+    uart_puthex(G_LINK_CFG_BIT_0AE7);
+    uart_puts(",ls=");
+    uart_puthex(G_LOOP_STATE);
+    uart_puts("]");
+
+    uart_puts("[IP]");
 
     /* Clear interrupt priority for EXT0 and EXT1 (0x1FB0-0x1FB2) */
     IP &= ~0x05;    /* Clear bits 0,2: clr 0xB8.0, clr 0xB8.2 */
@@ -494,13 +540,53 @@ void main_loop(void)
     EX1 = 1;        /* setb 0xA8.2 */
     EA = 1;         /* setb 0xA8.7 */
 
+    uart_puts("[LP]");
+
     /* Main loop starts at 0x1FBA - jumps back here, NOT to 0x1F7C */
     while (1) {
+        /*===========================================================================
+         * CRITICAL: USB Initialization Check (0x1FBA-0x1FF5)
+         *
+         * This runs at the START of each loop iteration to check if USB
+         * initialization is needed. usb_power_init sets G_TLP_BASE_LO (0x0AE1)
+         * to 1 or 2 and G_EVENT_CTRL_09FA to 4, which triggers this path.
+         *===========================================================================*/
+        EA = 0;  /* 0x1FBA: Disable interrupts */
 
-        /* ===== Loop body starts at 0x2fbe ===== */
+        /* 0x1FBC-0x1FC0: Check if G_TLP_BASE_LO is set */
+        if (G_TLP_BASE_LO == 0) {
+            /* 0x1FC2: If zero, skip to idle handler path */
+            goto state_ready;  /* Would be 0x2046, but simplified */
+        }
 
-        /* Disable interrupts for critical section (0x2fbe) */
-        EA = 0;
+        /* G_TLP_BASE_LO != 0: Check initialization state */
+        /* 0x1FC5-0x1FC9: Check G_LOOP_STATE (0x0A59) */
+        if (G_LOOP_STATE == 0) {
+            /* First time through - need to initialize */
+
+            /* 0x1FCB-0x1FCF: Check G_LINK_CFG_BIT_0AE7 */
+            if (G_LINK_CFG_BIT_0AE7 == 0) {
+                /* 0x1FD1-0x1FD7: Check if G_EVENT_CTRL_09FA == 4 */
+                if (G_EVENT_CTRL_09FA == 0x04) {
+                    /* 0x1FE1-0x1FF2: USB initialization path! */
+                    G_LOOP_STATE = 1;              /* Set state to 1 */
+                    G_STATE_0B38 = 0;              /* Clear state flag */
+                    G_IO_CMD_STATE = 0xFF;         /* Set I/O command state */
+                    dispatch_04d5();               /* CRITICAL: USB PHY init! */
+                    uart_puts("[d4d5:ret]");
+                } else {
+                    /* 0x1FD9-0x1FDE: Non-USB path */
+                    G_LOOP_STATE = 2;
+                }
+            } else {
+                /* 0x1FD9-0x1FDE: G_LINK_CFG_BIT_0AE7 != 0 */
+                G_LOOP_STATE = 2;
+            }
+        }
+
+        /* Continue to main state machine processing... */
+
+        /* ===== Loop body continues at 0x2fbe ===== */
 
         /* Check system state at 0x0AE2 (0x2fc0-0x2fc9) */
         state = G_SYSTEM_STATE_0AE2;
@@ -564,6 +650,7 @@ check_loop_state:
 state_ready:
         /* Enable interrupts and continue processing (0x303f) */
         EA = 1;
+        uart_putc('.');
 
         /*
          * USB Setup Packet Handler - Process pending control transfers

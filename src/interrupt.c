@@ -71,6 +71,7 @@
 #include "registers.h"
 #include "globals.h"
 #include "drivers/usb.h"
+#include "drivers/uart.h"
 #include "drivers/timer.h"
 #include "drivers/pcie.h"
 #include "app/dispatch.h"
@@ -399,10 +400,41 @@ void isr_usb_handler_4a32(void)
  * Address: 0x4D3E
  *
  * Called when 9093 bit 3 is set in peripheral handler.
+ * This is a minimal implementation that responds to SCSI commands
+ * with a "command failed" CSW to keep the device from timing out.
+ *
+ * Full implementation should dispatch to proper SCSI command handlers.
  */
 void isr_scsi_handler_4d3e(void)
 {
-    /* TODO: Implement SCSI handler at 0x4D3E */
+    /* Acknowledge the command by clearing the interrupt */
+    REG_USB_EP_CFG1 = 0x08;  /* Clear bit 3 */
+
+    /* Build a minimal CSW response */
+    /* CSW signature 'USBS' */
+    XDATA8(0xD800) = 0x55;  /* 'U' */
+    XDATA8(0xD801) = 0x53;  /* 'S' */
+    XDATA8(0xD802) = 0x42;  /* 'B' */
+    XDATA8(0xD803) = 0x53;  /* 'S' */
+
+    /* Copy tag from CBW registers */
+    XDATA8(0xD804) = REG_CBW_TAG_0;
+    XDATA8(0xD805) = REG_CBW_TAG_1;
+    XDATA8(0xD806) = REG_CBW_TAG_2;
+    XDATA8(0xD807) = REG_CBW_TAG_3;
+
+    /* Residue = 0 */
+    XDATA8(0xD808) = 0x00;
+    XDATA8(0xD809) = 0x00;
+    XDATA8(0xD80A) = 0x00;
+    XDATA8(0xD80B) = 0x00;
+
+    /* Status = 1 (command failed) */
+    XDATA8(0xD80C) = 0x01;
+
+    /* Trigger CSW send: set length and control */
+    REG_USB_MSC_LENGTH = 13;
+    REG_USB_MSC_CTRL = 0x01;
 }
 
 /*

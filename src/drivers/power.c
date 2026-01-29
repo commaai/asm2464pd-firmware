@@ -12,6 +12,7 @@
 #include "structs.h"
 #include "utils.h"
 #include "app/dispatch.h"
+#include "drivers/uart.h"
 
 /* External declarations */
 extern void usb_mode_config_d07f(uint8_t param);     /* event_handler.c */
@@ -615,18 +616,21 @@ void phy_power_init_d916(uint8_t param)
 }
 
 /*
- * power_clear_init_flag - Clear power init flag
- * Address: 0x545c-0x5461 (6 bytes)
+ * power_clear_init_flag - Clear transfer control flag
+ * Address: 0x54bb-0x54c0 (6 bytes)
  *
- * Sets the power init flag to 0.
+ * Clears the transfer control flag at 0x0AF7.
  * Called during USB power initialization.
  *
- * Original (from ghidra):
- *   DAT_EXTMEM_0af8 = 0;
+ * Original disassembly:
+ *   54bb: clr a               ; A = 0
+ *   54bc: mov dptr, #0x0af7   ; Transfer control flag
+ *   54bf: movx @dptr, a       ; Write 0
+ *   54c0: ret
  */
 void power_clear_init_flag(void)
 {
-    G_POWER_INIT_FLAG = 0;
+    G_XFER_CTRL_0AF7 = 0;
 }
 
 /*
@@ -645,108 +649,224 @@ void power_set_event_ctrl(void)
 }
 
 /*
+ * timer_stop_e642 - Stop timer by writing 4 then 2 to 0xCC11
+ * Address: 0xe642-0xe64b (10 bytes)
+ *
+ * Stops the timer by writing sequence 0x04, 0x02 to REG_TIMER0_CSR.
+ *
+ * Original disassembly:
+ *   e642: mov dptr, #0xcc11   ; Timer 0 CSR
+ *   e645: mov a, #0x04
+ *   e647: movx @dptr, a       ; Write 4
+ *   e648: mov a, #0x02
+ *   e64a: movx @dptr, a       ; Write 2
+ *   e64b: ret
+ */
+static void timer_stop_e642(void)
+{
+    REG_TIMER0_CSR = 0x04;
+    REG_TIMER0_CSR = 0x02;
+}
+
+/*
+ * timer_setup_e292 - Setup timer for polling
+ * Address: 0xe292-0xe2ad (28 bytes)
+ *
+ * Configures timer 0 for polling completion.
+ * Parameters:
+ *   r4: Threshold high byte (written to 0xCC12)
+ *   r5: Threshold low byte (written to 0xCC13)
+ *   r7: Timer mode (low 3 bits written to 0xCC10)
+ *
+ * Original disassembly:
+ *   e292: lcall 0xe642        ; Stop timer first
+ *   e295: mov dptr, #0xcc10   ; Timer 0 DIV
+ *   e298: movx a, @dptr       ; Read current
+ *   e299: anl a, #0xf8        ; Clear low 3 bits
+ *   e29b: orl a, r7           ; Set mode from R7
+ *   e29c: movx @dptr, a       ; Write back
+ *   e29d: mov r7, r5          ; Save R5 to R7
+ *   e29f: mov dptr, #0xcc12   ; Threshold high
+ *   e2a2: mov a, r4
+ *   e2a3: movx @dptr, a       ; Write R4
+ *   e2a4: inc dptr            ; 0xCC13
+ *   e2a5: mov a, r7
+ *   e2a6: movx @dptr, a       ; Write R5 (saved in R7)
+ *   e2a7: mov dptr, #0xcc11   ; Timer 0 CSR
+ *   e2aa: mov a, #0x01
+ *   e2ac: movx @dptr, a       ; Start timer
+ *   e2ad: ret
+ */
+static void timer_setup_e292(uint8_t threshold_hi, uint8_t threshold_lo, uint8_t mode)
+{
+    uint8_t val;
+
+    /* Stop timer first */
+    timer_stop_e642();
+
+    /* Set timer mode (low 3 bits of 0xCC10) */
+    val = REG_TIMER0_DIV;
+    val = (val & 0xF8) | (mode & 0x07);
+    REG_TIMER0_DIV = val;
+
+    /* Set threshold */
+    REG_TIMER0_THRESHOLD_HI = threshold_hi;
+    REG_TIMER0_THRESHOLD_LO = threshold_lo;
+
+    /* Start timer */
+    REG_TIMER0_CSR = 0x01;
+}
+
+/*
  * usb_power_init - Initialize USB power settings
- * Address: Full initialization sequence from ghidra
+ * Address: 0xb1c5-0xb285 (193 bytes)
  *
  * Initializes USB power configuration for operation.
  * Called during system initialization via handler_0327.
  *
- * This function performs:
- * 1. Power control register setup (0x92C0 bit 7)
- * 2. USB PHY configuration (0x91D1, 0x91C0, 0x91C1, 0x91C3)
- * 3. Buffer configuration (0x9300-0x9305)
- * 4. USB endpoint and mode setup
- * 5. NVMe command register init
- * 6. PHY power-up sequence with polling
+ * Original disassembly (key sequence):
+ *   b1c5: mov dptr, #0x92c0; read; anl #0x7f; orl #0x80; write  ; Set bit 7
+ *   b1ce: mov dptr, #0x91d1; mov a, #0x0f; write               ; PHY config
+ *   b1d4: mov dptr, #0x9300; write 0x0C, 0xC0, 0xBF            ; Buffer config
+ *   b1e1: mov dptr, #0x9091; mov a, #0x1f; write               ; Ctrl phase
+ *   b1e7: mov dptr, #0x9093; mov a, #0x0f; write               ; EP config
+ *   b1ed: mov dptr, #0x91c1; mov a, #0xf0; write               ; PHY ctrl 1
+ *   b1f3: mov dptr, #0x9303; write 0x33, 0x3F, 0x40            ; More buffer
+ *   b200: mov dptr, #0x9002; mov a, #0xe0; write               ; USB config
+ *   b206: mov dptr, #0x9005; mov a, #0xf0; write               ; EP0 len H
+ *   b20c: mov dptr, #0x90e2; mov a, #0x01; write               ; USB mode
+ *   b212: mov dptr, #0x905e; read; anl #0xfe; write            ; EP mgmt
+ *   b219: mov dptr, #0xc42c; mov a, #0x01; write               ; MSC ctrl
+ *   b21f: inc dptr; read; anl #0xfe; write                     ; MSC status
+ *   b224: clr a; mov r7, a; lcall 0xcf3d                       ; usb_mode_config(0)
+ *   b229: lcall 0xdf5e                                         ; nvme_queue_config
+ *   b22c: mov dptr, #0x91c3; read; anl #0xdf; write            ; PHY ctrl 3
+ *   b233: mov dptr, #0x91c0; read; anl #0xfe; orl #0x01; write ; Set bit 0
+ *   b23c: read; anl #0xfe; write                               ; Clear bit 0
+ *   b240: lcall 0x54bb                                         ; Clear 0x0AF7
+ *   b243: mov r5, #0x8f; mov r4, #0x01; mov r7, #0x04
+ *   b249: lcall 0xe292                                         ; Timer setup
+ *   b24c: [poll loop checking 0xE318 bit 4 and 0xCC11 bit 1]
+ *   b25f: lcall 0xe642                                         ; Stop timer
+ *   b262: [check 0x91C0 bits 3-4 and branch]
  */
 void usb_power_init(void)
 {
     uint8_t val;
-    uint8_t status;
+    uint8_t phy_result;
 
-    /* Set power control bit 7 (enable main power) */
+    /* b1c5: Set power control bit 7 (enable main power) */
     val = REG_POWER_ENABLE;
-    REG_POWER_ENABLE = (val & ~POWER_ENABLE_MAIN) | POWER_ENABLE_MAIN;
+    REG_POWER_ENABLE = (val & 0x7F) | 0x80;
 
-    /* Configure USB PHY */
+    /* b1ce: Configure USB PHY 0x91D1 = 0x0F */
     REG_USB_PHY_CTRL_91D1 = 0x0F;
 
-    /* Configure buffer settings */
+    /* b1d4: Configure buffer settings 0x9300-0x9302 */
     REG_BUF_CFG_9300 = 0x0C;
     REG_BUF_CFG_9301 = 0xC0;
-    REG_BUF_CFG_9302 = 0xBF;
+    REG_BUF_CFG_9302 = 0xBF;  /* 0xC0 - 1 = 0xBF */
 
-    /* Set interrupt flags */
+    /* b1e1: Set interrupt flags 0x9091 = 0x1F */
     REG_USB_CTRL_PHASE = 0x1F;
 
-    /* Configure endpoint */
+    /* b1e7: Configure endpoint 0x9093 = 0x0F */
     REG_USB_EP_CFG1 = 0x0F;
 
-    /* Configure USB PHY control 1 */
+    /* b1ed: Configure USB PHY control 1: 0x91C1 = 0xF0 */
     REG_USB_PHY_CTRL_91C1 = 0xF0;
 
-    /* More buffer configuration */
+    /* b1f3: More buffer configuration 0x9303-0x9305 */
     REG_BUF_CFG_9303 = 0x33;
     REG_BUF_CFG_9304 = 0x3F;
-    REG_BUF_CFG_9305 = 0x40;
+    REG_BUF_CFG_9305 = 0x40;  /* 0x3F + 1 = 0x40 */
 
-    /* Configure USB */
+    /* b200: Configure USB 0x9002 = 0xE0 */
     REG_USB_CONFIG = 0xE0;
+
+    /* b206: Configure EP0 length high 0x9005 = 0xF0 */
     REG_USB_EP0_LEN_H = 0xF0;
+
+    /* b20c: Set USB mode 0x90E2 = 1 */
     REG_USB_MODE = 1;
 
-    /* Clear EP control bit 0 */
+    /* b212: Clear EP control bit 0 at 0x905E */
     val = REG_USB_EP_MGMT;
     REG_USB_EP_MGMT = val & 0xFE;
 
-    /* Trigger USB MSC operation and clear status bit */
+    /* b219: Write 1 to MSC control 0xC42C */
     REG_USB_MSC_CTRL = 1;
+
+    /* b21f: Read 0xC42D, clear bit 0, write back */
     val = REG_USB_MSC_STATUS;
     REG_USB_MSC_STATUS = val & 0xFE;
 
-    /* Call initialization handlers */
+    /* b224: Call usb_mode_config with param 0 */
     usb_mode_config_d07f(0);
+
+    /* b229: Call nvme_queue_config */
     nvme_queue_config_e214();
 
-    /* Configure USB PHY control 3 - clear bit 5 */
+    /* b22c: Configure USB PHY control 3 - clear bit 5 */
     val = REG_USB_PHY_CTRL_91C3;
     REG_USB_PHY_CTRL_91C3 = val & 0xDF;
 
-    /* PHY power-up sequence */
-    /* Set bit 0 then clear it */
+    /* b233: PHY power-up sequence - set bit 0 then clear it */
     val = REG_USB_PHY_CTRL_91C0;
     REG_USB_PHY_CTRL_91C0 = (val & 0xFE) | 0x01;
     val = REG_USB_PHY_CTRL_91C0;
     REG_USB_PHY_CTRL_91C0 = val & 0xFE;
 
-    /* Clear init flag */
-    power_clear_init_flag();
+    /* b240: Clear 0x0AF7 (original calls 0x54BB) */
+    G_XFER_CTRL_0AF7 = 0;
 
-    /* Poll for completion - check XDATA 0xE318 and timer */
-    /* Simplified polling - original uses FUN_CODE_e50d(1,0x8f,4) and complex wait */
+    /* b243-b249: Setup timer with R4=0x01, R5=0x8F, R7=0x04 */
+    timer_setup_e292(0x01, 0x8F, 0x04);
+
+    /* b24c-b25c: Poll loop - check 0xE318 bit 4 OR 0xCC11 bit 1 */
     do {
-        status = REG_PHY_COMPLETION_E318;
-        if ((status & 0x10) != 0) break;
+        phy_result = REG_PHY_COMPLETION_E318;
+        if ((phy_result & 0x10) != 0) {
+            break;  /* Bit 4 set - PHY ready */
+        }
         val = REG_TIMER0_CSR;
-    } while ((val & 0x02) == 0);
+    } while ((val & 0x02) == 0);  /* Loop until timer bit 1 set */
 
-    /* Call completion handler */
-    power_init_complete_e8ef(status & 0x10);
+    /* b25f: Stop timer */
+    timer_stop_e642();
 
-    /* Final state handling based on PHY status */
+    /* b262-b285: Check PHY state and handle accordingly */
+    /* Read 0x91C0, extract bits 3-4, shift right 3, mask with 0x1F */
     val = REG_USB_PHY_CTRL_91C0;
-    if ((val & 0x18) == 0x10) {
-        /* PHY in expected state */
-        if (G_EVENT_FLAGS == EVENT_FLAG_POWER) {
-            power_set_event_ctrl();
-            G_EVENT_FLAGS = EVENT_FLAG_PENDING;
+
+    /* Debug: show raw PHY state */
+    uart_puts("[phy=");
+    uart_puthex(val);
+
+    val = (val & 0x18) >> 3;  /* Extract bits 3-4, shift right 3 */
+    val &= 0x1F;              /* Mask (redundant but matches original) */
+
+    uart_puts(",st=");
+    uart_puthex(val);
+    uart_puts(",ef=");
+    uart_puthex(G_EVENT_FLAGS);
+    uart_puts("]");
+
+    if (val == 0x02) {
+        /* PHY in expected state (bits 4=1, 3=0) */
+        /* Check if G_EVENT_FLAGS (0x09F9) == 0x04 */
+        if (G_EVENT_FLAGS == 0x04) {
+            /* 0xBC07: Set G_EVENT_CTRL_09FA = 4 */
+            G_EVENT_CTRL_09FA = 4;
+            /* Write 1 to 0x0AE1 */
+            G_TLP_BASE_LO = 1;
             return;
         }
-    } else {
-        /* PHY not in expected state */
-        power_set_event_ctrl();
-        REG_USB_PHY_CTRL_91C0 = 2;
     }
+
+    /* Default path: 0xBC07 then write 2 to 0x0AE1 */
+    G_EVENT_CTRL_09FA = 4;
+    G_TLP_BASE_LO = 2;
 }
 
 /*

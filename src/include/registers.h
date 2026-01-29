@@ -56,6 +56,14 @@
 #define REG_FLASH_BUF_CFG_78B2  XDATA_REG8(0x78B2)  /* Flash buffer config 3 */
 #define   FLASH_BUF_CFG_BIT6     0x40  // Bit 6: Buffer config enable
 
+// USB Tunnel Hardware Configuration (unusual addresses used by 0xcc83)
+// These are written during USB PHY initialization to configure the tunnel adapter
+#define REG_TUNNEL_HW_CFG_4084  XDATA_REG8(0x4084)  /* Tunnel adapter config (write 0x22) */
+#define REG_TUNNEL_HW_CFG_5084  XDATA_REG8(0x5084)  /* Tunnel adapter config (write 0x22) */
+#define REG_TUNNEL_HW_CFG_6041  XDATA_REG8(0x6041)  /* Tunnel link config (R/M/W bit 6) */
+#define REG_TUNNEL_HW_CFG_6043  XDATA_REG8(0x6043)  /* Tunnel link config (write 0x70) */
+#define REG_TUNNEL_HW_CFG_6025  XDATA_REG8(0x6025)  /* Tunnel PHY config (set bit 7) */
+
 #define USB_SCSI_BUF_BASE       0x8000
 #define USB_SCSI_BUF_SIZE       0x1000
 
@@ -342,6 +350,7 @@
 #define REG_USB_CTRL_920C       XDATA_REG8(0x920C)
 #define REG_USB_PHY_CONFIG_9241 XDATA_REG8(0x9241)
 #define REG_USB_CTRL_924C       XDATA_REG8(0x924C)  // USB control (bit 0: endpoint ready)
+#define REG_USB_STATUS_9220     XDATA_REG8(0x9220)  // USB status (bit 2: control flag)
 
 /*
  * Power Management Registers (0x92C0-0x92E0)
@@ -367,10 +376,14 @@
 #define REG_POWER_CTRL_92C6     XDATA_REG8(0x92C6)
 #define REG_POWER_CTRL_92C7     XDATA_REG8(0x92C7)
 #define REG_POWER_CTRL_92C8     XDATA_REG8(0x92C8)
+#define REG_POWER_CTRL_92CF     XDATA_REG8(0x92CF)  // Power control (bits 0-2: mode control)
 #define REG_POWER_DOMAIN        XDATA_REG8(0x92E0)
 #define   POWER_DOMAIN_BIT1       0x02  // Bit 1: Power domain control
 #define REG_POWER_EVENT_92E1    XDATA_REG8(0x92E1)  // Power event register
 #define REG_POWER_STATUS_92F7   XDATA_REG8(0x92F7)  // Power status (high nibble = state)
+#define REG_POWER_STATUS_92F8   XDATA_REG8(0x92F8)  // Power mode bits (bits 2-3: mode)
+#define REG_POWER_MODE_92FB     XDATA_REG8(0x92FB)  /* Power mode (1 = init needed) */
+#define   POWER_MODE_INIT_REQ    0x01  // Value 1: Initialization required
 
 // Buffer config registers (0x9300-0x93FF)
 #define REG_BUF_CFG_9300        XDATA_REG8(0x9300)
@@ -445,6 +458,7 @@
 #define REG_PCIE_TUNNEL_CTRL    XDATA_REG8(0xB401)  // PCIe tunnel control
 #define   PCIE_TUNNEL_ENABLE      0x01  // Bit 0: Tunnel enable
 #define REG_PCIE_CTRL_B402      XDATA_REG8(0xB402)
+#define REG_PCIE_TUNNEL_STATUS  REG_PCIE_CTRL_B402  // Alias: Tunnel status
 #define   PCIE_CTRL_B402_BIT0     0x01  // Bit 0: Control flag 0
 #define   PCIE_CTRL_B402_BIT1     0x02  // Bit 1: Control flag 1
 #define REG_PCIE_LINK_PARAM_B404 XDATA_REG8(0xB404) // PCIe link parameters
@@ -540,6 +554,7 @@
 #define REG_PHY_CTRL            XDATA_REG8(0xC205)
 #define REG_PHY_LINK_CTRL_C208  XDATA_REG8(0xC208)
 #define REG_PHY_LINK_CONFIG_C20C XDATA_REG8(0xC20C)
+#define REG_PHY_LINK_MISC_C20F  XDATA_REG8(0xC20F)  // PHY link misc (0xC8 = enabled)
 #define REG_PHY_CONFIG          XDATA_REG8(0xC233)
 #define   PHY_CONFIG_MODE_MASK    0x03  // Bits 0-1: PHY config mode
 #define REG_PHY_STATUS          XDATA_REG8(0xC284)
@@ -660,6 +675,7 @@
 #define REG_PHY_EXT_56          XDATA_REG8(0xC656)
 #define   PHY_EXT_SIGNAL_CFG      0x20  // Bit 5: Signal config
 #define REG_PCIE_LANE_CTRL_C659 XDATA_REG8(0xC659)  /* PCIe lane control */
+#define REG_PHY_EXT_59          REG_PCIE_LANE_CTRL_C659  /* Alias: PHY extended 0xC659 */
 #define REG_PHY_CFG_C65A        XDATA_REG8(0xC65A)  /* PHY config (bit 3 set by flash_set_bit3) */
 #define   PHY_CFG_C65A_BIT3       0x08  // Bit 3: PHY config flag
 #define REG_PHY_EXT_5B          XDATA_REG8(0xC65B)
@@ -682,6 +698,7 @@
 #define   INT_ENABLE_USB          0x02  // Bit 1: USB interrupt enable
 #define   INT_ENABLE_PCIE         0x04  // Bit 2: PCIe interrupt enable
 #define   INT_ENABLE_SYSTEM       0x10  // Bit 4: System interrupt enable
+#define   INT_ENABLE_PHY          0x20  // Bit 5: PHY/USB enumeration enable
 #define REG_INT_USB_STATUS      XDATA_REG8(0xC802)  /* USB interrupt status */
 #define   INT_USB_MASTER          0x01  // Bit 0: USB master interrupt
 #define   INT_USB_NVME_QUEUE      0x04  // Bit 2: NVMe queue processing
@@ -1003,10 +1020,14 @@
 #define REG_CMD_CTRL_E400       XDATA_REG8(0xE400)  /* Command control (bit 7 = enable, bit 6 = busy) */
 #define   CMD_CTRL_E400_BIT6      0x40  // Bit 6: Command busy flag
 #define   CMD_CTRL_E400_BIT7      0x80  // Bit 7: Command enable
+#define REG_CMD_CTRL_E401       XDATA_REG8(0xE401)  /* Command control (bits 0-2,4-5,7 = flags) */
 #define REG_CMD_STATUS_E402     XDATA_REG8(0xE402)  /* Command status (bit 3 = poll status) */
 #define REG_CMD_CTRL_E403       XDATA_REG8(0xE403)
 #define REG_CMD_CFG_E404        XDATA_REG8(0xE404)
 #define REG_CMD_CFG_E405        XDATA_REG8(0xE405)
+#define REG_CMD_CTRL_E406       XDATA_REG8(0xE406)  /* Command control (bits 0-7 = various) */
+#define REG_CMD_CTRL_E407       XDATA_REG8(0xE407)  /* Command control (bits 0-4 = various) */
+#define REG_CMD_CTRL_E408       XDATA_REG8(0xE408)  /* Command control (bits 0-4 = various) */
 #define REG_CMD_CTRL_E409       XDATA_REG8(0xE409)  /* Command control (bit 0,7 = flags) */
 #define REG_CMD_CFG_E40A        XDATA_REG8(0xE40A)  /* Command config - write 0x0F */
 #define REG_CMD_CONFIG          XDATA_REG8(0xE40B)  /* Command config (bit 0 = flag) */
@@ -1078,6 +1099,8 @@
 #define REG_LINK_STATUS_E716    XDATA_REG8(0xE716)
 #define   LINK_STATUS_E716_MASK  0x03  // Bits 0-1: Link status
 #define REG_LINK_CTRL_E717      XDATA_REG8(0xE717)  /* Link control (bit 0 = enable) */
+#define REG_QUEUE_STATUS_E750   XDATA_REG8(0xE750)  /* Queue status (bit 2 = timeout loop) */
+#define   QUEUE_STATUS_TIMEOUT   0x04  // Bit 2: Enable timeout polling loop
 #define REG_SYS_CTRL_E760       XDATA_REG8(0xE760)
 #define REG_SYS_CTRL_E761       XDATA_REG8(0xE761)
 #define REG_SYS_CTRL_E763       XDATA_REG8(0xE763)

@@ -31,6 +31,7 @@
 #include "globals.h"
 #include "drivers/pd.h"
 #include "drivers/flash.h"
+#include "drivers/uart.h"
 
 /* External function declarations */
 extern void pcie_adapter_config(void);
@@ -144,8 +145,70 @@ void dispatch_0206(void)
  * These all jump to 0x0300 (jump_bank_0)
  *===========================================================================*/
 
-/* 0x0322: Target 0xCA0D - system_state_handler */
-void dispatch_0322(void) { jump_bank_0(0xCA0D); }
+/*
+ * handler_ca51 - System state handler
+ * Address: 0xCA51-0xCAAF (95 bytes)
+ *
+ * Called via dispatch_0322. Handles system state transitions based on
+ * G_EVENT_CTRL_09FA and G_TLP_BASE_LO (0x0AE1).
+ *
+ * Original disassembly:
+ *   ca51: mov dptr, #0x09fa
+ *   ca54: movx a, @dptr
+ *   ca55: cjne a, #0x04, ca62   ; if 0x09FA == 4, do special init
+ *   ca58-ca61: call helpers with R7=4 then R7=0
+ *   ca62: mov dptr, #0x0ae1
+ *   ca65: movx a, @dptr
+ *   ca66: cjne a, #0x01, ca7d   ; if 0x0AE1 == 1, call 0x055c and set regs
+ *   ca7d: cjne a, #0x02, ca8d   ; if 0x0AE1 == 2, clear bit 1 of 0x91C0
+ *   ca8d: if 0x0AE1 == 4, do register config sequence
+ *   caaf: ret
+ */
+static void handler_ca51(void)
+{
+    uint8_t event_ctrl;
+    uint8_t tlp_base;
+
+    /* Check if 0x09FA == 4 */
+    event_ctrl = G_EVENT_CTRL_09FA;
+    if (event_ctrl == 0x04) {
+        /* Call helpers - simplified, original calls 0xDB66 then 0xE527 */
+        /* TODO: Implement helper_db66 and helper_e527 if needed */
+    }
+
+    /* Check 0x0AE1 state */
+    tlp_base = G_TLP_BASE_LO;
+
+    if (tlp_base == 0x01) {
+        /* lcall 0x055c -> targets Bank1:0xB91A - Bank 1 not implemented */
+        jump_bank_1(0xB91A);
+        /* Set bit 6 of 0x92E1, clear bit 6 of 0x92C2 */
+        REG_POWER_EVENT_92E1 = (REG_POWER_EVENT_92E1 & 0xBF) | 0x40;
+        REG_POWER_STATUS &= 0xBF;
+        return;
+    }
+
+    if (tlp_base == 0x02) {
+        /* Clear bit 1 of 0x91C0 */
+        REG_USB_PHY_CTRL_91C0 &= 0xFD;
+        return;
+    }
+
+    if (tlp_base == 0x04) {
+        /* Clear bit 0 of 0xCC30 */
+        REG_CPU_MODE &= 0xFE;
+        /* Set bits 0-4 of 0xE710 (mask 0xE0, or 0x1F) */
+        REG_LINK_WIDTH_E710 = (REG_LINK_WIDTH_E710 & 0xE0) | 0x1F;
+        /* Clear bit 1 of 0x91C0 */
+        REG_USB_PHY_CTRL_91C0 &= 0xFD;
+        /* Call 0xBC00 with DPTR=0xCC3B - simplified, just modify the register */
+        /* TODO: Implement helper_bc00 if needed */
+        return;
+    }
+}
+
+/* 0x0322: Target 0xCA51 - system_state_handler */
+void dispatch_0322(void) { handler_ca51(); }
 
 /* 0x0327: Target 0xB1CB - usb_power_init */
 void dispatch_0327(void) { jump_bank_0(0xB1CB); }
@@ -272,10 +335,10 @@ static void usb_setup_phase_a5a6(void)
     G_SYS_FLAGS_07EB = 0;
 
     /* Check and clear bit 2 of 0x9220 if set */
-    val = XDATA_REG8(0x9220);
+    val = REG_USB_STATUS_9220;
     if (val & 0x04) {
         val &= 0xFB;
-        XDATA_REG8(0x9220) = val;
+        REG_USB_STATUS_9220 = val;
     }
 
     /* Clear TLP address offset */
@@ -368,23 +431,268 @@ void dispatch_033b(void) { handler_cde7(); }
 /* 0x0340: Target 0xBF8E - buffer_dispatch_bf8e */
 void buffer_dispatch_bf8e(void) { jump_bank_0(0xBF8E); }  /* was: dispatch_0340 */
 
-/* 0x0345: Target 0x9C2B - nvme_queue_handler */
-void dispatch_0345(void) { jump_bank_0(0x9C2B); }
-
-/* 0x034A: Target 0xC66A - phy_handler */
-void dispatch_034a(void) { jump_bank_0(0xC66A); }
-
-/* 0x034F: Target 0xE94D - handler_e94d (stub) */
-void dispatch_034f(void) { jump_bank_0(0xE94D); }
-
-/* 0x0354: Target 0xE925 - handler_e925 (stub) */
-void dispatch_0354(void) { jump_bank_0(0xE925); }
+/*
+ * helper_cc4c - Set bit 1 of USB PHY control
+ * Address: 0xCC4C-0xCC55 (10 bytes)
+ *
+ * Modifies 0x91C0: clears bit 0, sets bit 1 (value = (val & 0xFD) | 0x02)
+ *
+ * Original disassembly:
+ *   cc4c: mov dptr, #0x91c0
+ *   cc4f: movx a, @dptr
+ *   cc50: anl a, #0xfd
+ *   cc52: orl a, #0x02
+ *   cc54: movx @dptr, a
+ *   cc55: ret
+ */
+static void helper_cc4c(void)
+{
+    REG_USB_PHY_CTRL_91C0 = (REG_USB_PHY_CTRL_91C0 & 0xFD) | 0x02;
+}
 
 /*
- * helper_cc60 - Set link status bits 0-1 to 0b11
+ * helper_cc59_with_dptr - Set bit 0 of register at DPTR
+ * Address: 0xCC59-0xCC5F (7 bytes)
+ *
+ * Reads DPTR, clears bit 0, sets bit 0 (effectively just sets bit 0).
+ * Used with DPTR=0xCC30 in nvme_queue_handler.
+ *
+ * Original disassembly:
+ *   cc59: movx a, @dptr
+ *   cc5a: anl a, #0xfe
+ *   cc5c: orl a, #0x01
+ *   cc5e: movx @dptr, a
+ *   cc5f: ret
+ */
+static void helper_cc59_with_dptr(volatile __xdata uint8_t *reg)
+{
+    *reg = (*reg & 0xFE) | 0x01;
+}
+
+/*
+ * helper_cc2d - Write value to E710, then toggle bit 2 of USB status
+ * Address: 0xCC2D-0xCC3B (15 bytes)
+ *
+ * Writes A to DPTR (0xE710), then modifies 0x9000: sets bit 2, then clears it.
+ *
+ * Original disassembly:
+ *   cc2d: movx @dptr, a       ; write to E710
+ *   cc2e: mov dptr, #0x9000
+ *   cc31: movx a, @dptr
+ *   cc32: anl a, #0xfb       ; clear bit 2
+ *   cc34: orl a, #0x04       ; set bit 2
+ *   cc36: movx @dptr, a
+ *   cc37: movx a, @dptr
+ *   cc38: anl a, #0xfb       ; clear bit 2
+ *   cc3a: movx @dptr, a
+ *   cc3b: ret
+ */
+static void helper_cc2d(uint8_t val)
+{
+    REG_LINK_WIDTH_E710 = val;
+    REG_USB_STATUS = (REG_USB_STATUS & 0xFB) | 0x04;  /* set bit 2 */
+    REG_USB_STATUS &= 0xFB;  /* clear bit 2 */
+}
+
+/*
+ * helper_cc3d - Set bit 6 of power status, return DPTR=0x92E1, A=0x10
+ * Address: 0xCC3D-0xCC4B (15 bytes)
+ *
+ * Modifies 0x92C2: clears bit 6, sets bit 6 (always sets it).
+ * Sets DPTR to 0x92E1 and A to 0x10 for subsequent write.
+ *
+ * Original disassembly:
+ *   cc3d: mov dptr, #0x92c2
+ *   cc40: movx a, @dptr
+ *   cc41: anl a, #0xbf      ; clear bit 6
+ *   cc43: orl a, #0x40      ; set bit 6
+ *   cc45: movx @dptr, a
+ *   cc46: mov dptr, #0x92e1
+ *   cc49: mov a, #0x10
+ *   cc4b: ret
+ *
+ * In C we return the value 0x10 to be written to 0x92E1.
+ */
+static uint8_t helper_cc3d(void)
+{
+    REG_POWER_STATUS = (REG_POWER_STATUS & 0xBF) | 0x40;
+    return 0x10;
+}
+
+/*
+ * helper_cc4f_with_dptr - Set bit 1 of register at DPTR
+ * Address: 0xCC4F-0xCC55 (7 bytes)
+ *
+ * Same as cc4c entry point but takes a DPTR argument.
+ * Used with DPTR=0xCC3B in nvme_queue_handler.
+ *
+ * Original disassembly:
+ *   cc4f: movx a, @dptr
+ *   cc50: anl a, #0xfd
+ *   cc52: orl a, #0x02
+ *   cc54: movx @dptr, a
+ *   cc55: ret
+ */
+static void helper_cc4f_with_dptr(volatile __xdata uint8_t *reg)
+{
+    *reg = (*reg & 0xFD) | 0x02;
+}
+
+/*
+ * helper_cc63 - Clear bits 0-1 of register at DPTR
+ * Address: 0xCC63-0xCC69 (7 bytes)
+ *
+ * Called at 0x9C00 with DPTR=0x92CF.
+ *
+ * Original disassembly:
+ *   cc63: movx a, @dptr
+ *   cc64: anl a, #0xfc       ; clear bits 0-1
+ *   cc66: orl a, #0x03       ; set bits 0-1
+ *   cc68: movx @dptr, a
+ *   cc69: ret
+ *
+ * Wait - this clears then sets, so it just sets bits 0-1.
+ */
+static void helper_cc63_with_dptr(volatile __xdata uint8_t *reg)
+{
+    *reg = (*reg & 0xFC) | 0x03;
+}
+
+/*
+ * helper_54bb - Clear transfer control flag
+ * Address: 0x54BB-0x54C2 (8 bytes)
+ *
+ * Clears G_XFER_CTRL_0AF7 to 0.
+ *
+ * Original disassembly:
+ *   54bb: clr a
+ *   54bc: mov dptr, #0x0af7
+ *   54bf: movx @dptr, a
+ *   54c0: ret
+ */
+static void helper_54bb(void)
+{
+    G_XFER_CTRL_0AF7 = 0;
+}
+
+/*
+ * helper_cc56 - Set PHY config bit
+ * Address: 0xCC56-0xCC5F (10 bytes)
+ *
+ * Sets bit 0 of REG_PHY_CFG_C6A8.
+ *
+ * Original disassembly:
+ *   cc56: mov dptr, #0xc6a8
+ *   cc59: movx a, @dptr
+ *   cc5a: anl a, #0xfe
+ *   cc5c: orl a, #0x01
+ *   cc5e: movx @dptr, a
+ *   cc5f: ret
+ */
+static void helper_cc56(void)
+{
+    REG_PHY_CFG_C6A8 = (REG_PHY_CFG_C6A8 & 0xFE) | 0x01;
+}
+
+/*
+ * helper_d12a - Timer and state initialization
+ * Address: 0xD12A-0xD149 (32 bytes)
+ *
+ * Clears G_STATE_WORK_0B3D and copies G_CMD_INDEX_SRC to G_CMD_SLOT_INDEX.
+ *
+ * Original disassembly:
+ *   d12a: clr a
+ *   d12b: mov dptr, #0x0b3d
+ *   d12e: movx @dptr, a         ; clear 0x0B3D
+ *   d12f: mov dptr, #0x0b3e
+ *   d132: movx a, @dptr         ; read G_CMD_INDEX_SRC
+ *   d133: mov r7, a
+ *   d134: mov dptr, #0x05a4
+ *   d137: movx @dptr, a         ; write to G_CMD_SLOT_INDEX
+ *   ...
+ */
+static void helper_d12a(void)
+{
+    G_STATE_WORK_0B3D = 0;
+    G_CMD_SLOT_INDEX = G_CMD_INDEX_SRC;
+}
+
+/*
+ * helper_d387 - PHY and timer configuration
+ * Address: 0xD387-0xD3A1 (27 bytes)
+ *
+ * Checks G_STATE_0AE8 and modifies REG_TIMER3_DIV.
+ *
+ * Original disassembly:
+ *   d387: mov dptr, #0x0ae8
+ *   d38a: movx a, @dptr
+ *   d38b: jnz d3a1              ; if non-zero, return
+ *   d38d: mov dptr, #0xcd28
+ *   d390: movx a, @dptr
+ *   d391: anl a, #0xfe
+ *   d393: movx @dptr, a         ; clear bit 0
+ *   ...
+ */
+static void helper_d387(void)
+{
+    if (G_STATE_0AE8 != 0) {
+        return;
+    }
+    REG_TIMER3_DIV &= 0xFE;
+}
+
+/*
+ * helper_c24c - Conditional state clear
+ * Address: 0xC24C-0xC267 (28 bytes)
+ *
+ * Checks G_USB_STATE_CLEAR_06E3 and conditionally clears state.
+ *
+ * Original disassembly:
+ *   c24c: mov dptr, #0x06e3
+ *   c24f: movx a, @dptr
+ *   c250: jz c267               ; if zero, skip to return
+ *   c252: clr a
+ *   c253: movx @dptr, a         ; clear 0x06E3
+ *   c254: lcall 0x54bb          ; call helper_54bb
+ *   ...
+ */
+static void helper_c24c(void)
+{
+    if (G_USB_STATE_CLEAR_06E3 == 0) {
+        return;
+    }
+    G_USB_STATE_CLEAR_06E3 = 0;
+    helper_54bb();
+}
+
+/*
+ * helper_494d - Final USB/PCIe register initialization
+ * Address: 0x494D-0x4975 (41 bytes)
+ *
+ * Modifies REG_NVME_DOORBELL and REG_USB_MSC_CFG.
+ *
+ * Original disassembly:
+ *   494d: mov dptr, #0xc858
+ *   4950: movx a, @dptr
+ *   4951: anl a, #0xfe
+ *   4953: movx @dptr, a         ; clear bit 0 of 0xC858
+ *   4954: mov dptr, #0x9056
+ *   4957: movx a, @dptr
+ *   4958: anl a, #0xfb
+ *   495a: movx @dptr, a         ; clear bit 2 of 0x9056
+ *   ...
+ */
+static void helper_494d(void)
+{
+    REG_NVME_DOORBELL &= 0xFE;
+    REG_USB_MSC_CFG &= 0xFB;
+}
+
+/*
+ * helper_cc60 - Set link status bits
  * Address: 0xCC60-0xCC69 (10 bytes)
  *
- * Modifies REG_LINK_STATUS_E716: clears bits 0-1 then sets them to 0b11.
+ * Sets bits 0-1 of REG_LINK_STATUS_E716 to 0b11.
  *
  * Original disassembly:
  *   cc60: mov dptr, #0xe716
@@ -396,9 +704,27 @@ void dispatch_0354(void) { jump_bank_0(0xE925); }
  */
 static void helper_cc60(void)
 {
-    uint8_t val = REG_LINK_STATUS_E716;
-    val = (val & 0xFC) | 0x03;
-    REG_LINK_STATUS_E716 = val;
+    REG_LINK_STATUS_E716 = (REG_LINK_STATUS_E716 & 0xFC) | 0x03;
+}
+
+/*
+ * helper_cc79 - Clear USB transfer flags
+ * Address: 0xCC79-0xCC82 (10 bytes)
+ *
+ * Clears G_USB_TRANSFER_FLAG (0x0B2E) and G_SYS_FLAGS_07E8.
+ *
+ * Original disassembly:
+ *   cc79: clr a
+ *   cc7a: mov dptr, #0x0b2e
+ *   cc7d: movx @dptr, a
+ *   cc7e: mov dptr, #0x07e8
+ *   cc81: movx @dptr, a
+ *   cc82: ret
+ */
+static void helper_cc79(void)
+{
+    G_USB_TRANSFER_FLAG = 0;
+    G_SYS_FLAGS_07E8 = 0;
 }
 
 /*
@@ -408,53 +734,381 @@ static void helper_cc60(void)
  * Called when power status bit 6 is clear. Clears many XDATA state variables
  * and calls several initialization functions.
  *
- * Original disassembly (partial):
+ * Original disassembly:
  *   bda4: clr a
- *   bda5: mov dptr, #0x07ed
- *   bda8: movx @dptr, a        ; clear 0x07ed
- *   bda9: mov dptr, #0x07ee
- *   bdac: movx @dptr, a        ; clear 0x07ee
- *   ... (clears many more locations)
- *   bdfa: lcall 0x54bb
- *   bdfd: lcall 0xcc56
- *   ... (more init calls)
+ *   bda5-bdf9: clear state variables (0x07ED, 0x07EE, 0x0AF5, etc.)
+ *   bdfa: lcall 0x54bb         ; clear 0x0AF7
+ *   bdfd: lcall 0xcc56         ; set bit 0 of 0xC6A8
+ *   be00: mov dptr, #0x92c8    ; clear bits 0,1 of 0x92C8
+ *   be03-be0a: read-modify-write 0x92C8
+ *   be0b: mov dptr, #0xcd31    ; write 0x04 then 0x02 to 0xCD31
+ *   be14: lcall 0xd12a
+ *   be17: lcall 0xd387
+ *   be1a: lcall 0xdf86
+ *   be1d: lcall 0xc24c
  *   be20: ljmp 0x494d
- *
- * TODO: Full implementation requires reversing all helper functions.
- * For now, implement the state clearing portion.
  */
 static void init_bda4(void)
 {
-    /* Clear state variables */
-    XDATA8(0x07ED) = 0;
-    XDATA8(0x07EE) = 0;
-    XDATA8(0x0AF5) = 0;
-    XDATA8(0x07EB) = 0;
-    XDATA8(0x0AF1) = 0;
-    XDATA8(0x0ACA) = 0;
-    XDATA8(0x07E1) = 0x05;  /* Special value */
-    XDATA8(0x0B2E) = 0;
-    XDATA8(0x0ACB) = 0;
-    XDATA8(0x07E3) = 0;
-    XDATA8(0x07E6) = 0;
-    XDATA8(0x07E7) = 0;
-    XDATA8(0x07E9) = 0;
-    XDATA8(0x0B2D) = 0;
-    XDATA8(0x07E2) = 0;
-    XDATA8(0x0003) = 0;
-    XDATA8(0x0006) = 0;
-    XDATA8(0x07E8) = 0;
-    XDATA8(0x07E5) = 0;
-    XDATA8(0x0B3B) = 0;
-    XDATA8(0x07EA) = 0;
+    /* Clear state variables (0xBDA4-0xBDF9) */
+    G_SYS_FLAGS_07ED = 0;
+    G_SYS_FLAGS_07EE = 0;
+    G_EP_DISPATCH_OFFSET = 0;
+    G_SYS_FLAGS_07EB = 0;
+    G_STATE_FLAG_0AF1 = 0;
+    G_TLP_STATE_0ACA = 0;
+    G_USB_CTRL_STATE_07E1 = 0x05;  /* Special value */
+    G_USB_TRANSFER_FLAG = 0;
+    G_TLP_MASK_0ACB = 0;
+    G_CMD_WORK_E3 = 0;
+    G_USB_STATE_07E6 = 0;
+    G_USB_STATE_07E7 = 0;     /* inc dptr from 0x07E6 */
+    G_TLP_STATE_07E9 = 0;
+    G_STATE_0B2D = 0;
+    G_USB_STATE_07E2 = 0;
+    G_EP_STATUS_CTRL = 0;
+    G_WORK_0006 = 0;
+    G_SYS_FLAGS_07E8 = 0;
+    G_TRANSFER_ACTIVE = 0;
+    G_TRANSFER_BUSY_0B3B = 0;
+    G_XFER_FLAG_07EA = 0;
 
-    /* TODO: Call helper functions
-     * lcall 0x54bb
-     * lcall 0xcc56
-     * Then modify 0x92C8, write to 0xCD31, call more helpers...
-     * ljmp 0x494d
-     */
+    /* lcall 0x54bb - clear 0x0AF7 */
+    helper_54bb();
+
+    /* lcall 0xcc56 - set bit 0 of 0xC6A8 */
+    helper_cc56();
+
+    /* 0xBE00-0xBE0A: Clear bits 0 and 1 of 0x92C8 (two separate R-M-W cycles) */
+    REG_POWER_CTRL_92C8 &= 0xFE;  /* clear bit 0 */
+    REG_POWER_CTRL_92C8 &= 0xFD;  /* clear bit 1 */
+
+    /* 0xBE0B-0xBE13: Write 0x04 then 0x02 to 0xCD31 */
+    REG_CPU_TIMER_CTRL_CD31 = 0x04;
+    REG_CPU_TIMER_CTRL_CD31 = 0x02;
+
+    /* Call helper functions */
+    helper_d12a();          /* lcall 0xd12a */
+    helper_d387();          /* lcall 0xd387 */
+    /* helper_df86(); */    /* lcall 0xdf86 - TODO: implement */
+    helper_c24c();          /* lcall 0xc24c */
+    helper_494d();          /* ljmp 0x494d */
 }
+
+/*
+ * nvme_queue_handler - NVMe queue status handler
+ * Address: 0x9B95-0x9CF8 (356 bytes)
+ *
+ * Called via dispatch_0345. Handles NVMe queue state transitions and
+ * timeout monitoring. Uses IDATA 0x38-0x3B as a 32-bit counter.
+ *
+ * Key logic:
+ *   - Clear USB transfer flag (0x0B2E)
+ *   - Clear bit 1 of timer control (0xCC3B)
+ *   - Check TLP block size (0x0ACC) bit 1 - skip if set
+ *   - Check power status (0x92C2) bit 6 - skip if clear
+ *   - Perform power mode transitions based on 0x92F8
+ *   - Main loop: count iterations, check for timeout (0x0005D000)
+ *   - If REG 0x92FB == 1: initialization sequence
+ *   - On timeout: reset sequence via helper_cc3d
+ *
+ * Original disassembly summary:
+ *   9b95-9ba0: Clear 0x0B2E, modify 0xCC3B
+ *   9ba1-9bac: Check 0x0ACC bit 1, 0x92C2 bit 6
+ *   9baf-9c13: Power mode sequence (0x92F8, 0x92CF, 0x92C1, E712 polling)
+ *   9c14-9c1c: Write 1 to 0x0AE1, call 0xCA51
+ *   9c1d-9c25: Clear IDATA 0x38-0x3B
+ *   9c26-9cd8: Main timeout loop with IDATA counter
+ *   9cdb-9cf7: Timeout handler (helper_cc3d, reset sequence)
+ *   9cf8: ret
+ */
+static void nvme_queue_handler(void)
+{
+    uint32_t counter;
+    uint32_t inner_counter;
+    uint8_t val;
+
+    /* 0x9B95-0x9BA0: Clear 0x0B2E, clear bit 1 of 0xCC3B */
+    G_USB_TRANSFER_FLAG = 0;
+    REG_TIMER_CTRL_CC3B &= 0xFD;
+
+    /* 0x9BA1-0x9BA5: Read 0x0ACC, check bit 1 */
+    val = G_TLP_BLOCK_SIZE_0ACC;
+    if (val & 0x02) {
+        goto clear_counter;
+    }
+
+    /* 0x9BA8-0x9BAC: Read 0x92C2, check bit 6 */
+    val = REG_POWER_STATUS;
+    if (!(val & 0x40)) {
+        goto clear_counter;
+    }
+
+    /* 0x9BAF-0x9BB8: Read 0x92F8, mask 0x0C, shift right 2 */
+    val = REG_POWER_STATUS_92F8;
+    val = (val & 0x0C) >> 2;
+    if (val == 0) {
+        goto set_ae1_and_call;
+    }
+
+    /* 0x9BBC-0x9BC7: Check 0x0AF0 bit 1, conditionally clear 0xC20F */
+    if (G_FLASH_CFG_0AF0 & 0x02) {
+        REG_PHY_LINK_MISC_C20F = 0;
+    }
+
+    /* 0x9BC8-0x9BDD: Modify 0x92CF and 0x92C1 */
+    REG_POWER_CTRL_92CF &= 0xFC;              /* clear bits 0-1 */
+    REG_POWER_CTRL_92CF = (REG_POWER_CTRL_92CF & 0xFB) | 0x04;  /* set bit 2 */
+    REG_CLOCK_ENABLE = (REG_CLOCK_ENABLE & 0xEF) | 0x10;      /* set bit 4 */
+
+    /* 0x9BDE-0x9BE4: Call helper at 0xE581 with R5=0x0A, R4=0, R7=0 */
+    /* TODO: Implement helper_e581 - for now skip */
+
+    /* 0x9BE7-0x9BF4: Poll 0xE712 waiting for bit 0, then check bit 1 */
+    do {
+        val = REG_USB_EP0_COMPLETE;
+    } while (!(val & 0x01));
+
+    val = REG_USB_EP0_COMPLETE & 0x02;
+    if (val == 0) {
+        /* Loop back - simplified: just continue */
+        goto set_ae1_and_call;
+    }
+
+    /* 0x9BF6-0x9C06: Clear bit 4 of 0x92C1, modify 0x92CF */
+    REG_CLOCK_ENABLE &= 0xEF;
+    helper_cc63_with_dptr(&REG_POWER_CTRL_92CF);
+    REG_POWER_CTRL_92CF &= 0xFB;  /* clear bit 2 */
+
+    /* 0x9C07-0x9C13: Check 0x0AF0 bit 1, conditionally write 0xC8 to 0xC20F */
+    if (G_FLASH_CFG_0AF0 & 0x02) {
+        REG_PHY_LINK_MISC_C20F = 0xC8;
+    }
+
+set_ae1_and_call:
+    /* 0x9C14-0x9C1C: Write 1 to 0x0AE1, call 0xCA51 */
+    G_TLP_BASE_LO = 1;
+    /* TODO: Call handler at 0xCA51 */
+
+clear_counter:
+    /* 0x9C1D-0x9C25: Clear IDATA 0x38-0x3B (32-bit counter) */
+    I_WORK_38 = 0;
+    I_WORK_39 = 0;
+    I_WORK_3A = 0;
+    I_WORK_3B = 0;
+
+    /* Main loop at 0x9C26-0x9CD8 */
+    while (1) {
+        /* Load 32-bit counter from IDATA 0x38-0x3B (big-endian) */
+        counter = ((uint32_t)I_WORK_38 << 24) | ((uint32_t)I_WORK_39 << 16) |
+                  ((uint32_t)I_WORK_3A << 8) | I_WORK_3B;
+
+        /* Compare with timeout value 0x0005D000 (387072) */
+        if (counter >= 0x0005D000UL) {
+            goto timeout_handler;
+        }
+
+        /* 0x9C3F-0x9C45: Check if 0x92FB == 1 */
+        if (REG_POWER_MODE_92FB == 0x01) {
+            /* 0x9C47-0x9C61: Initialization path */
+            helper_cc4c();
+            REG_USB_PHY_CTRL_91D1 = 0x01;
+            helper_cc59_with_dptr(&REG_CPU_MODE);
+            val = (REG_LINK_WIDTH_E710 & 0xE0) | 0x04;
+            helper_cc2d(val);
+            init_bda4();
+            return;
+        }
+
+        /* 0x9C64-0x9C6B: Check 0x91D1 bit 0 */
+        if (REG_USB_PHY_CTRL_91D1 & 0x01) {
+            return;  /* Exit if bit 0 is set */
+        }
+
+        /* 0x9C6E-0x9C72: Check 0xE750 bit 2 */
+        if (REG_QUEUE_STATUS_E750 & 0x04) {
+            /* 0x9C75-0x9CB1: Inner loop with counter 0x3C-0x3F */
+            I_QUEUE_WAIT_3C = 0;
+            I_QUEUE_WAIT_3D = 0;
+            I_QUEUE_WAIT_3E = 0;
+            I_QUEUE_WAIT_3F = 0;
+
+            while (1) {
+                /* Load inner counter (big-endian) */
+                inner_counter = ((uint32_t)I_QUEUE_WAIT_3C << 24) |
+                                ((uint32_t)I_QUEUE_WAIT_3D << 16) |
+                                ((uint32_t)I_QUEUE_WAIT_3E << 8) |
+                                I_QUEUE_WAIT_3F;
+
+                /* Compare with 0x00020000 (131072) */
+                if (inner_counter >= 0x00020000UL) {
+                    goto timeout_handler;
+                }
+
+                /* Check 0x91D1 bit 0 again */
+                if (REG_USB_PHY_CTRL_91D1 & 0x01) {
+                    return;
+                }
+
+                /* Increment inner counter */
+                inner_counter++;
+                I_QUEUE_WAIT_3F = inner_counter & 0xFF;
+                I_QUEUE_WAIT_3E = (inner_counter >> 8) & 0xFF;
+                I_QUEUE_WAIT_3D = (inner_counter >> 16) & 0xFF;
+                I_QUEUE_WAIT_3C = (inner_counter >> 24) & 0xFF;
+            }
+        }
+
+        /* 0x9CB3-0x9CBD: Check 0x0AE2 and 0xCC33 */
+        if (G_SYSTEM_STATE_0AE2 == 0) {
+            if (REG_CPU_EXEC_STATUS_2 & 0x04) {
+                return;  /* Exit if 0xCC33 bit 2 is set */
+            }
+        }
+
+        /* 0x9CC0-0x9CD8: Increment main counter and loop */
+        counter++;
+        I_WORK_3B = counter & 0xFF;
+        I_WORK_3A = (counter >> 8) & 0xFF;
+        I_WORK_39 = (counter >> 16) & 0xFF;
+        I_WORK_38 = (counter >> 24) & 0xFF;
+    }
+
+timeout_handler:
+    /* 0x9CDB-0x9CF7: Timeout/reset sequence */
+    /* Call helper_cc3d, write result to 0x92E1 */
+    val = helper_cc3d();
+    REG_POWER_EVENT_92E1 = val;
+
+    /* Call helper_cc4c */
+    helper_cc4c();
+
+    /* Read 0x91C0, clear bit 1, write back */
+    REG_USB_PHY_CTRL_91C0 &= 0xFD;
+
+    /* Write 0x01 to 0x91D1 */
+    REG_USB_PHY_CTRL_91D1 = 0x01;
+
+    /* Write 0x04 to 0x9300 */
+    REG_BUF_CFG_9300 = 0x04;
+
+    /* Call helper_cc4f with DPTR=0xCC3B */
+    helper_cc4f_with_dptr(&REG_TIMER_CTRL_CC3B);
+}
+
+/* 0x0345: Target 0x9B95 - nvme_queue_handler */
+void dispatch_0345(void) { nvme_queue_handler(); }
+
+/*
+ * handler_c465 - PHY handler with computed dispatch
+ * Address: 0xC465-0xC537 (211 bytes)
+ *
+ * Called via dispatch_034a. Complex function with computed jump table
+ * at 0x0DC7 based on REG_POWER_MODE_92FB value.
+ *
+ * Main flow:
+ *   c465: lcall init_bda4
+ *   c468: read 0x91C0
+ *   c46c: if bit 1 set, return (jump to c4ce)
+ *   c46f-c47a: read 0x92FB, computed dispatch via 0x0DC7
+ *   c48f-c4ca: various state handling paths
+ *   c4cb: lcall init_bda4
+ *   c4ce: ret
+ *
+ * Key paths based on 0x9301 bit 6:
+ *   - If bit 6 set: call helper_cc4c, modify 0xCC30, 0xE710, 0xCC3B
+ *   - If bit 6 clear and 0x91D1 bit 3 clear: loop back to c46f
+ *   - Otherwise: fall through to init_bda4 and return
+ */
+static void handler_c465(void)
+{
+    uint8_t val;
+
+    /* lcall 0xbda4 - init state */
+    init_bda4();
+
+    /* Read 0x91C0, check bit 1 */
+    val = REG_USB_PHY_CTRL_91C0;
+    if (val & 0x02) {
+        return;  /* bit 1 set, return early */
+    }
+
+    /* Main loop - simplified, skipping computed dispatch */
+    while (1) {
+        /* Read 0x92FB - power mode register */
+        val = REG_POWER_MODE_92FB;
+
+        /* Original does computed dispatch via 0x0DC7 based on val */
+        /* For now, handle the main path at 0xC48F-0xC4CA */
+
+        /* Check 0x9301 bit 6 */
+        if (REG_BUF_CFG_9301 & 0x40) {
+            /* Path at c4b2: call helper_cc4c, modify registers */
+            helper_cc4c();
+            helper_cc59_with_dptr(&REG_CPU_MODE);  /* set bit 0 of 0xCC30 */
+            REG_LINK_WIDTH_E710 = (REG_LINK_WIDTH_E710 & 0xE0) | 0x04;
+            REG_TIMER_CTRL_CC3B &= 0xFD;  /* clear bit 1 */
+            break;
+        }
+
+        /* Check 0x91D1 bit 3 */
+        if (!(REG_USB_PHY_CTRL_91D1 & 0x08)) {
+            /* Loop back - but add safety exit to prevent infinite loop */
+            break;
+        }
+
+        break;  /* Exit loop for safety */
+    }
+
+    /* lcall 0xbda4 - final init */
+    init_bda4();
+}
+
+/* 0x034A: Target 0xC465 - phy_handler */
+void dispatch_034a(void) { handler_c465(); }
+
+/*
+ * handler_e682 - PHY and transfer flag clear
+ * Address: 0xE682-0xE688 (7 bytes)
+ *
+ * Called via dispatch_0354. Clears PHY config and USB transfer flags.
+ *
+ * Original disassembly:
+ *   e682: lcall 0xcc56    ; helper_cc56() - set bit 0 of PHY config
+ *   e685: lcall 0xcc79    ; helper_cc79() - clear USB transfer flags
+ *   e688: ret
+ */
+static void handler_e682(void)
+{
+    helper_cc56();
+    helper_cc79();
+}
+
+/*
+ * handler_e6aa - Clear state and call state handler
+ * Address: 0xE6AA-0xE6AE (5 bytes)
+ *
+ * Called via dispatch_034f. Sets R7=0 and jumps to state handler at 0xC324.
+ *
+ * Original disassembly:
+ *   e6aa: clr a           ; a = 0
+ *   e6ab: mov r7, a       ; r7 = 0
+ *   e6ac: ljmp 0xc324     ; tail call to state handler
+ *
+ * The state handler at 0xC324 writes R7 to 0x0A7D and processes state.
+ */
+static void handler_e6aa(void)
+{
+    /* Write 0 to 0x0A7D and process state */
+    G_EP_DISPATCH_VAL3 = 0;
+    /* TODO: Implement full state_handler_c324 */
+}
+
+/* 0x034F: Target 0xE6AA - state clear handler */
+void dispatch_034f(void) { handler_e6aa(); }
+
+/* 0x0354: Target 0xE682 - PHY clear handler */
+void dispatch_0354(void) { handler_e682(); }
 
 /*
  * handler_e423 - Status check and conditional init handler
@@ -500,8 +1154,22 @@ void dispatch_0359(void)
     handler_e423();
 }
 
-/* 0x035E: Target 0xE6BD - handler_e6bd */
-void dispatch_035e(void) { jump_bank_0(0xE6BD); }
+/*
+ * handler_e6bd - Stack manipulation stub
+ * Address: 0xE6BD-0xE6BF (3 bytes)
+ *
+ * Original disassembly:
+ *   e6bd: push 0x2b        ; push IDATA 0x2B to stack
+ *   e6bf: ret
+ *
+ * This is an 8051-specific stack manipulation that cannot be directly
+ * replicated in C. The function pushes a byte from the bit-addressable
+ * IDATA region (0x2B) onto the stack then returns. May be a placeholder.
+ */
+void dispatch_035e(void)
+{
+    /* 8051 stack manipulation - no direct C equivalent */
+}
 
 /* 0x0363: Target 0xE969 - handler_e969 (stub) */
 void dispatch_0363(void) { jump_bank_0(0xE969); }
@@ -533,11 +1201,122 @@ void dispatch_038b(void) { jump_bank_0(0xD2BD); }
 /* 0x0390: Target 0xCD10 - handler_cd10 */
 void dispatch_0390(void) { jump_bank_0(0xCD10); }
 
-/* 0x0395: Target 0xDA8F - handler_da8f */
-void dispatch_0395(void) { jump_bank_0(0xDA8F); }
+/*
+ * handler_d5fb - USB poll wait handler
+ * Address: 0xD5FB-0xD63C (66 bytes)
+ *
+ * Called via dispatch_0395. Handles USB endpoint polling state.
+ *
+ * Original disassembly:
+ *   d5fb: mov dptr, #0x0b3d
+ *   d5fe: movx a, @dptr      ; read G_STATE_WORK_0B3D
+ *   d5ff: jz 0xd63c          ; if zero, return
+ *   d601-d607: check 0x9091 bit 0, if set return
+ *   d608-d60e: check 0x07E1 == 1
+ *   d610-d624: check USB/endpoint status
+ *   d631-d63b: write 0x04, 0x02, 0x01 to timer control
+ *   d63c: ret
+ */
+static void handler_d5fb(void)
+{
+    /* Check G_STATE_WORK_0B3D */
+    if (G_STATE_WORK_0B3D == 0) {
+        return;
+    }
 
-/* 0x039A: Target 0xD810 - usb_buffer_handler */
-void dispatch_039a(void) { jump_bank_0(0xD810); }
+    /* Check 0x9091 bit 0 (setup phase) */
+    if (REG_USB_CTRL_PHASE & 0x01) {
+        return;
+    }
+
+    /* Check 0x07E1 == 1 */
+    if (G_USB_CTRL_STATE_07E1 != 0x01) {
+        return;
+    }
+
+    /* Check USB status at 0x9000 */
+    if (REG_USB_STATUS & 0x01) {
+        /* Check 0xC471 bit 0 */
+        if (REG_NVME_QUEUE_BUSY & 0x01) {
+            return;
+        }
+        /* Check 0x000A */
+        if (G_USB_CTRL_000A != 0) {
+            return;
+        }
+    } else {
+        /* Check 0x9101 bit 6 */
+        if (REG_USB_PERIPH_STATUS & 0x40) {
+            return;
+        }
+        /* Check I_USB_STATE (IDATA 0x6A) */
+        if (I_USB_STATE != 0) {
+            return;
+        }
+    }
+
+    /* Write timer control sequence: 0x04, 0x02, 0x01 */
+    REG_TIMER1_CSR = 0x04;
+    REG_TIMER1_CSR = 0x02;
+    REG_TIMER1_CSR = 0x01;
+}
+
+/* 0x0395: Target 0xD5FB - usb_poll_wait handler */
+void dispatch_0395(void) { handler_d5fb(); }
+
+/*
+ * handler_d92e - USB buffer initialization handler
+ * Address: 0xD92E-0xD968 (59 bytes)
+ *
+ * Called via dispatch_039a. Performs USB PHY and buffer initialization.
+ *
+ * Original disassembly:
+ *   d92e: lcall 0xcc3d    ; set bit 6 of 0x92C2, return DPTR=0x92E1, A=0x10
+ *   d931: lcall 0xcc2d    ; write A to @DPTR (0x10 to 0x92E1), toggle bit 2 of 0x9000
+ *   d934: lcall 0xcc4c    ; set bit 1 of 0x91C0
+ *   d937: mov dptr, #0x9090
+ *   d93a: movx a, @dptr
+ *   d93b: anl a, #0x7f    ; clear bit 7
+ *   d93d: movx @dptr, a
+ *   d93e: mov a, r7
+ *   d93f: jz 0xd94a       ; if r7==0, skip helper call
+ *   ...
+ *   d94a: mov dptr, #0x9300
+ *   d94d: mov a, #0x04
+ *   d94f: movx @dptr, a   ; write 0x04 to 0x9300
+ *   d950-d967: register init sequence
+ *   d968: ret
+ */
+static void handler_d92e(void)
+{
+    /* lcall 0xcc3d + lcall 0xcc2d combined:
+     * cc3d sets bit 6 of 0x92C2, sets DPTR=0x92E1, A=0x10
+     * cc2d writes A (0x10) to @DPTR (0x92E1), then toggles bit 2 of 0x9000
+     */
+    REG_POWER_STATUS = (REG_POWER_STATUS & 0xBF) | 0x40;  /* set bit 6 */
+    REG_POWER_EVENT_92E1 = 0x10;
+    REG_USB_STATUS = (REG_USB_STATUS & 0xFB) | 0x04;  /* set bit 2 */
+    REG_USB_STATUS &= 0xFB;  /* clear bit 2 */
+
+    /* lcall 0xcc4c - set bit 1 of 0x91C0 */
+    helper_cc4c();
+
+    /* Clear bit 7 of 0x9090 */
+    REG_USB_INT_MASK_9090 &= 0x7F;
+
+    /* Skip conditional helper call (R7 check) - simplified */
+
+    /* Register init sequence */
+    REG_BUF_CFG_9300 = 0x04;
+    REG_USB_PHY_CTRL_91D1 = 0x02;
+    REG_BUF_CFG_9301 = 0x40;
+    REG_BUF_CFG_9301 = 0x80;
+    REG_USB_PHY_CTRL_91D1 = 0x08;
+    REG_USB_PHY_CTRL_91D1 = 0x01;
+}
+
+/* 0x039A: Target 0xD92E - usb_buffer_handler */
+void dispatch_039a(void) { handler_d92e(); }
 
 /* 0x039F: Target 0xD916 - pcie_dispatch_d916 */
 void pcie_dispatch_d916(uint8_t param) { (void)param; jump_bank_0(0xD916); }  /* was: dispatch_039f */
@@ -726,14 +1505,797 @@ void dispatch_04c1(void) { jump_bank_0(0xBE02); }
 /* 0x04C6: Target 0xDBF5 - handler_dbf5 */
 void dispatch_04c6(void) { jump_bank_0(0xDBF5); }
 
-/* 0x04CB: Target 0xE7C1 - pcie_param_handler */
-void dispatch_04cb(void) { jump_bank_0(0xE7C1); }
+/*
+ * handler_dfae - Timer/link handler
+ * Address: 0xDFAE-0xDFD5 (40 bytes)
+ *
+ * Called via dispatch_04cb. Checks timer status and handles link events.
+ *
+ * Original disassembly:
+ *   dfae: mov dptr, #0xcc17
+ *   dfb1: lcall 0xc033    ; read timer status, returns flags in R7
+ *   dfb4: mov a, r7
+ *   dfb5: jnb acc.0, dfbf ; if bit 0 clear, skip
+ *   dfb8-dfbe: clear bit 0 of 0x92C4
+ *   dfbf: mov a, r7
+ *   dfc0: jnb acc.1, dfd5 ; if bit 1 clear, return
+ *   dfc3-dfd2: call helpers, check 0x046E, optionally call 0xC930
+ *   dfd5: ret
+ */
+static void handler_dfae(void)
+{
+    uint8_t flags;
+
+    /* Call helper at 0xC033 with DPTR=0xCC17 - simplified, just read register */
+    flags = REG_TIMER1_CSR;  /* 0xCC17 is timer control */
+
+    /* If bit 0 set, clear bit 0 of 0x92C4 */
+    if (flags & 0x01) {
+        REG_POWER_MISC_CTRL &= 0xFE;
+    }
+
+    /* If bit 1 set, handle link event */
+    if (flags & 0x02) {
+        /* Simplified: check G_LINK_FLAG_046E, clear if set */
+        if (G_LINK_FLAG_046E != 0) {
+            G_LINK_FLAG_046E = 0;
+            /* TODO: Call 0xC930 link handler */
+        }
+    }
+}
+
+/*
+ * helper_e31a - PHY vendor initialization
+ * Address: 0xE31A-0xE333 (26 bytes)
+ *
+ * Checks PHY vendor control bit 5, and if not set, triggers USB init.
+ *
+ * Original disassembly:
+ *   e31a: mov dptr, #0xc656   ; PHY vendor control
+ *   e31d: movx a, @dptr       ; Read register
+ *   e31e: jb acc.5, 0xe333    ; If bit 5 set, skip init
+ *   e321: mov dptr, #0x06e3   ; USB state flag
+ *   e324: mov a, #0x01
+ *   e326: movx @dptr, a       ; Set to 1 to trigger USB init
+ *   e327: mov dptr, #0xc656   ; PHY control
+ *   e32a: lcall 0xc049        ; Configure PHY
+ *   e32d: mov dptr, #0xc65b   ; PHY control 2
+ *   e330: lcall 0xc049        ; Configure PHY
+ *   e333: ret
+ */
+/*
+ * helper_c049 - Set bit 5 of PHY register
+ * Address: 0xC049-0xC04F (7 bytes)
+ *
+ * Reads register at DPTR, forces bit 5 to 1, writes back.
+ * Called with DPTR pointing to PHY control register.
+ *
+ * Original disassembly:
+ *   c049: movx a, @dptr    ; Read register
+ *   c04a: anl a, #0xdf     ; Clear bit 5
+ *   c04c: orl a, #0x20     ; Set bit 5
+ *   c04e: movx @dptr, a    ; Write back
+ *   c04f: ret
+ */
+static void helper_c049(__xdata uint8_t *reg)
+{
+    uint8_t val = *reg;
+    val = (val & 0xDF) | 0x20;  /* Force bit 5 set */
+    *reg = val;
+}
+
+static void helper_e31a(void)
+{
+    uint8_t phy_status;
+
+    /* Read PHY vendor control register */
+    phy_status = REG_PHY_EXT_56;
+
+    uart_puts("[e31a:");
+    uart_puthex(phy_status);
+
+    /* If bit 5 is already set, PHY is ready, skip init */
+    if (phy_status & 0x20) {
+        uart_puts("=skip]");
+        return;
+    }
+
+    uart_puts("=init]");
+
+    /* Bit 5 not set - trigger USB initialization */
+    G_USB_STATE_CLEAR_06E3 = 1;
+
+    /* Configure PHY registers - set bit 5 on control registers */
+    helper_c049(&REG_PHY_EXT_56);    /* 0xC656 */
+    helper_c049(&REG_PHY_EXT_5B);    /* 0xC65B */
+}
+
+/*
+ * usb_phy_setup_c24c - Comprehensive USB PHY setup
+ * Address: 0xC24C-0xC2B7 (108 bytes)
+ *
+ * Initializes USB PHY and related state when G_USB_STATE_CLEAR_06E3 is set.
+ * This is the main USB initialization function.
+ *
+ * Original disassembly:
+ *   c24c: mov dptr, #0x06e3   ; Check USB state flag
+ *   c24f: movx a, @dptr       ; Read flag
+ *   c250: jz 0xc2b7           ; If 0, skip all init
+ *   c252: clr a; movx @dptr, a; [clear 06E3-06E5, 05A4, 06E8, 05A9-05AA]
+ *   c268: lcall 0x54bb        ; Clear 0x0AF7
+ *   c26b: [setup B401, call helpers, clear buffers]
+ *   c2ae: lcall 0x3a2b        ; Final setup
+ *   c2b1: mov dptr, #0x05b1; mov a, #0x10; movx @dptr, a  ; Set init flag
+ *   c2b7: ret
+ */
+/*
+ * helper_9941 - Set bit 0 of register at DPTR
+ * Address: 0x9941-0x9947 (7 bytes)
+ *
+ * Original disassembly:
+ *   9941: movx a, @dptr    ; Read
+ *   9942: anl a, #0xfe     ; Clear bit 0
+ *   9944: orl a, #0x01     ; Set bit 0
+ *   9946: movx @dptr, a    ; Write back
+ *   9947: ret
+ */
+static void helper_9941(__xdata uint8_t *reg)
+{
+    uint8_t val = *reg;
+    val = (val & 0xFE) | 0x01;  /* Set bit 0 */
+    *reg = val;
+}
+
+/*
+ * helper_e612 - Clear PHY register bit 0 if param has bit 0 set
+ * Address: 0xe612-0xe61d (12 bytes)
+ *
+ * If R7 bit 0 is set, clears bit 0 of 0xC659
+ */
+static void helper_e612(uint8_t param)
+{
+    if (param & 0x01) {
+        REG_PHY_EXT_59 = REG_PHY_EXT_59 & 0xFE;  /* 0xC659: clear bit 0 */
+    }
+}
+
+/*
+ * helper_cb08 - Read B402 with bit 1 cleared
+ * Address: 0xcb08-0xcb0e (7 bytes)
+ *
+ * Reads REG_PCIE_TUNNEL_STATUS (0xB402) and returns value with bit 1 cleared.
+ * Note: dptr is set to 0xB402 after this call.
+ *
+ * Original disassembly:
+ *   cb08: mov dptr, #0xb402  ; dptr = B402
+ *   cb0b: movx a, @dptr      ; A = XDATA[B402]
+ *   cb0c: anl a, #0xfd       ; A &= 0xFD (clear bit 1)
+ *   cb0e: ret
+ */
+static uint8_t helper_cb08(void)
+{
+    return REG_PCIE_TUNNEL_STATUS & 0xFD;
+}
+
+/*
+ * helper_cac3 - Read tunnel config register 0x6041
+ * Address: 0xcac3-0xcac9 (7 bytes)
+ *
+ * Generic memory read helper that reads from XDATA[0x6041].
+ * Used by c7a4 for read-modify-write of tunnel config.
+ *
+ * Original disassembly:
+ *   cac3: mov r2, #0x60
+ *   cac5: mov r3, #0x02
+ *   cac7: mov r1, #0x41
+ *   cac9: ljmp 0x0ba0   ; Memory read helper
+ */
+static uint8_t helper_cac3(void)
+{
+    return REG_TUNNEL_HW_CFG_6041;
+}
+
+/*
+ * helper_0bbe - Write to tunnel config register 0x6041
+ * Address: 0x0bbe-0x0bc6 (called with R2=0x60, R3=0x02, R1=0x41)
+ *
+ * Generic memory write helper that writes A to XDATA[0x6041].
+ * Used by c7a4 for read-modify-write of tunnel config.
+ */
+static void helper_0bbe(uint8_t val)
+{
+    REG_TUNNEL_HW_CFG_6041 = val;
+}
+
+/*
+ * helper_d530 - Tunnel link configuration helper
+ * Address: 0xd530-0xd555+ (complex)
+ *
+ * Configures tunnel link registers based on R5/R4/R7 parameters.
+ * Called from bea0 with R5=0xC7, R4=0x00, R7=0x02.
+ */
+static void helper_d530(void)
+{
+    /* TODO: Implement full helper_d530 */
+    /* This function configures tunnel PHY registers 0x78xx/0x79xx */
+}
+
+/*
+ * helper_e581 - Tunnel completion wait helper
+ * Address: 0xe581-0xe591 (17 bytes)
+ *
+ * Waits for CC11 bit 1 to be set, then writes 0x02 to CC11.
+ * Called from bea0 state machine.
+ *
+ * Original disassembly:
+ *   e581: lcall 0xe292       ; Write R6:R7 to CC82:CC83, set CC81 bits
+ *   e584: mov dptr, #0xcc11  ; Loop start
+ *   e587: movx a, @dptr
+ *   e588: jnb acc.1, 0xe584  ; Wait for bit 1
+ *   e58b: mov dptr, #0xcc11
+ *   e58e: mov a, #0x02
+ *   e590: movx @dptr, a
+ *   e591: ret
+ */
+static void helper_e581(uint8_t r4, uint8_t r5, uint8_t r7)
+{
+    (void)r4;
+    (void)r5;
+    (void)r7;
+    /* TODO: Implement full e581 with e292 sub-call */
+    /* For now, just write completion flag */
+    /* REG_CC11 = 0x02; */
+}
+
+/*
+ * helper_bea0 - USB link state machine
+ * Address: 0xbea0-0xbf1b (124 bytes)
+ *
+ * Complex state machine for USB link mode transitions.
+ * Updates B434 lane configuration based on link mode (R7 param).
+ *
+ * State variables:
+ *   0x0AA9 - Link mode parameter (from R7)
+ *   0x0AAA - Loop counter (0-3)
+ *   0x0AAB - Lane mask from B434
+ *   0x0AAC - State index (doubles each iteration)
+ *
+ * Original disassembly summary:
+ *   bea0: Write R7 to 0x0AA9
+ *   bea5: Set 0x0AAC = 1
+ *   beab: Read B434 & 0x0F, store to 0x0AAB
+ *   beb5: Clear 0x0AAA
+ *   beba: Loop start - check 0x0AA9 < 0x0F
+ *   bec2: If >= 0x0F, branch to bedb
+ *   bec4-bed9: Complex bit manipulation with 0x0AAB, 0x0AAC, 0x0AA9
+ *   bedb-bee2: Alternative path when >= 0x0F
+ *   bee9-bef1: Update 0x0AAB
+ *   bef2-befb: Update B434 low nibble with 0x0AAB
+ *   befc: Call d530 (tunnel config)
+ *   bf05: Call e581 with R5=0xC7, R4=0, R7=0x02 (wait for completion)
+ *   bf08-bf0e: Double 0x0AAC (shift left)
+ *   bf0f-bf14: Increment 0x0AAA
+ *   bf15-bf19: Loop while 0x0AAA < 4
+ *   bf1b: ret
+ */
+static void helper_bea0(uint8_t link_mode)
+{
+    uint8_t lane_mask;
+    uint8_t state_idx;
+    uint8_t loop_cnt;
+    uint8_t temp;
+
+    /* bea0-bea4: Write link_mode to 0x0AA9 */
+    G_TLP_COUNT_LO = link_mode;  /* 0x0AA9 */
+
+    /* bea5-beaa: Set state index to 1 */
+    G_STATE_COUNTER_0AAC = 1;    /* 0x0AAC */
+
+    /* beab-beb4: Read B434 low nibble as lane mask */
+    lane_mask = REG_PCIE_LINK_STATE & 0x0F;
+    G_STATE_HELPER_0AAB = lane_mask;  /* 0x0AAB */
+
+    /* beb5-beb9: Clear loop counter */
+    G_TLP_STATUS = 0;            /* 0x0AAA */
+
+    /* Loop up to 4 times (beba-bf19) */
+    while (1) {
+        /* beba-bec0: Read 0x0AA9 and check if < 0x0F */
+        link_mode = G_TLP_COUNT_LO;
+
+        if (link_mode < 0x0F) {
+            /* bec4-bed9: Path when link_mode < 0x0F */
+            temp = G_STATE_HELPER_0AAB;  /* Read lane mask */
+            if (temp != link_mode) {
+                /* Complex bit manipulation */
+                state_idx = G_STATE_COUNTER_0AAC ^ 0x0F;  /* XOR with 0x0F */
+                temp = (link_mode | state_idx) & temp;
+            } else {
+                /* bee2 path - values match, just return */
+                return;
+            }
+        } else {
+            /* bedb-bee8: Path when link_mode >= 0x0F */
+            temp = G_STATE_HELPER_0AAB;
+            if (temp == 0x0F) {
+                /* bee2 - exact match, return */
+                return;
+            }
+            temp = G_STATE_COUNTER_0AAC | temp;  /* ORL with state_idx */
+        }
+
+        /* bee9-beec: Update lane mask */
+        G_STATE_HELPER_0AAB = temp;
+
+        /* beed-befb: Update B434 low nibble with new lane mask */
+        temp = G_STATE_HELPER_0AAB;
+        lane_mask = REG_PCIE_LINK_STATE & 0xF0;  /* Keep high nibble */
+        REG_PCIE_LINK_STATE = lane_mask | temp;  /* Set low nibble */
+
+        /* befc: Call d530 tunnel config */
+        helper_d530();
+
+        /* bf05: Call e581 wait for completion */
+        helper_e581(0x00, 0xC7, 0x02);
+
+        /* bf08-bf0e: Double state index (shift left = add to self) */
+        state_idx = G_STATE_COUNTER_0AAC;
+        G_STATE_COUNTER_0AAC = state_idx + state_idx;
+
+        /* bf0f-bf14: Increment loop counter */
+        loop_cnt = G_TLP_STATUS;
+        G_TLP_STATUS = loop_cnt + 1;
+
+        /* bf15-bf19: Check if loop_cnt >= 4 */
+        if ((loop_cnt + 1) >= 4) {
+            break;
+        }
+    }
+}
+
+/*
+ * helper_c7a4 - USB link mode configuration
+ * Address: 0xc7a4-0xc808 (101 bytes)
+ *
+ * Configures USB link mode with full register setup.
+ * Called during USB PHY initialization to set link parameters.
+ *
+ * Original disassembly:
+ *   c7a4-c7b2: Write param to 0x0AA7, save B402 bit 1 to 0x0AA8
+ *   c7b3-c7b6: Call cb08, write result to B402 (clears bit 1)
+ *   c7b7-c7c5: If param != 0x0F, set bit 6 of 0x6041
+ *   c7c8: Call bea0 state machine
+ *   c7cb-c7d9: If param != 0x0F, clear bit 6 of 0x6041
+ *   c7dc-c7e7: If original B402 bit 1 was set, restore it
+ *   c7e8-c808: Update B436 based on param and B404
+ */
+static void helper_c7a4(uint8_t param)
+{
+    uint8_t link_state_save;
+    uint8_t temp;
+
+    /* c7a4-c7a8: Write param to G_USB_LINK_MODE (0x0AA7) */
+    G_USB_LINK_MODE = param;
+
+    /* c7a9-c7b2: Read B402 bit 1, save to 0x0AA8 */
+    link_state_save = REG_PCIE_TUNNEL_STATUS & 0x02;
+    G_USB_LINK_STATE = link_state_save;
+
+    /* c7b3-c7b6: Call cb08, write result back to B402 (clears bit 1) */
+    temp = helper_cb08();
+    REG_PCIE_TUNNEL_STATUS = temp;
+
+    /* c7b7-c7be: Check if param != 0x0F */
+    param = G_USB_LINK_MODE;
+    if (param != 0x0F) {
+        /* c7c0-c7c5: Read 0x6041, set bit 6, write back */
+        temp = helper_cac3();
+        temp |= 0x40;
+        helper_0bbe(temp);
+    }
+
+    /* c7c8: Call bea0 state machine */
+    helper_bea0(param);
+
+    /* c7cb-c7d2: Check if param != 0x0F again */
+    param = G_USB_LINK_MODE;
+    if (param != 0x0F) {
+        /* c7d4-c7d9: Read 0x6041, clear bit 6, write back */
+        temp = helper_cac3();
+        temp &= 0xBF;
+        helper_0bbe(temp);
+    }
+
+    /* c7dc-c7e7: If original B402 bit 1 was set, restore it */
+    if (G_USB_LINK_STATE != 0) {
+        temp = helper_cb08();
+        temp |= 0x02;
+        REG_PCIE_TUNNEL_STATUS = temp;
+    }
+
+    /* c7e8-c7f3: Mask param with 0x0E, update B436 low nibble */
+    param = G_USB_LINK_MODE;
+    param &= 0x0E;
+    temp = REG_PCIE_LANE_CONFIG & 0xF0;  /* Keep high nibble */
+    REG_PCIE_LANE_CONFIG = temp | param;
+
+    /* c7f4-c808: Read B404, XOR low nibble with 0x0F, swap nibbles,
+     * keep high nibble only, then merge into B436 */
+    temp = REG_PCIE_LINK_PARAM_B404 & 0x0F;
+    temp ^= 0x0F;                         /* Invert low nibble */
+    temp = (temp << 4) & 0xF0;           /* Swap: move to high nibble */
+    param = REG_PCIE_LANE_CONFIG & 0x0F;  /* Get current low nibble */
+    REG_PCIE_LANE_CONFIG = param | temp;  /* Combine */
+}
+
+/*
+ * helper_3a2b - USB DMA initialization
+ * Address: 0x3a2b-0x3a60 (54 bytes)
+ *
+ * Initializes DMA and USB link state for enumeration.
+ */
+static void helper_3a2b(void)
+{
+    /* Clear log counter and system flags */
+    G_LOG_COUNTER_044B = 0;       /* 0x044B */
+    G_SYS_INIT_FLAG = 0;          /* 0x0000 */
+    G_LINK_FLAG_046E = 0;         /* 0x046E */
+
+    /* Configure DMA registers */
+    REG_DMA_STATUS2 = REG_DMA_STATUS2 & 0xFE;  /* 0xC8D8: clear bit 0 */
+    REG_DMA_CTRL = 0;             /* 0xC8D7 = 0 */
+    REG_DMA_QUEUE_IDX = 0;        /* 0xC8D5 = 0 */
+    G_DMA_STATE_057A = 0;         /* 0x057A = 0 */
+}
+
+/*
+ * helper_c6d7 - Tunnel adapter configuration
+ * Address: 0xc6d7-0xc73d (103 bytes)
+ *
+ * Copies adapter configuration from globals 0x0A52-0x0A54 to B4xx tunnel registers.
+ * Configures both primary (B410-B423) and secondary (B41A-B42B) tunnel paths.
+ *
+ * Original disassembly:
+ *   c6d7: mov dptr, #0x0a53   ; G_PCIE_ADAPTER_CFG_HI
+ *   c6da: movx a, @dptr       ; Read adapter config
+ *   c6db: mov r7, a
+ *   c6dc: mov dptr, #0xb410   ; REG_TUNNEL_CFG_A_LO
+ *   c6df: movx @dptr, a       ; Write to B410
+ *   ... (continues with B411-B42B configuration)
+ */
+static void helper_c6d7(void)
+{
+    uint8_t cfg_hi, cfg_lo, cfg_mode;
+
+    /* Read adapter configuration from globals */
+    cfg_hi = G_PCIE_ADAPTER_CFG_HI;  /* 0x0A53 */
+    cfg_lo = G_PCIE_ADAPTER_CFG_LO;  /* 0x0A52 */
+    cfg_mode = G_PCIE_ADAPTER_MODE;  /* 0x0A54 */
+
+    /* Configure primary tunnel path (B410-B423) */
+    REG_TUNNEL_CFG_A_LO = cfg_hi;      /* B410 = 0x0A53 */
+    REG_TUNNEL_CFG_A_HI = cfg_lo;      /* B411 = 0x0A52 */
+    /* B412 from CAD8 helper - credits */
+    REG_TUNNEL_CFG_MODE = cfg_mode;    /* B413 = 0x0A54 */
+
+    /* Set tunnel capabilities (fixed values) */
+    REG_TUNNEL_CAP_0 = 0x06;           /* B415 = 0x06 */
+    REG_TUNNEL_CAP_1 = 0x04;           /* B416 = 0x04 */
+    REG_TUNNEL_CAP_2 = 0x00;           /* B417 = 0x00 */
+
+    /* Configure secondary tunnel path (B41A-B42B) */
+    REG_TUNNEL_LINK_CFG_LO = cfg_hi;   /* B41A = 0x0A53 */
+    REG_TUNNEL_LINK_CFG_HI = cfg_lo;   /* B41B = 0x0A52 */
+    /* B418 from CAD8 helper - path credits */
+    REG_TUNNEL_PATH_MODE = cfg_mode;   /* B419 = 0x0A54 */
+
+    /* Tunnel status registers */
+    REG_TUNNEL_STATUS_0 = cfg_hi;      /* B422 = 0x0A53 */
+    REG_TUNNEL_STATUS_1 = cfg_lo;      /* B423 = 0x0A52 */
+
+    /* Set secondary capabilities (fixed values) */
+    REG_TUNNEL_CAP2_0 = 0x06;          /* B425 = 0x06 */
+    REG_TUNNEL_CAP2_1 = 0x04;          /* B426 = 0x04 */
+    REG_TUNNEL_CAP2_2 = 0x00;          /* B427 = 0x00 */
+
+    /* Configure auxiliary path */
+    REG_TUNNEL_PATH2_CRED = cfg_hi;    /* B428 = 0x0A53 */
+    REG_TUNNEL_PATH2_MODE = cfg_lo;    /* B429 = 0x0A52 */
+}
+
+/*
+ * helper_cc83 - Critical USB tunnel register setup
+ * Address: 0xcc83-0xccda (88 bytes)
+ *
+ * Configures USB/PCIe tunnel hardware for USB enumeration.
+ * This is called from usb_phy_setup_c24c and is critical for USB to work.
+ *
+ * Original disassembly:
+ *   cc83: mov dptr, #0xca06   ; REG_CPU_MODE_NEXT
+ *   cc86: movx a, @dptr
+ *   cc87: anl a, #0xef        ; Clear bit 4
+ *   cc89: movx @dptr, a
+ *   cc8a: lcall 0xc6d7        ; Tunnel adapter config
+ *   cc8d: mov r3, #0x02       ; Write to XDATA
+ *   cc8f: mov r2, #0x40
+ *   cc91: mov r1, #0x84
+ *   cc93: mov a, #0x22
+ *   cc95: lcall 0x0bbe        ; Write 0x22 to 0x4084
+ *   cc98: mov r2, #0x50
+ *   cc9a: lcall 0x0bbe        ; Write 0x22 to 0x5084
+ *   cc9d: mov dptr, #0xb401   ; REG_PCIE_TUNNEL_CTRL
+ *   cca0: lcall 0x9941        ; Set bit 0
+ *   cca3: mov dptr, #0xb482   ; REG_TUNNEL_ADAPTER_MODE
+ *   cca6: lcall 0x9941        ; Set bit 0
+ *   cca9: movx a, @dptr       ; Read B482
+ *   ccaa: anl a, #0x0f        ; Keep low nibble
+ *   ccac: orl a, #0xf0        ; Set high nibble to 0xF0
+ *   ccae: movx @dptr, a       ; Write back
+ *   ccaf: mov dptr, #0xb401
+ *   ccb2: movx a, @dptr
+ *   ccb3: anl a, #0xfe        ; Clear bit 0
+ *   ccb5: lcall 0x993d        ; Write back
+ *   ccb8: mov dptr, #0xb430   ; REG_TUNNEL_LINK_STATE
+ *   ccbb: movx a, @dptr
+ *   ccbc: anl a, #0xfe        ; Clear bit 0
+ *   ccbe: movx @dptr, a
+ *   ccbf: mov dptr, #0xb298   ; REG_PCIE_TUNNEL_CFG
+ *   ccc2: movx a, @dptr
+ *   ccc3: anl a, #0xef        ; Clear bit 4
+ *   ccc5: orl a, #0x10        ; Set bit 4
+ *   ccc7: movx @dptr, a
+ *   ccc8: mov r2, #0x60
+ *   ccca: mov r1, #0x43
+ *   cccc: mov a, #0x70
+ *   ccce: lcall 0x0bbe        ; Write 0x70 to 0x6043
+ *   ccd1: mov r1, #0x25
+ *   ccd3: lcall 0x0ba0        ; Read 0x6025
+ *   ccd6: anl a, #0x7f        ; Clear bit 7
+ *   ccd8: orl a, #0x80        ; Set bit 7
+ *   ccda: ljmp 0x0bbe         ; Write back to 0x6025
+ */
+static void helper_cc83(void)
+{
+    uint8_t val;
+
+    /* CC83-CC89: Clear bit 4 of CA06 */
+    REG_CPU_MODE_NEXT = REG_CPU_MODE_NEXT & 0xEF;
+
+    /* CC8A: Call tunnel adapter configuration */
+    helper_c6d7();
+
+    /* CC8D-CC9A: Write 0x22 to tunnel hardware config registers */
+    REG_TUNNEL_HW_CFG_4084 = 0x22;
+    REG_TUNNEL_HW_CFG_5084 = 0x22;
+
+    /* CC9D-CCA0: Set bit 0 of B401 */
+    helper_9941(&REG_PCIE_TUNNEL_CTRL);
+
+    /* CCA3-CCA6: Set bit 0 of B482 */
+    helper_9941(&REG_TUNNEL_ADAPTER_MODE);
+
+    /* CCA9-CCAE: Configure B482 - keep low nibble, set high nibble to 0xF0 */
+    val = REG_TUNNEL_ADAPTER_MODE;
+    val = (val & 0x0F) | 0xF0;
+    REG_TUNNEL_ADAPTER_MODE = val;
+
+    /* CCAF-CCB5: Clear bit 0 of B401 */
+    val = REG_PCIE_TUNNEL_CTRL;
+    val = val & 0xFE;
+    REG_PCIE_TUNNEL_CTRL = val;
+
+    /* CCB8-CCBE: Clear bit 0 of B430 */
+    val = REG_TUNNEL_LINK_STATE;
+    val = val & 0xFE;
+    REG_TUNNEL_LINK_STATE = val;
+
+    /* CCBF-CCC7: Set bit 4 of B298 (tunnel enable - critical!) */
+    val = REG_PCIE_TUNNEL_CFG;
+    val = (val & 0xEF) | 0x10;
+    REG_PCIE_TUNNEL_CFG = val;
+
+    /* CCC8-CCCE: Write 0x70 to 0x6043 */
+    REG_TUNNEL_HW_CFG_6043 = 0x70;
+
+    /* CCD1-CCDA: Read 0x6025, set bit 7, write back */
+    val = REG_TUNNEL_HW_CFG_6025;
+    val = (val & 0x7F) | 0x80;
+    REG_TUNNEL_HW_CFG_6025 = val;
+}
+
+/*
+ * helper_clear_usb_work_area - Clear USB work area 0x05B0-0x06E1
+ *
+ * Clears the PCIe transaction table and work area.
+ * This is a loop in the original firmware at 0xc294-0xc2ab.
+ */
+static void helper_clear_usb_work_area(void)
+{
+    __xdata uint8_t *ptr;
+    uint16_t i;
+
+    /* Clear 0x05B0-0x06E1 (306 bytes) */
+    ptr = (__xdata uint8_t *)0x05B0;
+    for (i = 0; i < 0x132; i++) {
+        ptr[i] = 0;
+    }
+}
+
+static void usb_phy_setup_c24c(void)
+{
+    /* Check if USB initialization is requested */
+    if (G_USB_STATE_CLEAR_06E3 == 0) {
+        return;  /* No init requested */
+    }
+
+    /* c252-c267: Clear USB state flags */
+    G_USB_STATE_CLEAR_06E3 = 0;   /* 0x06E3 */
+    G_LOG_ENTRY_COUNT_06E4 = 1;   /* 0x06E4 = 1 */
+    G_MAX_LOG_ENTRIES = 1;        /* 0x06E5 = 1 */
+    G_CMD_SLOT_STATE = 0;         /* 0x05A4 */
+    G_WORK_06E8 = 0;              /* 0x06E8 */
+    G_CMD_WORK_05A9 = 0;          /* 0x05A9 */
+    G_CMD_WORK_05AA = 0;          /* 0x05AA */
+
+    /* c268: lcall 0x54bb - Clear transfer control flag */
+    helper_54bb();
+
+    /* c26b-c274: Pulse bit 0 on B401 (set then clear) */
+    helper_9941(&REG_PCIE_TUNNEL_CTRL);   /* c26e: Set bit 0 */
+    REG_PCIE_TUNNEL_CTRL &= 0xFE;         /* c271-c274: Clear bit 0 */
+
+    /* c275: lcall 0xCC83 - critical register setup */
+    helper_cc83();
+
+    /* c278-c27e: Clear bit 4 of CA06 again after cc83 returns */
+    REG_CPU_MODE_NEXT &= 0xEF;
+
+    /* c281-c283: lcall 0xe612 with R7=1 - clear PHY register */
+    helper_e612(0x01);
+
+    /* c286-c288: lcall 0xc7a4 with R7=0x0F - USB link mode setup */
+    helper_c7a4(0x0F);
+
+    /* c28b-c292: Clear IDATA 0x62 and XDATA 0x06E2 */
+    I_PCIE_TXN_DATA_1 = 0;
+    G_XFER_STATE_06E2 = 0;
+
+    /* c294-c2ab: Clear USB work area 0x05B0-0x06E1 (306 bytes) */
+    helper_clear_usb_work_area();
+
+    /* c2ae: lcall 0x3a2b - USB/DMA link initialization */
+    helper_3a2b();
+
+    /* c2b1-c2b6: Set USB link flag - this signals USB init is complete */
+    G_PCIE_ADDR_2 = 0x10;         /* 0x05B1 = 0x10 */
+
+    uart_puts("[c24c:done]");
+
+    /*
+     * helper_e34d - Enable PHY interrupt for USB enumeration
+     * Address: 0xe34d-0xe365 (25 bytes)
+     *
+     * This function is called during USB init (when R6==0 at 0x921f) to enable
+     * the PHY/USB enumeration interrupt. Critical for USB to enumerate!
+     *
+     * Original disassembly:
+     *   e34d: mov dptr, #0xc6bd   ; PHY link control
+     *   e350: movx a, @dptr
+     *   e351: anl a, #0xfe        ; Clear bit 0
+     *   e353: movx @dptr, a
+     *   e354: mov dptr, #0xc801   ; REG_INT_ENABLE
+     *   e357: lcall 0xc049        ; Set bit 5 (0x20)
+     *   e35a: mov dptr, #0xcc33   ; CPU exec status 2
+     *   e35d: mov a, #0x04
+     *   e35f: movx @dptr, a
+     *   e360: inc dptr            ; CC34
+     *   e361: movx a, @dptr
+     *   e362: anl a, #0xfb        ; Clear bit 2
+     *   e364: movx @dptr, a
+     *   e365: ret
+     */
+    {
+        uint8_t val;
+
+        /* e34d-e353: Clear bit 0 of C6BD (PHY link control) */
+        val = REG_PHY_LINK_CTRL_BD;
+        REG_PHY_LINK_CTRL_BD = val & 0xFE;
+
+        /* e354-e357: Set bit 5 of REG_INT_ENABLE (via c049) */
+        /* c049 does: read, clear bit 5, set bit 5, write - net effect is set bit 5 */
+        helper_c049(&REG_INT_ENABLE);
+
+        /* e35a-e35f: Write 0x04 to CC33 */
+        REG_CPU_EXEC_STATUS_2 = 0x04;
+
+        /* e360-e364: Clear bit 2 of CC34 */
+        val = REG_CPU_EXEC_CTRL_2;
+        REG_CPU_EXEC_CTRL_2 = val & 0xFB;
+
+        uart_puts("[e34d:int-enable]");
+    }
+
+    /* DEBUG: Call USB soft-connect to enable enumeration
+     * In original firmware, this is called via state machine when XDATA[0x07E4] == 5
+     * Function cc27 enables USB D+ pull-up for host detection.
+     *
+     * cc27 Original disassembly:
+     *   cc27: mov dptr, #0x9090  ; USB interrupt mask
+     *   cc2a: movx a, @dptr
+     *   cc2b: anl a, #0x7f       ; Clear bit 7 (enable pull-up)
+     *   cc2d: movx @dptr, a
+     *   cc2e: mov dptr, #0x9000  ; USB status
+     *   cc31: movx a, @dptr
+     *   cc32: anl a, #0xfb       ; Clear bit 2
+     *   cc34: orl a, #0x04       ; Set bit 2
+     *   cc36: movx @dptr, a
+     *   cc37: movx a, @dptr
+     *   cc38: anl a, #0xfb       ; Clear bit 2 again
+     *   cc3a: movx @dptr, a
+     *   cc3b: ret
+     */
+    {
+        uint8_t val;
+        /* Clear bit 7 of 9090 - enables USB D+ pull-up */
+        val = REG_USB_INT_MASK_9090;
+        REG_USB_INT_MASK_9090 = val & 0x7F;
+
+        /* Toggle bit 2 of 9000 */
+        val = REG_USB_STATUS;
+        val = (val & 0xFB) | 0x04;  /* Set bit 2 */
+        REG_USB_STATUS = val;
+        val = REG_USB_STATUS;
+        REG_USB_STATUS = val & 0xFB;  /* Clear bit 2 */
+
+        uart_puts("[cc27:soft-connect]");
+    }
+}
+
+/*
+ * handler_e570 - USB PHY initialization handler
+ * Address: 0xE570-0xE580 (17 bytes)
+ *
+ * Called via dispatch_04d5 during USB initialization.
+ * Clears state variables and calls PHY init helpers.
+ *
+ * Original disassembly:
+ *   e570: clr a
+ *   e571: mov dptr, #0x05a5   ; PCIE transaction count
+ *   e574: movx @dptr, a       ; Clear 0x05A5
+ *   e575: inc dptr            ; 0x05A6
+ *   e576: movx @dptr, a       ; Clear 0x05A6
+ *   e577: mov dptr, #0x0b2e   ; USB transfer flag
+ *   e57a: movx @dptr, a       ; Clear 0x0B2E
+ *   e57b: lcall 0xe31a        ; PHY vendor init
+ *   e57e: ljmp 0xc24c         ; USB PHY setup
+ */
+static void handler_e570(void)
+{
+    /* Debug: Show we're entering USB init */
+    uart_puts("[USB]");
+
+    /* Clear PCIE transaction counters */
+    G_PCIE_TXN_COUNT_LO = 0;   /* 0x05A5 */
+    G_PCIE_TXN_COUNT_HI = 0;   /* 0x05A6 */
+
+    /* Clear USB transfer flag */
+    G_USB_TRANSFER_FLAG = 0;  /* 0x0B2E */
+
+    /* Call PHY vendor init - sets G_USB_STATE_CLEAR_06E3 if needed */
+    helper_e31a();
+
+    /* Jump to USB PHY setup - does actual init if flag is set */
+    usb_phy_setup_c24c();
+}
+
+/* 0x04CB: Target 0xDFAE - timer/link handler */
+void dispatch_04cb(void) { handler_dfae(); }
 
 /* 0x04D0: Target 0xCE79 - timer_link_handler */
 void dispatch_04d0(void) { jump_bank_0(0xCE79); }
 
-/* 0x04D5: Target 0xD3A2 - handler_d3a2 */
-void dispatch_04d5(void) { jump_bank_0(0xD3A2); }
+/* 0x04D5: Target 0xE570 - USB PHY init handler */
+void dispatch_04d5(void) { handler_e570(); }
 
 /* 0x04DA: Target 0xE3B7 - handler_e3b7 */
 void dispatch_04da(void) { jump_bank_0(0xE3B7); }

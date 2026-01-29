@@ -190,6 +190,15 @@ debug:
 	@echo "OBJS: $(OBJS)"
 
 flash: $(BUILD_DIR)/firmware_wrapped.bin
+	@echo ""
+	@echo "========================================================================"
+	@echo "WARNING: USB enumeration in dmesg is the BOOTLOADER, not our firmware!"
+	@echo "For firmware USB to work, you need TWO enumerations:"
+	@echo "  1. Bootloader enumerates -> disconnects"
+	@echo "  2. OUR FIRMWARE enumerates (this is the one that matters!)"
+	@echo "If you only see ONE enumeration/disconnect cycle, firmware USB is broken."
+	@echo "========================================================================"
+	@echo ""
 	@echo "Resetting to bootloader..."
 	@python3 ftdi_debug.py -bn
 	@echo "Flashing firmware to device..."

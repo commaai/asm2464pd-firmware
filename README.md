@@ -107,6 +107,17 @@ src/
     └── dispatch.c   # Bank switching stubs
 ```
 
+## Hardware Testing
+
+Flash firmware to real hardware and read UART debug output:
+
+```bash
+make flash              # Build and flash to device (requires FTDI adapter)
+python3 ftdi_debug.py   # Read UART output at 921600 baud (Ctrl-C to exit)
+```
+
+The FTDI adapter controls device reset via GPIO. First-time setup: `python3 ftdi_debug.py --provision`
+
 ## Reference Materials
 
 - `fw.bin` - Original firmware (98,012 bytes)

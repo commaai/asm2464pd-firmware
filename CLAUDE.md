@@ -174,3 +174,25 @@ The emulator's job for USB:
 - The hardware emulation should set MMIO registers that trigger firmware's USB state machine
 - Firmware reads USB CDB from MMIO registers (0x910D-0x9112) and processes naturally
 - Check result at XDATA[0x8000] for E4 read responses
+
+## Hardware Debugging (ftdi_debug.py)
+
+**CRITICAL: USB enumeration confusion**
+- When flashing, the BOOTLOADER enumerates as USB (174c:2463) to receive firmware
+- This bootloader enumeration in dmesg is NOT our firmware enumerating
+- After flashing completes, bootloader disconnects (~1.5s later) and boots our firmware
+- Our firmware then runs (UART output visible) but may NOT enumerate USB
+- To verify: clear dmesg (`sudo dmesg -c`), flash, wait 15s, then check dmesg
+- If only ONE enumeration/disconnect pair visible, our firmware failed to enumerate
+- A working firmware would show a SECOND enumeration after bootloader disconnect
+
+**CRITICAL: UART output timing**
+- The `make flash` target handles everything: flash, reset, and read UART
+- Use `timeout 10 make flash` to flash and monitor debug output
+
+**Debugging sequence:**
+```bash
+timeout 10 make flash   # Flash and read UART output for 10 seconds
+```
+
+After flashing, check dmesg for a SECOND enumeration (our firmware) after the bootloader disconnect.

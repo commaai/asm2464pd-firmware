@@ -80,6 +80,8 @@ if __name__ == "__main__":
   args.add_argument('--reset', '-r', action='store_true', default=False, help="Reset the device")
   args.add_argument('--bootloader', '-b', action='store_true', default=False, help="Reset to bootloader")
   args.add_argument('--no-read', '-n', action='store_true', default=False, help="Do not read debug output")
+  args.add_argument('--timeout', '-t', type=float, default=10, help="Read timeout in seconds. 0 for infinite.")
+  args.add_argument('--character_limit', '-c', type=int, default=1000, help="Limit number of characters to read. 0 for infinite.")
 
   args = args.parse_args()
 
@@ -95,8 +97,14 @@ if __name__ == "__main__":
 
     if not args.no_read:
       print("Starting debug output. Press Ctrl-C to exit.\n------")
-      while True:
-        sys.stdout.write(dbg.read())
+      st = time.monotonic()
+      chars_read = 0
+      while (args.timeout == 0 or (time.monotonic() - st) < args.timeout) and (args.character_limit == 0 or chars_read < args.character_limit):
+        data = dbg.read()
+        chars_read += len(data)
+        sys.stdout.write(data)
         sys.stdout.flush()
         time.sleep(0.001)
+      if chars_read >= args.character_limit and args.character_limit != 0:
+        print(f"\nCharacter limit of {args.character_limit} reached. Exiting.")
 

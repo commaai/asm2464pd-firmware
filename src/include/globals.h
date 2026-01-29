@@ -54,10 +54,15 @@ __idata __at(0x38) uint8_t I_WORK_38;         /* Work variable 0x38 */
 __idata __at(0x39) uint8_t I_WORK_39;         /* Work variable 0x39 */
 __idata __at(0x3A) uint8_t I_WORK_3A;         /* Work variable 0x3A */
 __idata __at(0x3B) uint8_t I_WORK_3B;         /* Work variable 0x3B */
-__idata __at(0x3C) uint8_t I_WORK_3C;         /* Work variable 0x3C */
-__idata __at(0x3D) uint8_t I_WORK_3D;         /* Work variable 0x3D */
-__idata __at(0x3E) uint8_t I_WORK_3E;         /* Work variable 0x3E */
-__idata __at(0x3F) uint8_t I_TRANSFER_COUNT;   /* Transfer count */
+__idata __at(0x3C) uint8_t I_QUEUE_WAIT_3C;    /* Queue wait counter byte 0 (high) - 32-bit big-endian */
+__idata __at(0x3D) uint8_t I_QUEUE_WAIT_3D;    /* Queue wait counter byte 1 */
+__idata __at(0x3E) uint8_t I_QUEUE_WAIT_3E;    /* Queue wait counter byte 2 */
+__idata __at(0x3F) uint8_t I_QUEUE_WAIT_3F;    /* Queue wait counter byte 3 (low) */
+/* Aliases for legacy names */
+#define I_WORK_3C I_QUEUE_WAIT_3C
+#define I_WORK_3D I_QUEUE_WAIT_3D
+#define I_WORK_3E I_QUEUE_WAIT_3E
+#define I_TRANSFER_COUNT I_QUEUE_WAIT_3F
 __idata __at(0x40) uint8_t I_XFER_STATUS;      /* Transfer status from REG_XFER_STATUS_CE60 */
 __idata __at(0x41) uint8_t I_SLOT_START_INDEX; /* Slot start index for calculations */
 __idata __at(0x42) uint8_t I_TAG_STATUS;       /* Command tag status */
@@ -188,6 +193,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_SYSTEM_STATE          XDATA_VAR8(0x0467)  /* System state */
 #define G_DATA_PORT             XDATA_VAR8(0x0468)  /* Data port */
 #define G_INT_STATUS            XDATA_VAR8(0x0469)  /* Interrupt status */
+#define G_LINK_FLAG_046E        XDATA_VAR8(0x046E)  /* Link event flag */
 #define G_SCSI_CMD_PARAM_0470   XDATA_VAR8(0x0470)  /* SCSI command parameter */
 #define G_DMA_LOAD_PARAM1       XDATA_VAR8(0x0472)  /* DMA load parameter 1 */
 #define G_DMA_LOAD_PARAM2       XDATA_VAR8(0x0473)  /* DMA load parameter 2 */
@@ -235,10 +241,13 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
  * Used by E4/E5 command processing to track current command slot.
  */
 #define G_CMD_SLOT_INDEX        XDATA_VAR8(0x05A3)  /* Current command slot index (0-9) */
+#define G_CMD_SLOT_STATE        XDATA_VAR8(0x05A4)  /* Command slot state */
 #define G_CMD_INDEX_SRC         XDATA_VAR8(0x05A5)  /* Command index source/copy */
 #define G_PCIE_TXN_COUNT_LO     XDATA_VAR8(0x05A6)  /* PCIe transaction count low */
 #define G_PCIE_TXN_COUNT_HI     XDATA_VAR8(0x05A7)  /* PCIe transaction count high */
 #define G_EP_CONFIG_05A8        XDATA_VAR8(0x05A8)  /* EP config 0x05A8 */
+#define G_CMD_WORK_05A9         XDATA_VAR8(0x05A9)  /* Command work byte */
+#define G_CMD_WORK_05AA         XDATA_VAR8(0x05AA)  /* Command work byte */
 #define G_PCIE_DIRECTION        XDATA_VAR8(0x05AE)  /* PCIe direction (bit 0: 0=read, 1=write) */
 #define G_PCIE_ADDR_0           XDATA_VAR8(0x05AF)  /* PCIe target address byte 0 */
 #define G_PCIE_ADDR_1           XDATA_VAR8(0x05B0)  /* PCIe target address byte 1 */
@@ -277,7 +286,9 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_MAX_LOG_ENTRIES       XDATA_VAR8(0x06E5)  /* Max error log entries */
 #define G_QUEUE_COUNT_06E5      G_MAX_LOG_ENTRIES   /* Alias - queue count */
 #define G_STATE_FLAG_06E6       XDATA_VAR8(0x06E6)  /* Processing complete flag / error flag */
+#define G_XFER_STATE_06E2       XDATA_VAR8(0x06E2)  /* Transfer state */
 #define G_USB_STATE_CLEAR_06E3  XDATA_VAR8(0x06E3)  /* USB state clear flag */
+#define G_LOG_ENTRY_COUNT_06E4  XDATA_VAR8(0x06E4)  /* Log entry count */
 #define G_SCSI_STATUS_06CB      XDATA_VAR8(0x06CB)  /* SCSI status byte */
 #define G_WORK_06E7             XDATA_VAR8(0x06E7)  /* Work variable 0x06E7 */
 #define G_WORK_06E8             XDATA_VAR8(0x06E8)  /* Work variable 0x06E8 */
@@ -321,6 +332,9 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_SYS_FLAGS_07F6        XDATA_VAR8(0x07F6)  /* System flags 0x07F6 */
 #define G_SYS_FLAGS_07E8        XDATA_VAR8(0x07E8)  /* System flags 0x07E8 */
 #define G_TLP_STATE_07E9        XDATA_VAR8(0x07E9)  /* TLP state / queue status */
+#define G_USB_STATE_07E2        XDATA_VAR8(0x07E2)  /* USB state 0x07E2 */
+#define G_USB_STATE_07E6        XDATA_VAR8(0x07E6)  /* USB state 0x07E6 */
+#define G_USB_STATE_07E7        XDATA_VAR8(0x07E7)  /* USB state 0x07E7 */
 #define G_SYS_FLAGS_07F7        XDATA_VAR8(0x07F7)  /* System flags 0x07F7 */
 
 //=============================================================================
@@ -445,6 +459,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_VENDOR_DATA_0AB5      XDATA_VAR8(0x0AB5)  /* Vendor data storage */
 #define G_STATE_0AB6            XDATA_VAR8(0x0AB6)  /* State control 0x0AB6 */
 #define G_VENDOR_DATA_0AB7      XDATA_VAR8(0x0AB7)  /* Vendor data storage 2 */
+#define G_TLP_STATE_0ACA        XDATA_VAR8(0x0ACA)  /* TLP state 0x0ACA */
 #define G_SYSTEM_STATE_0AE2     XDATA_VAR8(0x0AE2)  /* System state */
 #define G_STATE_FLAG_0AE3       XDATA_VAR8(0x0AE3)  /* System state flag */
 #define G_PHY_LANE_CFG_0AE4     XDATA_VAR8(0x0AE4)  /* PHY lane configuration */
@@ -479,8 +494,10 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_USB_INIT_0B01         XDATA_VAR8(0x0B01)  /* USB init state flag */
 #define G_PCIE_WORK_0B12        XDATA_VAR8(0x0B12)  /* PCIe work variable */
 /* NOTE: G_TLP_PENDING_0B21 removed - use G_DMA_WORK_0B21 (same address) */
+#define G_STATE_0B2D            XDATA_VAR8(0x0B2D)  /* State flag 0x0B2D */
 #define G_USB_TRANSFER_FLAG     XDATA_VAR8(0x0B2E)  /* USB transfer flag */
 #define G_INTERFACE_READY_0B2F  XDATA_VAR8(0x0B2F)  /* Interface ready flag */
+#define G_STATE_0B38            XDATA_VAR8(0x0B38)  /* State control - cleared during USB init */
 #define G_STATE_0B39            XDATA_VAR8(0x0B39)  /* State control 0x0B39 */
 #define G_STATE_0B3A            XDATA_VAR8(0x0B3A)  /* State control 0x0B3A */
 #define G_TRANSFER_BUSY_0B3B    XDATA_VAR8(0x0B3B)  /* Transfer busy flag */
@@ -488,6 +505,10 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_USB_STATE_0B41        XDATA_VAR8(0x0B41)  /* USB state check */
 #define G_BUFFER_STATE_0AA6     XDATA_VAR8(0x0AA6)  /* Buffer state flags */
 #define G_BUFFER_STATE_0AA7     XDATA_VAR8(0x0AA7)  /* Buffer state control */
+#define G_USB_LINK_MODE         G_BUFFER_STATE_0AA7 /* Alias: USB link mode for c7a4 */
+#define G_USB_LINK_STATE        G_TLP_COUNT_HI      /* Alias: USB link state (0x0AA8) */
+#define G_DMA_STATE_057A        G_EP_LOOKUP_TABLE   /* Alias: DMA state (0x057A) */
+#define G_SYS_INIT_FLAG         G_SYSTEM_CTRL       /* Alias: System init flag (0x0000) */
 #define G_STATE_CTRL_0B3E       XDATA_VAR8(0x0B3E)  /* State control 0x0B3E */
 /* NOTE: G_STATE_WORK_0B3E removed - use G_STATE_CTRL_0B3E (same address) */
 #define G_STATE_CTRL_0B3F       XDATA_VAR8(0x0B3F)  /* State control 0x0B3F */
