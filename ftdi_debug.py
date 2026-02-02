@@ -29,7 +29,7 @@ class USBGPUDebug:
     self.ftdi = Ftdi()
     self.ftdi.open_from_url(self.device_url)
     self.ftdi.set_baudrate(921600)
-    self.ftdi.set_line_property(8, 1, 'N')
+    self.ftdi.set_line_property(8, 1, 'N')  # No parity (firmware disables it)
 
     self.eeprom = FtdiEeprom()
     self.eeprom.connect(self.ftdi)
@@ -80,6 +80,7 @@ if __name__ == "__main__":
   args.add_argument('--reset', '-r', action='store_true', default=False, help="Reset the device")
   args.add_argument('--bootloader', '-b', action='store_true', default=False, help="Reset to bootloader")
   args.add_argument('--no-read', '-n', action='store_true', default=False, help="Do not read debug output")
+  args.add_argument('--timeout', '-t', type=float, default=None, help="Timeout in seconds for reading")
 
   args = args.parse_args()
 
@@ -95,8 +96,11 @@ if __name__ == "__main__":
 
     if not args.no_read:
       print("Starting debug output. Press Ctrl-C to exit.\n------")
+      start_time = time.perf_counter()
       while True:
         sys.stdout.write(dbg.read())
         sys.stdout.flush()
+        if args.timeout is not None and (time.perf_counter() - start_time) >= args.timeout:
+          break
         time.sleep(0.001)
 
