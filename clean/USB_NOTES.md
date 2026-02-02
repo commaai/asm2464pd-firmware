@@ -1,6 +1,94 @@
 # USB Development Notes for Clean Firmware
 
-## Current Status (2026-02-02): USB Interrupts Working, Enumeration Not Yet
+## Current Status (2026-02-03): Setup Packet Detection Fixed, SET_ADDRESS Issue
+
+### Progress Summary
+1. **Setup packet detection FIXED** - Now using 0x9091 bit 0 to detect new setup packets
+2. **GET_DESCRIPTOR works intermittently** - Host receives our 18-byte device descriptor
+3. **SET_ADDRESS received** - We see SET_ADDRESS requests and respond with ZLP
+4. **Device doesn't respond at new address** - Host times out after changing address
+
+### Key Issue: Address Change Not Working
+
+After SET_ADDRESS:
+- We set `XDATA8(0x9006) = (addr & 0x7F) | 0x80`
+- We send ZLP status
+- Host tries to talk at new address
+- Device doesn't respond
+
+Possible causes:
+1. Address register takes effect at wrong time
+2. EP0 not re-armed after address change
+3. Missing register writes that original firmware does
+4. DMA/buffer configuration needs updating
+
+### Working Detection Using 0x9091
+
+```c
+/* Check 0x9091 bit 0 for new setup packet */
+if ((XDATA8(0x9091) & 0x01) && !(prev_9091 & 0x01)) {
+    usb_handle_setup();
+    XDATA8(0x909E) = 0x01;  /* Clear setup flag */
+    XDATA8(0x90E3) = 0x02;  /* Re-arm for next packet */
+    XDATA8(0x9091) = prev_9091 & ~0x01;  /* Clear 9091 bit 0 */
+}
+```
+
+### EP0 Buffer Configuration
+
+```c
+EP0_BUF_BASE = 0x0160     /* Where we write descriptor data */
+XDATA8(0x9310) = 0x60;    /* DMA low byte */
+XDATA8(0x9311) = 0x01;    /* DMA high byte -> 0x0160 */
+```
+
+---
+
+## Current Status (2026-02-03): Setup Packet Detection Fixed
+
+### CRITICAL: Correct Setup Packet Detection
+
+**DO NOT use packet content comparison for detection!**
+
+The WRONG approach (causes missed/duplicate packets):
+```c
+// BAD - DO NOT USE THIS
+if (cur[0] != last_setup[0] || ...) { is_new = 1; }
+if (is_new && (cur[0] == 0x80 && cur[1] == 0x06)) { ... }
+```
+
+Problems with content comparison:
+- Misses retried packets (same content as previous)
+- May process garbage if buffer not cleared
+- Filters by "looks like valid USB request" patterns = wrong
+
+**The CORRECT approach uses the 0x909E hardware flag:**
+
+From original firmware at 0x0ED3-0x0EEB:
+```asm
+mov dptr, #0x909E
+movx a, @dptr
+jb 0xe0.0, handle_setup  ; if bit 0 set, new setup packet
+...
+mov a, #0x01
+movx @dptr, a            ; clear flag by writing 0x01
+mov dptr, #0x90E3
+inc a                    ; a = 0x02  
+movx @dptr, a            ; write 0x02 to 0x90E3
+```
+
+Correct C code:
+```c
+if (XDATA8(0x909E) & 0x01) {
+    usb_handle_setup();
+    XDATA8(0x909E) = 0x01;  /* Clear flag */
+    XDATA8(0x90E3) = 0x02;  /* Re-arm for next packet */
+}
+```
+
+---
+
+## Previous Status (2026-02-02): USB Interrupts Working, Enumeration Not Yet
 
 **MAJOR PROGRESS:** USB interrupts are now firing! After extensive debugging:
 - USB ISR fires with C802=0x41 (bits 0, 6)
@@ -613,3 +701,324 @@ The emulator should be updated to NOT inject artificial USB state. Instead:
 - MMIO reads at 9000, 9118, C802 should return 0x00 until actual USB events
 - USB events should be triggered by host interaction, not by cycle count
 - This will make emulator behavior match real hardware
+
+## Summary: What We've Done So Far
+
+### Project Goal
+Create minimal "clean" USB firmware for ASM2464PD that successfully enumerates as a USB device with VID:PID ADD1:0001.
+
+### Working Baseline (Committed)
+The committed `clean/src/main.c` (~104 lines, 850 bytes) achieves:
+- **Device appears on USB bus** - Host sees device and attempts enumeration
+- **Host sends GET_DESCRIPTOR** - We get `error -71` (EPROTO) in dmesg
+- This means USB PHY is working, the device IS visible, enumeration IS starting
+
+The minimal working init sequence:
+```c
+// Interrupt controller config
+XDATA8(0xC800) = 0x05;  XDATA8(0xC801) = 0x10;
+XDATA8(0xC805) = 0x02;  XDATA8(0xC807) = 0x04;
+XDATA8(0xC8A6) = 0x04;  XDATA8(0xC8AA) = 0x03;
+XDATA8(0xC8AC) = 0x07;  XDATA8(0xC8A1) = 0x80;
+XDATA8(0xC8A4) = 0x80;  XDATA8(0xC8A9) = 0x01;
+XDATA8(0xC8B2) = 0xBC;  XDATA8(0xC8B3) = 0x80;
+XDATA8(0xC8B4) = 0xFF;  XDATA8(0xC8B5) = 0xFF;
+XDATA8(0xC8B6) = 0x14;
+
+// KEY: Disable PHY triggers USB visibility
+XDATA8(0x91C0) = 0x00;
+
+// Enable 8051 interrupts
+TCON = 0x05;  IE = 0x85;
+```
+
+### Stashed Work (git stash@{0})
+A more complete version with:
+- Full USB device/config/string descriptors (ADD1:0001 "TinyBox")
+- USB request handler for GET_DESCRIPTOR, SET_ADDRESS, SET_CONFIGURATION
+- Polling for setup packets via 9091 bit 0 and 9E00 buffer
+- ISR handler that reads C802, 9101, 9091
+
+**Problem with stashed version**: It was detecting false "SETUP" packets because 9E00 contained 0x55 garbage from bootloader, and 9091 bit 0 was spuriously set.
+
+### Key Discoveries
+
+1. **91C0=0x00 triggers USB visibility** - Writing 0 to the PHY control register paradoxically makes device appear on bus
+
+2. **USB ISR fires with C802=0x41** - We see interrupt status bits 0 and 6
+
+3. **9101 updates dynamically** - Goes from 0x01 to 0x03 showing USB peripheral activity
+
+4. **Error -71 means progress** - EPROTO = host IS talking to device, we're just not responding correctly
+
+5. **EP0 response mechanism unclear**:
+   - 0x9300 = EP0 TX length
+   - 0x9301 = EP0 control (0xC0 arms for OUT, 0x01 possibly for IN?)
+   - 0x9E00-0x9E07 = Setup packet buffer
+   - EP0 data buffer location: probably 0x0160 (from DMA setup in original)
+
+### What Needs to Happen for Enumeration
+
+1. **Detect setup packet arrival** - via 9091 bit 0 OR polling 9E00 changes
+2. **Parse setup packet** - Read 8 bytes from 9E00-9E07
+3. **Respond to GET_DESCRIPTOR (Device)** - Write 18-byte descriptor to EP0 buffer, send
+4. **Respond to SET_ADDRESS** - Send ZLP, then apply new address
+5. **Respond to GET_DESCRIPTOR (Config)** - Full config descriptor
+6. **Respond to SET_CONFIGURATION** - Send ZLP, device is enumerated
+
+### USB Enumeration Flow
+```
+Host                                Device
+  |-- GET_DESCRIPTOR (Device) 64b --> |  (setup: 80 06 00 01 00 00 40 00)
+  |<-- 18-byte Device Descriptor ---- |  <-- WE FAIL HERE
+  |-- SET_ADDRESS (XX) -------------> |  (setup: 00 05 XX 00 00 00 00 00)
+  |<-- ZLP (status) ----------------- |
+  |-- GET_DESCRIPTOR (Device) ------> |  (at new address)
+  |<-- 18-byte Device Descriptor ---- |
+  |-- GET_DESCRIPTOR (Config) ------> |
+  |<-- Config Descriptor ------------ |
+  |-- SET_CONFIGURATION (1) --------> |
+  |<-- ZLP (status) ----------------- |
+  ENUMERATION COMPLETE
+```
+
+### Next Steps
+
+1. **Start from working baseline** (committed version that gets error -71)
+2. **Add setup packet detection** - poll 9E00 for non-0x55 values indicating real setup packet
+3. **Add GET_DESCRIPTOR response** - copy device descriptor to EP0 buffer, trigger send
+4. **Find correct EP0 TX trigger** - experiment with 9301 values (0x01, 0x02, etc.)
+5. **Verify EP0 buffer location** - may need to trace original firmware more closely
+
+### Useful Commands
+```bash
+# Build and flash
+cd /home/light/fun/asm2464pd-firmware/clean
+make clean && make && make flash
+
+# Monitor UART and USB together
+cd /home/light/fun/asm2464pd-firmware
+sudo dmesg -C && python3 ftdi_debug.py -r -t 5 & sleep 6 && sudo dmesg | tail -20
+
+# Check for USB enumeration attempts
+sudo dmesg | grep -iE "usb|error"
+
+# Restore stashed work
+git stash pop
+```
+
+## Session 5 Findings (2026-02-02)
+
+### CRITICAL: Setup Packet Location
+
+**Setup packets are at 0x9104-0x910B, NOT 0x9E00!**
+
+From disassembly at 0xA5EA-0xA604:
+- Firmware reads 8 bytes from 0x9104+offset (loop with r7)
+- Copies them to RAM at 0x0ACE+offset
+- 0x9E00 is the EP0 OUTPUT buffer where firmware writes response data
+
+### USB Register Mapping (Corrected)
+
+| Register | Purpose | Direction |
+|----------|---------|-----------|
+| 0x9104-0x910B | Setup packet (8 bytes) | HW → FW (read) |
+| 0x9E00+ | EP0 data buffer | FW → HW (write) |
+| 0x9300 | EP0 TX length | FW → HW (write) |
+| 0x9301 | EP0 control | FW → HW (write) |
+| 0x9091 | USB status flags | HW → FW (read) |
+| 0x9092 | DMA trigger | FW → HW (write, 0x04=trigger) |
+
+### Working: Setup Packet Reception
+
+Our firmware now correctly receives and parses setup packets:
+```
+[SETUP@9104] 8006000100004000 S8006 D01Td
+              ^^^^^^^^^^^^^^^^
+              80 = bmRequestType (device-to-host)
+              06 = bRequest (GET_DESCRIPTOR)
+              00 01 = wValue (type=1=Device, index=0)
+              00 00 = wIndex
+              40 00 = wLength (64 bytes)
+```
+
+### Not Working: Response Transmission
+
+We write descriptor to 0x9E00 and try to trigger DMA via 0x9092, but host still gets error -71.
+
+Possible issues:
+1. DMA source address not configured (0x9310-0x9311?)
+2. Missing USB state machine step
+3. Wrong trigger mechanism
+
+### Original Firmware Descriptor Flow (from disassembly at 0xB343)
+
+1. Call 0xA581 (some setup)
+2. Write 0x02 to unknown location via DPTR
+3. Write to 0x9E00 (clear/init)
+4. Call 0xA563 (check link speed?)
+5. Complex state machine based on descriptor type/speed
+6. Eventually writes descriptor data to 0x9E00
+7. Returns status code in R7 (0x03=success, 0x05=error)
+
+The original firmware has a VERY complex USB state machine. It checks many status registers and has multiple code paths based on USB speed (USB2/USB3).
+
+### Next Steps
+
+1. **Trace original firmware** more carefully to understand DMA setup
+2. **Check 0x9310-0x9311** for DMA source address configuration  
+3. **Look at 0xA581 helper** function to understand setup phase
+4. **Compare register state** between original and our firmware after descriptor handling
+
+## Session Notes (2026-02-03) - MAJOR PROGRESS!
+
+### GET_DESCRIPTOR Now Working!
+
+After adding the proper EP0 transmission sequence based on original firmware disassembly at 0xa5a6:
+
+```c
+void usb_send_ep0(uint8_t len) {
+    uint8_t tmp;
+    
+    XDATA8(0x07E1) = 0x00;
+    XDATA8(0x07E9) = 0x01;
+    
+    tmp = XDATA8(0x9002);
+    XDATA8(0x9002) = tmp & 0xFD;
+    
+    XDATA8(0x07EB) = 0x00;
+    XDATA8(0x0AD6) = 0x00;
+    XDATA8(0x9091) = 0x01;
+    
+    XDATA8(0x9004) = len;
+    XDATA8(0x9003) = 0x00;
+    XDATA8(0x90E3) = 0x02;
+    XDATA8(0x9092) = 0x01;
+}
+```
+
+The host now successfully receives our device descriptor! We see SET_ADDRESS commands:
+```
+[SETUP] 0005050000000000 S0005 A05
+```
+
+This means:
+- bmRequestType = 0x00 (Host to Device, Standard, Device)
+- bRequest = 0x05 (SET_ADDRESS)
+- wValue = 0x0005 (address 5)
+
+### New Error: Device Not Responding at Address
+
+dmesg now shows:
+```
+usb 5-1.2: Device not responding to setup address.
+usb 5-1.2: device not accepting address 122, error -71
+```
+
+This is PROGRESS! The error changed from "device descriptor read/64, error -71" to "Device not responding to setup address".
+
+**What this means:**
+1. GET_DESCRIPTOR succeeded - host got our device descriptor
+2. SET_ADDRESS was sent by host
+3. We sent ZLP status response (using same sequence as data)
+4. Host acknowledged the SET_ADDRESS
+5. Host now tries to communicate at the NEW address (122/123)
+6. Device is NOT responding at the new address
+
+**Root cause:** We're not correctly setting the USB device address in hardware.
+
+### Key Discovery: USB Address Register
+
+We tried `XDATA8(0x9118) = addr;` but 0x9118 might not be the USB address register.
+
+**Need to find the correct address register.** Options to investigate:
+- 0x9118 - USB status/state, maybe not address
+- 0x9006 - EP0 config, maybe has address field
+- 0x9301 - EP0 control
+- Some register in 0x91xx or 0x92xx range
+
+### USB Enumeration Flow Progress
+
+```
+Host                              Device              Status
+ |-- GET_DESCRIPTOR (Device) -->  |                   
+ |<-- 18-byte Device Descriptor - |                   ✓ WORKING!
+ |-- SET_ADDRESS (addr=N) ------> |
+ |<-- ZLP ----------------------- |                   ✓ ZLP sent
+ |-- (now talks to addr N) -----> |
+ |<-- ??? ----------------------- |                   ✗ FAILING - wrong address
+```
+
+### Next Steps for SET_ADDRESS
+
+1. **Find USB address register** in original firmware disassembly
+2. **Search for SET_ADDRESS handler** in original firmware
+3. **Trace what registers change** after SET_ADDRESS in emulator
+4. Per USB spec, address change takes effect AFTER status stage ZLP
+5. May need to wait for some status bit before setting address
+
+### Important: 0x07xx Addresses
+
+The original firmware writes to 0x07E1, 0x07E9, 0x07EB etc. These might be:
+- IDATA accessed via movx (unlikely for 8051)
+- Shadow registers mapped to XDATA
+- Internal USB controller state
+- Need to verify these addresses are correct for our context
+
+## Session Notes (2026-02-03 continued) - SET_ADDRESS Debugging
+
+### Current Status: EP0 IN Not Transmitting
+
+We're stuck at SET_ADDRESS. The sequence is:
+1. GET_DESCRIPTOR received (8006 packets work)
+2. Descriptor data copied to buffer (`[12010002]`)
+3. Triggers written (0x9003, 0x9004, 0x90E3, 0x9092)
+4. Host eventually receives descriptor (intermittent)
+5. SET_ADDRESS received (0005 packets)
+6. Address register (0x9006) updated correctly: `@10>85` (0x10 -> 0x85)
+7. ZLP send attempted
+8. ZLP completion TIMES OUT (0x9091 bit doesn't change)
+9. Device doesn't respond at new address
+
+### Key Findings
+
+**Buffer Addresses:**
+- 0x9E00: Allows receiving correct setup packets, gets to SET_ADDRESS
+- 0x0160: Causes corrupted packets or immediate failures
+- DMA (0x9310/0x9311) configured to 0x0160
+
+**Address Register (0x9006):**
+- Initial value: 0x10 (from bootloader)
+- After SET_ADDRESS: 0x85 (address 5 + enable bit)
+- Write DOES take effect
+
+**ZLP Completion:**
+- Polling 0x9091 bit 0 for status change -> TIMEOUT
+- Tried both 0x1cca values (0x9093=0x08, 0x9094=0x02) and 0x1cd5 values (0x9093=0x02, 0x9094=0x10)
+- Neither produces a completed transfer
+
+### Theory
+
+EP0 IN transfers aren't actually being transmitted by hardware. The DMA or trigger mechanism is wrong:
+1. We write data to buffer
+2. We set length in 0x9004
+3. We trigger via 0x90E3=0x02, 0x9092=0x01
+4. But hardware never actually sends the data
+
+Possible causes:
+- Wrong DMA source address configuration
+- Missing EP0 IN enable bit
+- Wrong trigger sequence
+- Need to poll/wait for ready before triggering
+
+### What Works (Partially)
+
+GET_DESCRIPTOR sometimes succeeds - host receives our descriptor and sends SET_ADDRESS.
+This proves the basic mechanism CAN work, but something's intermittent or we're missing a step.
+
+### Next Steps
+
+1. Trace original firmware's complete EP0 IN flow with emulator
+2. Look for EP0 IN ready/enable bits we might be missing
+3. Check if there's a status that needs to be polled before trigger
+4. Compare register state between working and failing cases
