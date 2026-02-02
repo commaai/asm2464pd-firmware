@@ -174,3 +174,78 @@ The emulator's job for USB:
 - The hardware emulation should set MMIO registers that trigger firmware's USB state machine
 - Firmware reads USB CDB from MMIO registers (0x910D-0x9112) and processes naturally
 - Check result at XDATA[0x8000] for E4 read responses
+
+## Real Hardware Testing
+
+The emulator may have bugs - always verify on real hardware when possible.
+
+### Hardware Setup
+- ASM2464PD device connected via USB
+- FTDI debug adapter connected for UART output (appears as /dev/ttyUSB0)
+- UART runs at 921600 baud
+
+### Flashing Firmware
+
+From the `clean/` directory for the clean firmware, or root for main firmware:
+
+```bash
+# Build and flash
+cd clean
+make flash
+
+# This will:
+# 1. Build firmware with ASM2464 header wrapper
+# 2. Reset device to bootloader mode
+# 3. Flash the firmware
+# 4. Reset device to run new firmware
+```
+
+### FTDI Debug Tool (ftdi_debug.py)
+
+Read UART debug output from the device:
+
+```bash
+# Reset and capture boot messages (combined command)
+python3 ftdi_debug.py -r -t 2   # Reset device, then read for 2 seconds
+
+# Read UART output for N seconds (no reset)
+python3 ftdi_debug.py -t 1      # Read for 1 second
+python3 ftdi_debug.py -t 5      # Read for 5 seconds
+
+# Device control only
+python3 ftdi_debug.py -r        # Reset device (with brief read)
+python3 ftdi_debug.py -b        # Reset to bootloader mode
+python3 ftdi_debug.py -rn       # Reset without reading output
+python3 ftdi_debug.py -bn       # Bootloader without reading output
+```
+
+### Typical Debug Workflow
+
+```bash
+# 1. Make changes to firmware
+# 2. Build and flash
+cd clean && make flash
+
+# 3. Reset and capture boot messages
+python3 ftdi_debug.py -r -t 2
+
+# 4. Check if device enumerated
+lsusb | grep -i "3801\|174c"
+```
+
+## Clean Firmware Development (clean/ directory)
+
+The `clean/` directory contains a minimal firmware implementation for testing USB enumeration
+and basic device functionality.
+
+### IMPORTANT: Keep clean/USB_NOTES.md Updated
+
+When working on USB functionality in the clean firmware, **always update `clean/USB_NOTES.md`**
+with new findings:
+- Register values discovered through testing
+- What works and what doesn't
+- Interrupt behavior observations
+- Any differences between emulator and real hardware
+
+This file serves as the running log of USB development progress and prevents rediscovering
+the same issues.

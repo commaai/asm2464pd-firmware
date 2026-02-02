@@ -193,6 +193,10 @@
 #define REG_USB_FIFO_STATUS     XDATA_REG8(0x9012)  /* USB FIFO/status register */
 #define   USB_FIFO_STATUS_READY   0x01  // Bit 0: USB ready/active
 #define REG_USB_FIFO_H          XDATA_REG8(0x9013)
+#define REG_USB_DMA_CFG_9014    XDATA_REG8(0x9014)  /* USB DMA config */
+#define REG_USB_DMA_CFG_9015    XDATA_REG8(0x9015)  /* USB DMA config */
+#define REG_USB_DMA_CFG_9016    XDATA_REG8(0x9016)  /* USB DMA config */
+#define REG_USB_DMA_CFG_9017    XDATA_REG8(0x9017)  /* USB DMA config */
 #define REG_USB_XCVR_MODE       XDATA_REG8(0x9018)
 #define REG_USB_MODE_VAL_9019   XDATA_REG8(0x9019)
 #define REG_USB_MSC_LENGTH      XDATA_REG8(0x901A)
@@ -262,6 +266,11 @@
 #define REG_USB_EP_READY        XDATA_REG8(0x9096)
 #define REG_USB_EP_CTRL_9097    XDATA_REG8(0x9097)  /* USB endpoint control */
 #define REG_USB_EP_MODE_9098    XDATA_REG8(0x9098)  /* USB endpoint mode */
+#define REG_USB_EP_CFG_9099     XDATA_REG8(0x9099)  /* USB endpoint config */
+#define REG_USB_EP_CFG_909A     XDATA_REG8(0x909A)  /* USB endpoint config */
+#define REG_USB_EP_CFG_909B     XDATA_REG8(0x909B)  /* USB endpoint config */
+#define REG_USB_EP_CFG_909C     XDATA_REG8(0x909C)  /* USB endpoint config */
+#define REG_USB_EP_CFG_909D     XDATA_REG8(0x909D)  /* USB endpoint config */
 #define REG_USB_STATUS_909E     XDATA_REG8(0x909E)
 #define REG_USB_CTRL_90A0       XDATA_REG8(0x90A0)  /* USB control 0x90A0 */
 #define REG_USB_SIGNAL_90A1     XDATA_REG8(0x90A1)
@@ -382,6 +391,28 @@
 #define REG_BUF_CFG_9303        XDATA_REG8(0x9303)
 #define REG_BUF_CFG_9304        XDATA_REG8(0x9304)
 #define REG_BUF_CFG_9305        XDATA_REG8(0x9305)
+
+// Extended buffer config registers (0x9310-0x9323) - USB/NVMe buffer config
+#define REG_BUF_CFG_9310        XDATA_REG8(0x9310)
+#define REG_BUF_CFG_9311        XDATA_REG8(0x9311)
+#define REG_BUF_CFG_9312        XDATA_REG8(0x9312)
+#define REG_BUF_CFG_9313        XDATA_REG8(0x9313)
+#define REG_BUF_CFG_9314        XDATA_REG8(0x9314)
+#define REG_BUF_CFG_9315        XDATA_REG8(0x9315)
+#define REG_BUF_CFG_9316        XDATA_REG8(0x9316)
+#define REG_BUF_CFG_9317        XDATA_REG8(0x9317)
+#define REG_BUF_CFG_9318        XDATA_REG8(0x9318)
+#define REG_BUF_CFG_9319        XDATA_REG8(0x9319)
+#define REG_BUF_CFG_931A        XDATA_REG8(0x931A)
+#define REG_BUF_CFG_931B        XDATA_REG8(0x931B)
+#define REG_BUF_CFG_931C        XDATA_REG8(0x931C)
+#define REG_BUF_CFG_931D        XDATA_REG8(0x931D)
+#define REG_BUF_CFG_931E        XDATA_REG8(0x931E)
+#define REG_BUF_CFG_931F        XDATA_REG8(0x931F)
+#define REG_BUF_CFG_9320        XDATA_REG8(0x9320)
+#define REG_BUF_CFG_9321        XDATA_REG8(0x9321)
+#define REG_BUF_CFG_9322        XDATA_REG8(0x9322)
+#define REG_BUF_CFG_9323        XDATA_REG8(0x9323)
 
 //=============================================================================
 // PCIe Passthrough Registers (0xB210-0xB8FF)
@@ -609,6 +640,8 @@
 #define REG_USB_MSC_STATUS      XDATA_REG8(0xC42D)
 #define REG_NVME_CMD_PRP1       XDATA_REG8(0xC430)  // NVMe command PRP1
 #define REG_NVME_CMD_PRP2       XDATA_REG8(0xC431)
+#define REG_NVME_CMD_PRP3       XDATA_REG8(0xC432)  // NVMe command PRP3
+#define REG_NVME_CMD_PRP4       XDATA_REG8(0xC433)  // NVMe command PRP4
 #define REG_NVME_CMD_CDW10      XDATA_REG8(0xC435)
 #define REG_NVME_INIT_CTRL      XDATA_REG8(0xC438)  // NVMe init control (set to 0xFF)
 #define REG_NVME_CMD_CDW11      XDATA_REG8(0xC439)
@@ -625,6 +658,9 @@
 #define REG_NVME_CQ_STATUS      XDATA_REG8(0xC445)
 #define REG_NVME_LBA_3          XDATA_REG8(0xC446)
 #define REG_NVME_INIT_CTRL2     XDATA_REG8(0xC448)  // NVMe init control 2 (set to 0xFF)
+#define REG_NVME_INIT_CTRL3     XDATA_REG8(0xC449)  // NVMe init control 3
+#define REG_NVME_INIT_CTRL4     XDATA_REG8(0xC44A)  // NVMe init control 4
+#define REG_NVME_INIT_CTRL5     XDATA_REG8(0xC44B)  // NVMe init control 5
 #define REG_NVME_CMD_STATUS_50  XDATA_REG8(0xC450)  // NVMe command status
 #define REG_NVME_QUEUE_STATUS_51 XDATA_REG8(0xC451) // NVMe queue status
 #define   NVME_QUEUE_STATUS_51_MASK 0x1F  // Bits 0-4: Queue status index

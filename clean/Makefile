@@ -8,6 +8,7 @@ AS = sdas8051
 CFLAGS = -mmcs51 --model-large --opt-code-size
 CFLAGS += --std-c99
 CFLAGS += -I$(SRC_DIR)
+CFLAGS += -I../src/include
 CFLAGS += --no-xinit-opt
 
 # Memory model settings
