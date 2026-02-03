@@ -31,21 +31,31 @@ __code uint8_t dev_desc[] = {
 
 void usb_send_ep0(uint8_t len) {
     uint8_t i;
+    
     /* Copy descriptor to EP0 buffer at 0x9E00 */
     for (i = 0; i < len; i++) {
         XDATA8(0x9E00 + i) = dev_desc[i];
     }
     
-    /* Add back 9091 */
-    REG_USB_CONFIG &= ~0x02;
-    REG_USB_CTRL_PHASE = 0x01;
-    REG_USB_EP0_STATUS = 0x00;
-    REG_USB_EP0_LEN_L = len;
-    REG_USB_EP_CTRL_905F &= 0xFE;
-    REG_USB_EP_CTRL_905D &= 0xFE;
-    REG_USB_EP_STATUS_90E3 = 0x01;
-    REG_USB_CTRL_90A0 = 0x01;
-    REG_USB_DMA_TRIGGER = 0x01;
+    /* 
+     * Minimal EP0 IN trigger sequence that produces STALL response.
+     * STALL proves hardware is responding - now need to figure out
+     * how to send DATA instead of STALL.
+     */
+    
+    /* Try adding DMA source address - maybe this changes STALL to DATA */
+    REG_USB_EP_BUF_HI = 0x9E;     /* 0x905B: DMA source high byte */
+    REG_USB_EP_BUF_LO = 0x00;     /* 0x905C: DMA source low byte */
+    
+    REG_USB_CONFIG &= ~0x02;      /* 0x9002: Clear bit 1 - required for STALL */
+    REG_USB_CTRL_PHASE = 0x01;    /* 0x9091: Write 1 - required for STALL */
+    REG_USB_EP0_STATUS = 0x00;    /* 0x9003: Clear status */
+    REG_USB_EP0_LEN_L = len;      /* 0x9004: Set transfer length */
+    REG_USB_EP_CTRL_905F &= 0xFE; /* 0x905F: Clear bit 0 - required for STALL */
+    REG_USB_EP_CTRL_905D &= 0xFE; /* 0x905D: Clear bit 0 - required for STALL */
+    REG_USB_EP_STATUS_90E3 = 0x01;/* 0x90E3: Trigger EP status */
+    REG_USB_CTRL_90A0 = 0x01;     /* 0x90A0: Additional trigger */
+    REG_USB_DMA_TRIGGER = 0x01;   /* 0x9092: DMA trigger */
     
     uart_putc('T');
     uart_puthex(len);
@@ -66,7 +76,7 @@ void main(void) {
     
     uart_puts("\n=== MIN ===\n");
     
-    /* Interrupt controller */
+    /* Interrupt controller - required for USB interrupt */
     REG_INT_STATUS_C800 = 0x05;
     REG_INT_ENABLE = 0x10;
     REG_INT_AUX_STATUS = 0x02;
@@ -74,58 +84,17 @@ void main(void) {
     REG_INT_CTRL = 0x20;
     XDATA8(0xC8A1) = 0x80;
     XDATA8(0xC8A4) = 0x80;
-    REG_FLASH_DIV = 0x04;
-    REG_FLASH_CMD = 0x03;
-    REG_FLASH_ADDR_LEN = 0x07;
-    REG_FLASH_CSR = 0x01;
-    REG_DMA_CHAN_AUX = 0xBC;
-    REG_DMA_CHAN_AUX1 = 0x80;
-    REG_DMA_XFER_CNT_HI = 0xFF;
-    REG_DMA_XFER_CNT_LO = 0xFF;
-    REG_DMA_CHAN_CTRL2 = 0x14;
-    
-    /* USB DMA config */
-    REG_BUF_CFG_9310 = 0x01;
-    REG_BUF_CFG_9311 = 0x60;
-    REG_BUF_CFG_9312 = 0x00;
-    REG_BUF_CFG_9313 = 0xE3;
-    REG_BUF_CFG_9314 = 0x01;
-    REG_BUF_CFG_9315 = 0x60;
-    REG_BUF_CFG_9318 = 0x01;
-    REG_BUF_CFG_9319 = 0x60;
-    REG_BUF_CFG_931C = 0x00;
-    REG_BUF_CFG_931D = 0x03;
-    REG_BUF_CFG_931E = 0x00;
-    REG_BUF_CFG_931F = 0xE0;
-    REG_BUF_CFG_9320 = 0x00;
-    REG_BUF_CFG_9321 = 0xE3;
     
     /* USB core config */
-    REG_USB_EP_CTRL_905F = 0x00;
-    REG_POWER_CTRL_92C8 = 0x00;
-    REG_USB_MSC_CFG = 0x02;
-    REG_USB_MSC_CFG = 0x06;
-    REG_USB_MSC_CFG = 0x07;
-    REG_USB_MSC_CFG = 0x05;
-    REG_USB_MSC_CFG = 0x01;
-    REG_USB_MSC_CFG = 0x00;
-    REG_USB_MSC_LENGTH = 0x0D;
-    REG_USB_DATA_L = 0xFE;
     REG_POWER_ENABLE = 0x81;
-    REG_USB_PHY_CTRL_91D1 = 0x0F;
-    REG_BUF_CFG_9300 = 0x0C;
     REG_BUF_CFG_9301 = 0xC0;
-    REG_BUF_CFG_9302 = 0xBF;
     REG_USB_CTRL_PHASE = 0x1F;
-    REG_USB_EP_CFG1 = 0x0F;
     REG_USB_PHY_CTRL_91C1 = 0xF0;
-    REG_BUF_CFG_9303 = 0x33;
-    REG_BUF_CFG_9304 = 0x3F;
-    REG_BUF_CFG_9305 = 0x40;
     REG_USB_CONFIG = 0xE0;
-    REG_USB_EP0_LEN_H = 0xF0;
-    REG_USB_MODE = 0x01;
-    REG_USB_EP_MGMT = 0x00;
+    REG_USB_PHY_CONFIG_9241 = 0xD0;
+    REG_USB_PHY_CTRL_91C0 = 0x00;
+    
+    /* Unmask all USB interrupts */
     REG_USB_EP_READY = 0xFF;
     REG_USB_EP_CTRL_9097 = 0xFF;
     REG_USB_EP_MODE_9098 = 0xFF;
@@ -135,12 +104,6 @@ void main(void) {
     REG_USB_EP_CFG_909C = 0xFF;
     REG_USB_EP_CFG_909D = 0xFF;
     REG_USB_STATUS_909E = 0x03;
-    REG_POWER_MISC_CTRL &= 0xFE;
-    REG_TIMER1_CSR = 0x04;
-    REG_TIMER1_CSR = 0x02;
-    REG_USB_PHY_CONFIG_9241 = 0xD0;
-    REG_USB_PHY_CTRL_91C3 = 0x00;
-    REG_USB_PHY_CTRL_91C0 = 0x00;
     
     TCON = 0x05;
     IE = 0x85;
