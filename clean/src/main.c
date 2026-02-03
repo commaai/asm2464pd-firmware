@@ -36,19 +36,8 @@ void usb_send_ep0(uint8_t len) {
         XDATA8(0x9E00 + i) = dev_desc[i];
     }
     
-    /* Set DMA source address to 0x9E00 */
-    REG_USB_EP_BUF_HI = 0x9E;  /* 0x905B = high byte */
-    REG_USB_EP_BUF_LO = 0x00;  /* 0x905C = low byte */
-    
-    /* Trigger sequence from original firmware */
-    XDATA8(0x07E1) = 0x00;
-    XDATA8(0x07E9) = 0x01;
+    /* Add back 9091 */
     REG_USB_CONFIG &= ~0x02;
-    REG_POWER_MISC_CTRL &= 0xFE;
-    REG_TIMER1_CSR = 0x04;
-    REG_TIMER1_CSR = 0x02;
-    XDATA8(0x07EB) = 0x00;
-    XDATA8(0x0AD6) = 0x00;
     REG_USB_CTRL_PHASE = 0x01;
     REG_USB_EP0_STATUS = 0x00;
     REG_USB_EP0_LEN_L = len;
@@ -178,12 +167,6 @@ void main(void) {
             if (USB_SETUP(0) == 0x80 && USB_SETUP(1) == 0x06 && USB_SETUP(3) == 0x01) {
                 usb_send_ep0(18);
             }
-            
-            /* Clear and re-arm */
-            REG_USB_STATUS_909E = 0x01;
-            REG_USB_EP_STATUS_90E3 = 0x02;
-            REG_USB_CTRL_PHASE = s9091 & ~0x01;
-            REG_BUF_CFG_9301 = 0xC0;
         }
         prev_9091 = s9091;
         
