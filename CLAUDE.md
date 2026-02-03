@@ -238,6 +238,15 @@ lsusb | grep -i "3801\|174c"
 The `clean/` directory contains a minimal firmware implementation for testing USB enumeration
 and basic device functionality.
 
+### CRITICAL: The Bootloader Does NOT Run After Reset
+
+When flashing firmware and resetting the device:
+- The bootloader is ONLY used for flashing (via USB vendor commands)
+- After reset, the bootloader does NOT continue running
+- Our firmware starts from scratch with NO USB connection
+- We CANNOT reuse any state from the bootloader
+- We must initialize the USB PHY completely ourselves to get SuperSpeed
+
 ### IMPORTANT: Keep clean/USB_NOTES.md Updated
 
 When working on USB functionality in the clean firmware, **always update `clean/USB_NOTES.md`**
