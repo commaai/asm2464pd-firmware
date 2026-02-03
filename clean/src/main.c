@@ -31,10 +31,14 @@ __code uint8_t dev_desc[] = {
 
 void usb_send_ep0(uint8_t len) {
     uint8_t i;
-    /* Copy descriptor to EP0 buffer */
+    /* Copy descriptor to EP0 buffer at 0x9E00 */
     for (i = 0; i < len; i++) {
         XDATA8(0x9E00 + i) = dev_desc[i];
     }
+    
+    /* Set DMA source address to 0x9E00 */
+    REG_USB_EP_BUF_HI = 0x9E;  /* 0x905B = high byte */
+    REG_USB_EP_BUF_LO = 0x00;  /* 0x905C = low byte */
     
     /* Trigger sequence from original firmware */
     XDATA8(0x07E1) = 0x00;
@@ -52,7 +56,7 @@ void usb_send_ep0(uint8_t len) {
     REG_USB_EP_CTRL_905D &= 0xFE;
     REG_USB_EP_STATUS_90E3 = 0x01;
     REG_USB_CTRL_90A0 = 0x01;
-    REG_USB_DMA_TRIGGER = 0x04;  /* Try 0x04 instead of 0x01 */
+    REG_USB_DMA_TRIGGER = 0x01;
     
     uart_putc('T');
     uart_puthex(len);
