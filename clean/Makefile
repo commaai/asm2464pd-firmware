@@ -109,7 +109,7 @@ flash: $(BUILD_DIR)/firmware_wrapped.bin
 	@echo "Flashing firmware to device..."
 	@python3 ../flash.py $<
 	@echo "Resetting device..."
-	@python3 ../ftdi_debug.py -rn
+	@python3 ../ftdi_debug.py -rt 2
 
 # Show hex dump
 hex: $(BIN)
