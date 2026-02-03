@@ -1,14 +1,70 @@
 # USB Development Notes for Clean Firmware
 
-## Current Status (2026-02-03): Setup Packet Detection Fixed, SET_ADDRESS Issue
+## Current Status (2026-02-03 Session 14): EP0 IN TX Not Working
 
 ### Progress Summary
+1. **Device visible on USB bus** - Host sees device and attempts enumeration
+2. **Setup packet detection WORKS** - Using 0x9091 bit 0 to detect new setup packets
+3. **Setup packet reading WORKS** - Reading 8 bytes from 0x9104-0x910B
+4. **GET_DESCRIPTOR parsing WORKS** - We see `8006000100004000` and process it correctly
+5. **Descriptor data copied WORKS** - Both 0x9E00 and 0x0160 contain correct data `12010002...`
+6. **USB ISR fires** - C802=0x01 triggers INT0
+7. **EP0 IN TX NOT WORKING** - Host gets error -71 (EPROTO), data never reaches host
+
+### Key Finding: 91C0 Controls PHY State
+
+| 91C0 Value | Effect |
+|------------|--------|
+| 0x00 | Device visible on USB, setup packets received, BUT TX doesn't work |
+| 0x02 | 9100=0x03 (USB link active) BUT device NOT visible on USB bus |
+| 0x03→0x02 | Original firmware sequence, device not visible with this alone |
+
+**Conclusion**: We MUST use 91C0=0x00 for device visibility, but TX doesn't complete.
+The issue is NOT the PHY state, it's something else in the TX mechanism.
+
+### Key Finding: Buffer Addresses Are Correct
+
+Debug output shows both buffers contain correct descriptor data:
+```
+[12010002/12010002]  <- 0x9E00 / 0x0160 both have correct data
+```
+
+### Attempted TX Sequences (All Failed)
+
+1. **Simple trigger 0x9092=0x01** - From 0xb33c path, no TX completion
+2. **Alternative 0x9002|=0x02, 0x9092=0x02** - From 0xa4ed, no TX completion
+3. **Full 0xa513 sequence** - 0x905F/0x905D clear, 0x90E3=0x01, 0x90A0=0x01, no TX completion
+4. **0xa5a6 complete sequence** - With 0x07E1, 0x07E9, 0x92C4, 0xCC17, no TX completion
+
+### What's Missing
+
+The original firmware at 0xb4ec calls:
+1. **0xbd25** - Extensive prep (C4xx registers, 0x900B, 0x9000, 0x924C, 0xC471, 0xC472)
+2. **0xa513** - Trigger setup (0x905F, 0x905D, 0x90E3, 0x90A0)
+3. Loop clearing 1536 bytes at 0xD800-0xDE00
+4. Writes to 0xDE30, 0xDE36, 0x9200, 0x900B, etc.
+
+The 0xbd25 function is VERY complex and calls multiple helper functions.
+We are likely missing critical USB state machine setup.
+
+### Next Steps to Try
+
+1. **Implement full 0xbd25 function** - Reverse engineer completely
+2. **Check if 0xD800-0xDE00 region needs to be cleared**
+3. **Verify 0x9200 register configuration**
+4. **Look for USB TX enable bit** we might be missing
+
+---
+
+## Previous Status (2026-02-03): Setup Packet Detection Fixed, SET_ADDRESS Issue
+
+### Progress Summary (Previous)
 1. **Setup packet detection FIXED** - Now using 0x9091 bit 0 to detect new setup packets
 2. **GET_DESCRIPTOR works intermittently** - Host receives our 18-byte device descriptor
 3. **SET_ADDRESS received** - We see SET_ADDRESS requests and respond with ZLP
 4. **Device doesn't respond at new address** - Host times out after changing address
 
-### Key Issue: Address Change Not Working
+### Key Issue: Address Change Not Working (Previous)
 
 After SET_ADDRESS:
 - We set `XDATA8(0x9006) = (addr & 0x7F) | 0x80`
@@ -1022,3 +1078,196 @@ This proves the basic mechanism CAN work, but something's intermittent or we're 
 2. Look for EP0 IN ready/enable bits we might be missing
 3. Check if there's a status that needs to be polled before trigger
 4. Compare register state between working and failing cases
+
+## Session Notes (2026-02-03 Session 13) - EP0 IN Still Not Transmitting
+
+### Summary of Attempts
+
+Tried multiple approaches to get EP0 IN data to the host:
+
+1. **0x9092=0x04 (state 0x03 path)** - No success
+2. **0x9092=0x02 (from 0xa4ed function)** - No success
+3. **Activate step (0x9000 | 0x01, 0x924C | 0x01)** - Added but no success
+4. **Both buffers (0x9E00 + 0x0160)** - No success
+5. **0x9002 bit 1 set** - Added but no success
+
+### Original Firmware EP0 IN Flow (from disassembly)
+
+The flow at 0xb4ec-0xb4ff:
+1. `lcall 0xbd25` - Preparation (clear bits in 0x900B, 0x9000, 0x924C, C4xx registers)
+2. `lcall 0xa513` - Trigger setup (0x905F &= 0xFE, 0x905D &= 0xFE, 0x90E3=0x01, 0x90A0=0x01)
+3. Read 0x9000, clear bit 0, set bit 0 
+4. `lcall 0xa4e5` - Write to 0x9000, then manipulate 0x924C
+5. Set bit 0 in result and write to DPTR (now 0x924C)
+
+**Key observation:** This path does NOT write to 0x9092!
+
+There's a DIFFERENT path at 0xa4ed that:
+1. Sets bit 1 in 0x9002 (0x9002 = (0x9002 & 0xFD) | 0x02)
+2. Writes 0x02 to 0x9092
+
+### What's Working
+
+- Setup packet detection via 0x9091 bit 0
+- Setup packet reading from 0x9104-0x910B
+- GET_DESCRIPTOR parsing
+- Descriptor data copied to buffer (`[12010002]` visible in debug)
+- Trigger sequence executes (`T12` visible)
+- 0x9091 status changes (0x01 → 0x00 → 0x02)
+
+### What's NOT Working
+
+- EP0 IN data not reaching host (error -71)
+- Host never sends SET_ADDRESS (doesn't receive descriptor)
+
+### Hypothesis
+
+The USB controller isn't actually transmitting data. Possible causes:
+1. Missing DMA source address configuration
+2. Need to wait for "ready" status before triggering
+3. Some initialization register we're not setting
+4. Buffer address fundamentally wrong
+5. USB PHY not fully initialized
+
+### Current usb_send_ep0() Implementation
+
+```c
+void usb_send_ep0(uint8_t len) {
+    uint8_t tmp;
+    
+    XDATA8(0x9004) = len;     // EP0 IN length
+    XDATA8(0x9003) = 0x00;
+    
+    // Trigger setup (from 0xa513)
+    tmp = XDATA8(0x905F);
+    XDATA8(0x905F) = tmp & 0xFE;
+    tmp = XDATA8(0x905D);
+    XDATA8(0x905D) = tmp & 0xFE;
+    XDATA8(0x90E3) = 0x01;
+    XDATA8(0x90A0) = 0x01;
+    
+    // Activate (from 0xb4f2-0xb4ff)
+    tmp = XDATA8(0x9000);
+    tmp = (tmp & 0xFE) | 0x01;
+    XDATA8(0x9000) = tmp;
+    tmp = XDATA8(0x924C);
+    tmp = (tmp & 0xFE) | 0x01;
+    XDATA8(0x924C) = tmp;
+    
+    // Wait for completion...
+    // (0x9091 bit 2 never gets set - TX not completing)
+}
+```
+
+### Additional Finding: TX Completion Never Occurs
+
+Added a wait loop checking for 0x9091 bit 2 (status indication) after triggering,
+but the bit never gets set. This confirms the USB controller is NOT transmitting
+the data despite our trigger sequence.
+
+### What We Added in Session 13
+
+1. **Complete DMA buffer config** from original FW trace:
+   - 0x9310-0x9321: DMA address configuration
+   - 0x9316/0x9317/0x931A/0x931B/0x9322/0x9323 = 0x00
+
+2. **Missing USB registers**:
+   - 0x91D1 = 0x0F
+   - 0x9300 = 0x0C
+   - 0x9302 = 0xBF
+   - 0x91C1 = 0xF0
+   - 0x9002 = 0xE0
+   - 0x9005 = 0xF0
+   - 0x90E2 = 0x01
+   - 0x905E = 0x00
+
+3. **Full interrupt mask config**:
+   - 0x9096-0x909D = 0xFF
+   - 0x909E = 0x03
+
+### USB ISR Now Fires!
+
+With the complete init sequence, we now see `U01/00` in UART output,
+meaning the USB ISR is firing with C802=0x01. This is progress, but
+the EP0 IN data still doesn't reach the host.
+
+---
+
+## Session Notes (2026-02-03 Session 12) - Trigger Values Fixed
+
+### CRITICAL DISCOVERY: Wrong Trigger Register Values
+
+Found that original firmware uses DIFFERENT values than we were using:
+
+| Register | Our Old Value | Correct Value | Source |
+|----------|---------------|---------------|--------|
+| 0x9092 | 0x01 | **0x04** | 0xb2e4 (state 0x03 path) |
+| 0x90E3 | 0x02 | **0x01** | 0xa521 |
+| 0x90A0 | not set | **0x01** | 0xa527 |
+| 0x905F | not cleared | clear bit 0 | 0xa513 |
+| 0x905D | not cleared | clear bit 0 | 0xa51a |
+
+### Progress Made
+
+1. **SET_ADDRESS now received** - With 0x9092=0x04, host sends SET_ADDRESS
+2. **Address register works** - 0x9006 correctly updated (0x10 -> 0x85)
+3. **USB ISR fires** - See `U01/02` in UART showing C802 bits changing
+4. **0x9091 status changes** - Goes through 0x01 -> 0x00 -> 0x02 -> 0x08
+
+### Still Not Working
+
+1. **Descriptor data not received** - Host gets error -32 (EPIPE) or -71 (EPROTO)
+2. **SET_ADDRESS status doesn't complete** - Device doesn't respond at new address
+
+### Buffer Address Confusion
+
+Two possible buffer locations:
+- **0x0160**: Configured in DMA registers 0x9310/0x9311 during init
+- **0x9E00**: Original firmware writes descriptor data here at 0xb3ed
+
+When using 0x9E00: GET_DESCRIPTOR fails with -71
+When using 0x0160: GET_DESCRIPTOR fails with -71, but ISR fires more
+
+### Current usb_send_ep0() Sequence
+
+```c
+void usb_send_ep0(uint8_t len) {
+    uint8_t tmp;
+    
+    XDATA8(0x07E1) = 0x00;
+    XDATA8(0x07E9) = 0x01;
+    
+    tmp = XDATA8(0x9002);
+    XDATA8(0x9002) = tmp & 0xFD;
+    
+    XDATA8(0x07EB) = 0x00;
+    XDATA8(0x0AD6) = 0x00;
+    
+    /* Clear status bits */
+    tmp = XDATA8(0x905F);
+    XDATA8(0x905F) = tmp & 0xFE;
+    tmp = XDATA8(0x905D);
+    XDATA8(0x905D) = tmp & 0xFE;
+    
+    XDATA8(0x9091) = 0x01;
+    XDATA8(0x9004) = len;
+    XDATA8(0x9003) = 0x00;
+    
+    /* CORRECTED trigger values */
+    XDATA8(0x90E3) = 0x01;
+    XDATA8(0x90A0) = 0x01;
+    XDATA8(0x9092) = 0x04;
+}
+```
+
+### Hypothesis: DMA Source Not Configured
+
+The DMA might need the source address to be configured each time, not just at init.
+Original firmware at 0xb4ef calls 0xa513 then 0xbd25 which does more setup.
+
+### Next Investigation
+
+1. Trace what 0xbd25 does before descriptor send
+2. Check if 0x9310/0x9311 need to be reconfigured per transfer
+3. Look for any enable bit in 0x9000-0x90FF range we're missing
+4. Try different 0x9092 values (0x01, 0x02, 0x04) systematically

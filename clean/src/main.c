@@ -28,9 +28,10 @@ __sfr __at(0x88) TCON;
 #define USB_INT_C802      XDATA8(0xC802)
 
 /* EP0 output buffer 
- * Match DMA config at 0x9310/0x9311 (0x0160).
- * Write descriptor data here for EP0 IN transfers. */
-#define EP0_BUF_BASE      0x0160
+ * Original firmware at 0xb3ed writes descriptor data to 0x9E00.
+ * This is an MMIO buffer that the USB hardware reads from.
+ * The DMA config at 0x9310/0x9311 is for a different purpose. */
+#define EP0_BUF_BASE      0x9E00
 
 /* USB Request Types */
 #define USB_REQ_GET_STATUS        0x00
@@ -155,97 +156,94 @@ static uint8_t usb_configured = 0;
 
 void copy_to_ep0(__code uint8_t *src, uint8_t len) {
     uint8_t i;
+    /* Try writing to BOTH possible buffer locations */
+    /* 0x9E00 is MMIO USB buffer */
+    /* 0x0160 is RAM buffer used by DMA */
     for (i = 0; i < len; i++) {
-        XDATA8(EP0_BUF_BASE + i) = src[i];
+        XDATA8(0x9E00 + i) = src[i];  /* MMIO buffer */
+        XDATA8(0x0160 + i) = src[i];  /* RAM buffer */
     }
-    /* Debug: print first few bytes copied to buffer */
+    /* Debug: print first few bytes and verify readback */
     uart_putc('[');
     for (i = 0; i < 4 && i < len; i++) {
-        uart_puthex(XDATA8(EP0_BUF_BASE + i));
+        uart_puthex(XDATA8(0x9E00 + i));
+    }
+    uart_putc('/');
+    /* Also show 0x0160 buffer */
+    for (i = 0; i < 4 && i < len; i++) {
+        uart_puthex(XDATA8(0x0160 + i));
     }
     uart_putc(']');
 }
 
 void usb_send_ep0(uint8_t len) {
     /*
-     * USB EP0 IN transmission sequence
-     * Based on original firmware disassembly at 0xa5a6
+     * USB EP0 IN transmission - EXACT sequence from 0xa5a6
      * 
-     * The original firmware does MUCH more than just setting 9003/9004/90E3:
-     * - Writes to 0x07E1, 0x07E9, 0x07EB (internal state?)
-     * - Modifies 0x9002 (clears bit 1)  
-     * - Checks 0x0AE4 and conditionally writes 0x92C4, 0xCC17
-     * - Checks 0x9220 and conditionally clears bit 2
-     * - Clears 0x0AD6
-     * - Sets 0x9091 = 0x01
-     * 
-     * For now, try a more complete sequence based on what we've seen work:
+     * This is the complete original firmware preparation for EP0 IN.
      */
     uint8_t tmp;
+    uint16_t timeout;
     
-    /* Step 1: Clear internal transaction state */
-    XDATA8(0x07E1) = 0x00;
-    XDATA8(0x07E9) = 0x01;  /* Increment from clr a; inc a */
+    /* From 0xa5a6-0xa5af */
+    XDATA8(0x07E1) = 0x00;     /* State = 0 */
+    XDATA8(0x07E9) = 0x01;     /* Flag = 1 */
     
-    /* Step 2: Clear bit 1 in 0x9002 */
+    /* From 0xa5b0-0xa5b6: Clear bit 1 in 0x9002 */
     tmp = XDATA8(0x9002);
     XDATA8(0x9002) = tmp & 0xFD;
     
-    /* Step 3: Clear 0x07EB */
+    /* From 0xa5b7-0xa5cc: State-dependent section
+     * Since we set 0x07E1=0 (state), we take the state==0 branch
+     * which does 0x92C4 &= 0xFE and 0xCC17 = 0x04, 0x02 */
+    tmp = XDATA8(0x92C4);
+    XDATA8(0x92C4) = tmp & 0xFE;
+    XDATA8(0xCC17) = 0x04;
+    XDATA8(0xCC17) = 0x02;
+    
+    /* From 0xa5cd-0xa5e1 */
     XDATA8(0x07EB) = 0x00;
     
-    /* Step 4: Clear 0x0AD6 (some state variable) */
+    /* 0x9220 bit 2 check - clear if set */
+    tmp = XDATA8(0x9220);
+    if (tmp & 0x04) {
+        XDATA8(0x9220) = tmp & 0xFB;
+    }
+    
     XDATA8(0x0AD6) = 0x00;
+    XDATA8(0x9091) = 0x01;     /* Arm for interrupt */
     
-    /* Step 5: Set control transfer phase */
-    XDATA8(0x9091) = 0x01;
-    
-    /* Step 6: Set EP0 IN length */
+    /* Now set length and trigger (from 0xa581 and elsewhere) */
+    XDATA8(0x9003) = 0x00;
     XDATA8(0x9004) = len;
     
-    /* Step 7: Clear EP0 status (from 0xa581) */
-    XDATA8(0x9003) = 0x00;
+    /* From 0xa513: trigger setup */
+    tmp = XDATA8(0x905F);
+    XDATA8(0x905F) = tmp & 0xFE;
+    tmp = XDATA8(0x905D);
+    XDATA8(0x905D) = tmp & 0xFE;
+    XDATA8(0x90E3) = 0x01;
+    XDATA8(0x90A0) = 0x01;
     
-    /* Step 8: Trigger EP0 IN (0x90E3 = 0x02 from 0xa59f) */
-    XDATA8(0x90E3) = 0x02;
-    
-    /* Step 9: Trigger DMA (0x9092 = 0x01 from 0xa57a) */
+    /* From 0xa57a: final trigger */
     XDATA8(0x9092) = 0x01;
     
     uart_putc('T');
     uart_puthex(len);
+    
+    /* Wait for completion - check 0x9091 bits */
+    for (timeout = 0; timeout < 10000; timeout++) {
+        tmp = XDATA8(0x9091);
+        if (tmp & 0x06) {  /* Check bits 1 or 2 */
+            uart_putc('!');
+            break;
+        }
+    }
 }
 
 void usb_send_zlp(void) {
     /* Send Zero Length Packet for status stage */
-    /* Original firmware has two ZLP functions:
-     * - 0x1cca: 0x9093=0x08, 0x9094=0x02 (for data stage ZLP?)
-     * - 0x1cd5: 0x9093=0x02, 0x9094=0x10 (for status stage ZLP?)
-     * Try the 0x1cd5 values for SET_ADDRESS status stage. */
-    uint8_t tmp;
-    
-    /* Configure status phase registers (from 0x1cd5) */
-    XDATA8(0x9093) = 0x02;
-    XDATA8(0x9094) = 0x10;
-    
-    XDATA8(0x07E1) = 0x00;
-    XDATA8(0x07E9) = 0x01;
-    
-    tmp = XDATA8(0x9002);
-    XDATA8(0x9002) = tmp & 0xFD;
-    
-    XDATA8(0x07EB) = 0x00;
-    XDATA8(0x0AD6) = 0x00;
-    XDATA8(0x9091) = 0x01;
-    
-    /* Zero length */
-    XDATA8(0x9004) = 0x00;
-    XDATA8(0x9003) = 0x00;
-    
-    /* Trigger */
-    XDATA8(0x90E3) = 0x02;
-    XDATA8(0x9092) = 0x01;
-    
+    usb_send_ep0(0);
     uart_putc('Z');
 }
 
@@ -355,29 +353,21 @@ void usb_handle_setup(void) {
             usb_address = wValue & 0x7F;
             /* Per USB spec, address takes effect AFTER status stage ZLP is ACK'd.
              * 
-             * Try: Send ZLP, wait for completion, then set address.
-             * Poll 0x9091 bit 0 clearing or other status.
+             * From original firmware 0x0185 SET_ADDRESS handler:
+             * 1. Send ZLP for status stage
+             * 2. Set address register AFTER ZLP completes
+             * 
+             * The key might be that we need to set address BEFORE sending ZLP
+             * so hardware uses new address for the ACK. Try that.
              */
-            XDATA8(0xD80C) = 0x02;
-            usb_send_ep0(0);  /* Send ZLP */
+            
+            /* Set address first - hardware might apply it after status stage */
+            usb_set_address(usb_address);
+            
+            /* Send ZLP for status stage */
+            usb_send_zlp();
             uart_putc('!');
             
-            /* Wait for ZLP to be acked - poll for 0x9091 bit 0 to change */
-            {
-                uint16_t timeout = 10000;
-                uint8_t initial = XDATA8(0x9091);
-                while (--timeout) {
-                    if ((XDATA8(0x9091) & 0x01) != (initial & 0x01)) {
-                        uart_putc('*');  /* Status changed */
-                        break;
-                    }
-                }
-                if (!timeout) uart_putc('T');  /* Timeout */
-            }
-            
-            /* Now set address */
-            usb_set_address(usb_address);
-            XDATA8(0x90A1) = 0x01;
             /* Re-arm EP0 */
             XDATA8(0x9301) = 0xC0;
             return;
@@ -468,33 +458,89 @@ void main(void) {
     XDATA8(0xC8B5) = 0xFF;
     XDATA8(0xC8B6) = 0x14;
     
-    /* USB endpoint config */
-    XDATA8(0x9303) = 0x33;
-    XDATA8(0x9304) = 0x3F;
-    XDATA8(0x9305) = 0x40;
+    /* USB endpoint config - COMPLETE sequence from original firmware */
+    
+    /* DMA buffer config - exact values from original firmware trace */
+    XDATA8(0x9310) = 0x01;  /* DMA config */
+    XDATA8(0x9311) = 0x60;
+    XDATA8(0x9312) = 0x00;
+    XDATA8(0x9313) = 0xE3;
+    XDATA8(0x9314) = 0x01;
+    XDATA8(0x9315) = 0x60;
+    XDATA8(0x9318) = 0x01;
+    XDATA8(0x9319) = 0x60;
+    XDATA8(0x931C) = 0x00;
+    XDATA8(0x931D) = 0x03;
+    XDATA8(0x931E) = 0x00;
+    XDATA8(0x931F) = 0xE0;
+    XDATA8(0x9320) = 0x00;
+    XDATA8(0x9321) = 0xE3;
+    
+    XDATA8(0x905F) = 0x00;
+    XDATA8(0x92C8) = 0x00;
+    
+    /* 0x900B sequence */
+    XDATA8(0x900B) = 0x02;
+    XDATA8(0x900B) = 0x06;
+    XDATA8(0x900B) = 0x07;
+    XDATA8(0x900B) = 0x05;
+    XDATA8(0x900B) = 0x01;
+    XDATA8(0x900B) = 0x00;
+    
     XDATA8(0x901A) = 0x0D;
     XDATA8(0x9010) = 0xFE;
     
-    /* Configure EP0 DMA address - point to 0x0160 */
-    /* NOTE: We write descriptor data to 0x9E00 (MMIO), but DMA might use 0x0160 */
-    XDATA8(0x9310) = 0x60;  /* Low byte of 0x0160 */
-    XDATA8(0x9311) = 0x01;  /* High byte */
-    XDATA8(0x9312) = 0x00;
-    XDATA8(0x9313) = 0x60;
+    /* USB power */
+    XDATA8(0x92C0) = 0x81;
     
-    /* Arm EP0 */
-    XDATA8(0x9301) = 0xC0;
+    /* CRITICAL registers we were missing! */
+    XDATA8(0x91D1) = 0x0F;
+    XDATA8(0x9300) = 0x0C;
+    XDATA8(0x9301) = 0xC0;  /* Arm EP0 */
+    XDATA8(0x9302) = 0xBF;
     
     /* USB interrupt enables */
     XDATA8(0x9091) = 0x1F;
     XDATA8(0x9093) = 0x0F;
     
-    /* USB power and PHY config */
-    XDATA8(0x92C0) = 0x81;  /* USB power */
+    /* USB PHY config */
+    XDATA8(0x91C1) = 0xF0;
+    
+    /* More endpoint config */
+    XDATA8(0x9303) = 0x33;
+    XDATA8(0x9304) = 0x3F;
+    XDATA8(0x9305) = 0x40;
+    
+    /* CRITICAL registers from original firmware! */
+    XDATA8(0x9002) = 0xE0;
+    XDATA8(0x9005) = 0xF0;
+    XDATA8(0x90E2) = 0x01;
+    XDATA8(0x905E) = 0x00;
+    
+    /* Interrupt enable masks */
+    XDATA8(0x9096) = 0xFF;
+    XDATA8(0x9097) = 0xFF;
+    XDATA8(0x9098) = 0xFF;
+    XDATA8(0x9099) = 0xFF;
+    XDATA8(0x909A) = 0xFF;
+    XDATA8(0x909B) = 0xFF;
+    XDATA8(0x909C) = 0xFF;
+    XDATA8(0x909D) = 0xFF;
+    XDATA8(0x909E) = 0x03;
+    
+    /* From 0xa5a6 - USB subsystem control (when state=0) */
+    {
+        uint8_t tmp = XDATA8(0x92C4);
+        XDATA8(0x92C4) = tmp & 0xFE;  /* Clear bit 0 */
+    }
+    XDATA8(0xCC17) = 0x04;
+    XDATA8(0xCC17) = 0x02;
+    
     XDATA8(0x9241) = 0xD0;  /* PHY config */
     
-    /* Writing 91C0=0x00 triggers USB re-enumeration on this hardware */
-    /* The device becomes visible on the bus after this */
+    /* USB PHY: 91C0=0x00 makes device visible on bus
+     * Note: 91C0=0x02 gives 9100=0x03 but device is NOT visible */
+    XDATA8(0x91C3) = 0x00;
     XDATA8(0x91C0) = 0x00;
     
     uart_puts("Init done, 9100=");
