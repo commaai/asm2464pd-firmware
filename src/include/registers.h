@@ -516,19 +516,26 @@
 
 //=============================================================================
 // UART Controller (0xC000-0xC00F)
+// Based on ASM1142 UART at 0xF100-0xF10A, adapted for ASM2464PD
+// Default config: 921600 baud, 8O1 (set LCR=0x03 for 8N1)
 //=============================================================================
-/* NOTE: REG_UART_BASE removed - use REG_UART_THR_RBR */
-#define REG_UART_THR_RBR        XDATA_REG8(0xC000)  // Data register (THR write, RBR read)
-#define REG_UART_THR            XDATA_REG8(0xC001)  // TX (WO)
-#define REG_UART_RBR            XDATA_REG8(0xC001)  // RX (RO)
-#define REG_UART_IER            XDATA_REG8(0xC002)
-#define REG_UART_FCR            XDATA_REG8(0xC004)  // WO
-#define REG_UART_IIR            XDATA_REG8(0xC004)  // RO
-#define REG_UART_TFBF           XDATA_REG8(0xC006)
-#define REG_UART_LCR            XDATA_REG8(0xC007)
-#define REG_UART_MCR            XDATA_REG8(0xC008)
-#define REG_UART_LSR            XDATA_REG8(0xC009)
-#define REG_UART_MSR            XDATA_REG8(0xC00A)
+#define REG_UART_RBR            XDATA_REG8(0xC000)  // Receive Buffer Register (RO)
+#define REG_UART_THR            XDATA_REG8(0xC001)  // Transmit Holding Register (WO)
+#define REG_UART_IER            XDATA_REG8(0xC002)  // Interrupt Enable Register
+#define REG_UART_IIR            XDATA_REG8(0xC004)  // Interrupt Identification Register (RO)
+#define REG_UART_FCR            XDATA_REG8(0xC004)  // FIFO Control Register (WO)
+#define REG_UART_RFBR           XDATA_REG8(0xC005)  // RX FIFO Bytes Received (RO) - count of bytes in RX FIFO
+#define REG_UART_TFBF           XDATA_REG8(0xC006)  // TX FIFO Bytes Free (RO)
+#define REG_UART_LCR            XDATA_REG8(0xC007)  // Line Control Register
+#define   LCR_DATA_BITS_MASK      0x03  // Bits 0-1: 0=5, 1=6, 2=7, 3=8 data bits
+#define   LCR_STOP_BITS           0x04  // Bit 2: 0=1 stop, 1=2 stop bits
+#define   LCR_PARITY_MASK         0x38  // Bits 3-5: Parity (XX0=None, 001=Odd, 011=Even)
+#define   LCR_LOOPBACK            0x80  // Bit 7: Enable loopback mode
+#define REG_UART_MCR            XDATA_REG8(0xC008)  // Modem Control Register
+#define REG_UART_LSR            XDATA_REG8(0xC009)  // Line Status Register
+#define   LSR_RX_FIFO_OVERFLOW    0x01  // Bit 0: RX FIFO overflow (RW1C)
+#define   LSR_TX_EMPTY            0x20  // Bit 5: TX empty
+#define REG_UART_MSR            XDATA_REG8(0xC00A)  // Modem Status Register
 #define REG_UART_STATUS         XDATA_REG8(0xC00E)  // UART status (bits 0-2 = busy flags)
 
 //=============================================================================

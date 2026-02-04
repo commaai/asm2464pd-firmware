@@ -604,7 +604,12 @@ Examples:
             proxy = UARTProxy(args.proxy_device)
             proxy.debug = args.proxy_debug
             
-            # Test connection
+            # Reset device and wait for proxy firmware to boot
+            print("Resetting device...")
+            proxy.reset_device()
+            print("Proxy firmware booted (received 'PK')")
+            
+            # Test connection with echo
             if not proxy.test_connection():
                 print("Error: Proxy connection test failed")
                 print("Make sure proxy firmware is flashed: cd clean && make flash-proxy")

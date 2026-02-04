@@ -56,13 +56,50 @@ class UARTProxy:
 
     def _open(self):
         """Open FTDI connection."""
+        from pyftdi.eeprom import FtdiEeprom
+        
         self.ftdi = Ftdi()
         self.ftdi.open_from_url(self.device_url)
         self.ftdi.set_baudrate(921600)
         self.ftdi.set_line_property(8, 1, 'N')  # 8N1, no parity
 
+        # Setup CBUS GPIO for reset control (same as ftdi_debug.py)
+        # CBUS1 = GPIO (bootloader), CBUS2 = GPIO (reset)
+        self.CBUS_RESET = (1 << 2)
+        self.CBUS_BOOTLOADER = (1 << 1)
+        
+        # Setup GPIO direction
+        self.ftdi.set_cbus_direction(self.CBUS_RESET | self.CBUS_BOOTLOADER, 
+                                     self.CBUS_RESET | self.CBUS_BOOTLOADER)
+        self.ftdi.set_cbus_gpio(0x00)
+
         # Purge any stale data
         self.ftdi.purge_buffers()
+
+    def reset_device(self):
+        """Reset the target device and wait for proxy firmware to boot."""
+        # Purge before reset
+        self.ftdi.purge_buffers()
+        
+        # Assert reset
+        self.ftdi.set_cbus_gpio(self.CBUS_RESET)
+        time.sleep(0.1)
+        # Release reset
+        self.ftdi.set_cbus_gpio(0)
+        
+        # Wait for "PK\n" hello message (don't purge - we want to read it!)
+        hello = b''
+        start = time.monotonic()
+        while time.monotonic() - start < 2.0:
+            data = self.ftdi.read_data(100)
+            if data:
+                hello += data
+                if b'PK' in hello:
+                    break
+            time.sleep(0.01)
+        
+        if b'PK' not in hello:
+            raise RuntimeError(f"Proxy firmware did not respond with 'PK' after reset (got: {hello!r})")
 
     def close(self):
         """Close FTDI connection."""

@@ -3060,19 +3060,31 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
 
     # Select hooks based on proxy mode
     if proxy is not None:
-        # Proxy mode - MMIO goes to real hardware
+        # Proxy mode - MMIO goes to real hardware (except UART)
         print(f"[HW] Using UART proxy for MMIO access")
-        read_hook = make_proxy_read_hook(proxy)
-        write_hook = make_proxy_write_hook(proxy)
+        proxy_read_hook = make_proxy_read_hook(proxy)
+        proxy_write_hook = make_proxy_write_hook(proxy)
+        emu_read_hook = make_read_hook(hw)
+        emu_write_hook = make_write_hook(hw)
+        
+        for start, end in mmio_ranges:
+            for addr in range(start, end):
+                # UART (0xC000-0xC00F) stays emulated - proxy uses these for communication!
+                if 0xC000 <= addr <= 0xC00F:
+                    memory.xdata_read_hooks[addr] = emu_read_hook
+                    memory.xdata_write_hooks[addr] = emu_write_hook
+                else:
+                    memory.xdata_read_hooks[addr] = proxy_read_hook
+                    memory.xdata_write_hooks[addr] = proxy_write_hook
     else:
         # Emulation mode - use HardwareState
         read_hook = make_read_hook(hw)
         write_hook = make_write_hook(hw)
-
-    for start, end in mmio_ranges:
-        for addr in range(start, end):
-            memory.xdata_read_hooks[addr] = read_hook
-            memory.xdata_write_hooks[addr] = write_hook
+        
+        for start, end in mmio_ranges:
+            for addr in range(start, end):
+                memory.xdata_read_hooks[addr] = read_hook
+                memory.xdata_write_hooks[addr] = write_hook
 
     # Debug hooks for XDATA can be added here when needed
     # Example: Trace reads/writes to specific addresses
