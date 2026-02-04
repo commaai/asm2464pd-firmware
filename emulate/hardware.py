@@ -3093,6 +3093,9 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
             # PHY register 0xC65A - causes bus hang on real hardware
             if addr == 0xC65A:
                 return True
+            # CPU interrupt/DMA control - may cause reset when written via proxy
+            if addr == 0xCC81:
+                return True
             return False
         
         for start, end in mmio_ranges:
