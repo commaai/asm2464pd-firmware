@@ -43,14 +43,7 @@ PROXY_TARGET = $(BUILD_DIR)/proxy
 PROXY_HEX = $(PROXY_TARGET).ihx
 PROXY_BIN = $(PROXY_TARGET).bin
 
-# UART test firmware output files
-UART_TEST_SRC = $(SRC_DIR)/uart_test.c
-UART_TEST_OBJ = $(OBJ_DIR)/uart_test.rel
-UART_TEST_TARGET = $(BUILD_DIR)/uart_test
-UART_TEST_HEX = $(UART_TEST_TARGET).ihx
-UART_TEST_BIN = $(UART_TEST_TARGET).bin
-
-.PHONY: all clean flash wrapped proxy flash-proxy uart-test flash-uart-test
+.PHONY: all clean flash wrapped proxy flash-proxy
 
 all: $(BIN)
 	@echo "Built: $(BIN)"
@@ -192,59 +185,6 @@ flash-proxy: $(BUILD_DIR)/proxy_wrapped.bin
 	@echo "Flashing proxy firmware to device..."
 	@python3 ../flash.py $<
 	@echo "Resetting device..."
-	@python3 ../ftdi_debug.py -rt 2
-
-# ============================================
-# UART test firmware targets
-# ============================================
-
-$(UART_TEST_OBJ): $(UART_TEST_SRC) | $(OBJ_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(UART_TEST_HEX): $(CRT0_OBJ) $(UART_TEST_OBJ) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(CRT0_OBJ) $(UART_TEST_OBJ) -o $@
-
-$(UART_TEST_BIN): $(UART_TEST_HEX)
-	@echo "Converting UART test HEX to BIN..."
-	@if command -v objcopy > /dev/null 2>&1; then \
-		objcopy -I ihex -O binary $< $@; \
-	elif command -v sdobjcopy > /dev/null 2>&1; then \
-		sdobjcopy -I ihex -O binary $< $@; \
-	else \
-		python3 -c "import sys; \
-data = bytearray(0x10000); \
-for line in open('$<'): \
-    if line[0] != ':': continue; \
-    n = int(line[1:3], 16); \
-    addr = int(line[3:7], 16); \
-    t = int(line[7:9], 16); \
-    if t == 0: \
-        for i in range(n): \
-            data[addr+i] = int(line[9+i*2:11+i*2], 16); \
-open('$@', 'wb').write(bytes(data).rstrip(b'\x00'))"; \
-	fi
-
-$(BUILD_DIR)/uart_test_wrapped.bin: $(UART_TEST_BIN)
-	@echo "Wrapping UART test firmware..."
-	@python3 -c "\
-import zlib; \
-body = open('$<', 'rb').read(); \
-body_len = len(body).to_bytes(4, 'little'); \
-checksum = bytes([sum(body) & 0xFF]); \
-crc = zlib.crc32(body).to_bytes(4, 'little'); \
-magic = bytes([0xA5]); \
-open('$@', 'wb').write(body_len + body + magic + checksum + crc)"
-	@echo "Built: $@"
-	@ls -la $@
-
-uart-test: $(BUILD_DIR)/uart_test_wrapped.bin
-	@echo "UART test firmware built"
-
-flash-uart-test: $(BUILD_DIR)/uart_test_wrapped.bin
-	@echo "Flashing UART test firmware..."
-	@python3 ../ftdi_debug.py -bn
-	@sleep 0.5
-	@python3 ../flash.py $<
 	@python3 ../ftdi_debug.py -rt 2
 
 # ============================================
