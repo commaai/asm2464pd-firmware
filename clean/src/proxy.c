@@ -13,15 +13,14 @@
  *   CMD_SFR_WRITE (0x04): Send sfr_addr, value -> receive 2 bytes: 0x00 0xFF
  *
  * Interrupt signaling:
- *   When a hardware interrupt fires, proxy sends: 0xFE 0xFE <int_num>
- *   int_num: 0=INT0, 1=Timer0, 2=INT1, 3=Timer1, 4=Serial, 5=Timer2
- *
- *   After signaling, proxy continues handling MMIO commands (so emulator can
- *   do reads/writes while running the ISR code). When emulator's ISR completes,
- *   it sends 0xFE as acknowledgment, and proxy returns from its ISR.
+ *   After each command response, if any interrupts fired, proxy sends:
+ *     0xFE 0xFE <bitmask>
+ *   where bitmask has bits set for each pending interrupt:
+ *     bit 0 = INT0, bit 1 = Timer0, bit 2 = INT1, bit 3 = Timer1, 
+ *     bit 4 = Serial, bit 5 = Timer2
  *
  * All responses are 2 bytes: byte[0]=value, byte[1]=~value (complement for verification).
- * Exception: interrupt signal is 3 bytes (0xFE 0xFE <int_num>).
+ * Interrupt signal is 3 bytes (0xFE 0xFE <bitmask>).
  */
 
 typedef unsigned char uint8_t;
@@ -42,6 +41,12 @@ typedef unsigned int uint16_t;
 
 /* Interrupt signal - double 0xFE prefix to avoid confusion with data */
 #define INT_SIGNAL      0xFE
+
+/* Pending interrupt bitmask - set by ISRs, cleared after sending */
+volatile uint8_t pending_int_mask = 0;
+
+/* Shadow of IE value that emulator set - we restore this after command */
+uint8_t shadow_ie = 0x00;
 
 void uart_putc(uint8_t c)
 {
@@ -72,20 +77,9 @@ uint8_t xdata_read(uint16_t addr)
 
 /*
  * SFR access - SFRs are at 0x80-0xFF and require direct addressing.
- * We use inline assembly since C can't do arbitrary SFR access.
  */
 __sfr __at(0xA8) SFR_IE;    /* Interrupt Enable */
 #define EA_BIT 0x80         /* Global interrupt enable bit in IE */
-
-/* Send 2-byte response atomically (interrupts disabled) */
-void send_response(uint8_t b0, uint8_t b1)
-{
-    uint8_t saved_ie = SFR_IE;
-    SFR_IE &= ~EA_BIT;  /* Disable interrupts */
-    uart_putc(b0);
-    uart_putc(b1);
-    SFR_IE = saved_ie;  /* Restore interrupts */
-}
 
 __sfr __at(0xB8) SFR_IP;    /* Interrupt Priority */
 __sfr __at(0x88) SFR_TCON;  /* Timer Control */
@@ -127,7 +121,11 @@ uint8_t sfr_read(uint8_t addr)
 void sfr_write(uint8_t addr, uint8_t val)
 {
     switch (addr) {
-        case 0xA8: SFR_IE = val; break;
+        case 0xA8: 
+            /* IE - update shadow and write to real IE */
+            shadow_ie = val;
+            SFR_IE = val;
+            break;
         case 0xB8: SFR_IP = val; break;
         case 0x88: SFR_TCON = val; break;
         case 0x89: SFR_TMOD = val; break;
@@ -152,24 +150,23 @@ void xdata_write(uint16_t addr, uint8_t val)
     *(__xdata volatile uint8_t *)addr = val;
 }
 
+/* Send 2-byte response */
+void send_response(uint8_t b0, uint8_t b1)
+{
+    uart_putc(b0);
+    uart_putc(b1);
+}
+
 /*
  * Handle a single MMIO command from the emulator.
- * Returns 1 if command was INT_SIGNAL (ack), 0 otherwise.
- * 
- * This is called from both main loop and ISRs.
- * In ISR context, we continue handling MMIO commands until we get the ack.
  */
-uint8_t handle_command(uint8_t cmd)
+void handle_command(uint8_t cmd)
 {
     uint8_t val;
     uint8_t addr_hi, addr_lo;
     uint16_t addr;
 
     switch (cmd) {
-    case INT_SIGNAL:
-        /* This is the ISR ack from emulator */
-        return 1;
-
     case CMD_ECHO:
         val = uart_getc();
         send_response(val, ~val);
@@ -209,72 +206,47 @@ uint8_t handle_command(uint8_t cmd)
         send_response('?', '?');
         break;
     }
-    return 0;
-}
-
-/* 
- * Signal interrupt to emulator and handle commands until ack.
- * Protocol:
- *   1. Send: 0xFE 0xFE <int_num>
- *   2. Handle MMIO commands while emulator runs ISR code
- *   3. When we receive 0xFE (ack), return from ISR
- *
- * This allows the emulator to do MMIO reads/writes while running
- * the ISR code in the original firmware.
- */
-void signal_interrupt(uint8_t int_num)
-{
-    uint8_t cmd;
-    
-    uart_putc(INT_SIGNAL);
-    uart_putc(INT_SIGNAL);
-    uart_putc(int_num);
-    
-    /* Handle commands until we get the ack (0xFE) */
-    while (1) {
-        cmd = uart_getc();
-        if (handle_command(cmd))
-            return;  /* Got ack, ISR complete */
-    }
 }
 
 /*
- * Interrupt handlers - signal to emulator and handle commands until ack
- * The emulator runs the actual ISR code, doing MMIO via us, then sends ack
+ * Interrupt handlers - just set flag bit and return.
+ * Interrupts are disabled during command handling so these only fire
+ * between commands.
  */
 void int0_isr(void) __interrupt(0)
 {
-    signal_interrupt(0x00);  /* INT0 */
+    pending_int_mask |= (1 << 0);
 }
 
 void timer0_isr(void) __interrupt(1)
 {
-    signal_interrupt(0x01);  /* Timer0 */
+    pending_int_mask |= (1 << 1);
 }
 
 void int1_isr(void) __interrupt(2)
 {
-    signal_interrupt(0x02);  /* INT1 */
+    pending_int_mask |= (1 << 2);
 }
 
 void timer1_isr(void) __interrupt(3)
 {
-    signal_interrupt(0x03);  /* Timer1 */
+    pending_int_mask |= (1 << 3);
 }
 
 void serial_isr(void) __interrupt(4)
 {
-    signal_interrupt(0x04);  /* Serial */
+    pending_int_mask |= (1 << 4);
 }
 
 void timer2_isr(void) __interrupt(5)
 {
-    signal_interrupt(0x05);  /* Timer2 */
+    pending_int_mask |= (1 << 5);
 }
 
 void main(void)
 {
     uint8_t cmd;
+    uint8_t mask;
 
     /* Disable parity to get 8N1 */
     REG_UART_LCR &= 0xF7;
@@ -284,9 +256,31 @@ void main(void)
     uart_putc('K');
     uart_putc('\n');
 
-    /* Proxy loop - just handle commands forever */
+    /* Proxy loop */
     while (1) {
-        cmd = uart_getc();
+        /* Wait for UART data with interrupts enabled (using shadow_ie) */
+        while (REG_UART_RFBR == 0)
+            ;
+        
+        /* Disable interrupts while handling command */
+        SFR_IE &= ~EA_BIT;
+        
+        /* Read and handle command */
+        cmd = REG_UART_RBR;
         handle_command(cmd);
+        
+        /* Check for pending interrupts after command completes */
+        if (pending_int_mask) {
+            mask = pending_int_mask;
+            pending_int_mask = 0;
+            
+            /* Send interrupt signal */
+            uart_putc(INT_SIGNAL);
+            uart_putc(INT_SIGNAL);
+            uart_putc(mask);
+        }
+        
+        /* Restore interrupts from shadow (which may have been updated by sfr_write) */
+        SFR_IE = shadow_ie;
     }
 }

@@ -118,6 +118,9 @@ class UARTProxy:
         # Purge before reset
         self.ftdi.purge_buffers()
         
+        # Clear any pending interrupts from before reset
+        self.pending_interrupts = []
+        
         # Assert reset
         self.ftdi.set_cbus_gpio(self.CBUS_RESET)
         time.sleep(0.1)
@@ -137,6 +140,12 @@ class UARTProxy:
         
         if b'PK' not in hello:
             raise RuntimeError(f"Proxy firmware did not respond with 'PK' after reset (got: {hello!r})")
+        
+        # Purge again and clear any pending interrupts that might have been
+        # detected during boot (hardware interrupts may be active)
+        time.sleep(0.05)  # Let any pending data arrive
+        self.ftdi.purge_buffers()
+        self.pending_interrupts = []
 
     def close(self):
         """Close FTDI connection."""
@@ -201,18 +210,24 @@ class UARTProxy:
                 raise TimeoutError(f"UART read timeout waiting for response byte 1 (got byte0=0x{byte0:02X}){ctx}")
             
             # Check for interrupt signal (0xFE 0xFE)
+            # With new protocol, interrupt signal comes AFTER response, so this
+            # shouldn't normally happen during _read_response. But we handle it
+            # anyway for robustness - queue the interrupts and continue reading.
             if byte0 == INT_SIGNAL and byte1 == INT_SIGNAL:
-                # Third byte is interrupt number
-                int_num = self._read_byte_raw()
-                self.pending_interrupts.append(int_num)
-                self.interrupt_count += 1
+                # Third byte is bitmask of pending interrupts
+                int_mask = self._read_byte_raw()
+                
+                # Queue each interrupt that's set in the bitmask
+                for i in range(6):
+                    if int_mask & (1 << i):
+                        self.pending_interrupts.append(i)
+                        self.interrupt_count += 1
                 
                 if self.debug:
-                    int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
-                    print(f"[PROXY] >>> INTERRUPT: {int_name} (queued, {len(self.pending_interrupts)} pending)")
+                    int_names = [INT_NAMES.get(i, f'?{i}') for i in range(6) if int_mask & (1 << i)]
+                    print(f"[PROXY] >>> INTERRUPT mask=0x{int_mask:02X} ({', '.join(int_names)}) - {len(self.pending_interrupts)} pending")
                 
-                # Continue reading to get the actual response.
-                # The proxy may still be processing our command.
+                # Continue to read actual response
                 continue
             
             # Verify complement
@@ -277,13 +292,8 @@ class UARTProxy:
             print(f"[PROXY] <<< ACK interrupt (sent 0xFE)")
 
     def _write_bytes(self, data: bytes):
-        """Write bytes to UART and ensure they're transmitted."""
+        """Write bytes to UART."""
         self.ftdi.write_data(data)
-        # Small delay to ensure bytes are transmitted before we start reading
-        # This prevents race condition where interrupt signal arrives before
-        # our command bytes have been transmitted
-        import time
-        time.sleep(0.001)  # 1ms - enough for ~100 bytes at 921600 baud
 
     def _drain_interrupt_signals(self):
         """
@@ -324,6 +334,36 @@ class UARTProxy:
         
         return had_interrupts
 
+    def _check_for_interrupt_signal(self):
+        """
+        Check if proxy sent an interrupt signal after the response.
+        
+        With the new protocol, interrupt signals come AFTER command responses:
+        1. Command response: <val> <~val>
+        2. If interrupts pending: 0xFE 0xFE <bitmask>
+        3. Proxy waits for ack (0xFE)
+        
+        This does a non-blocking check and queues any interrupts found.
+        """
+        # Small delay to let interrupt signal arrive if there is one
+        import time
+        time.sleep(0.001)
+        
+        # Non-blocking read - check if there's data
+        data = self.ftdi.read_data(3)
+        if len(data) >= 3 and data[0] == INT_SIGNAL and data[1] == INT_SIGNAL:
+            int_mask = data[2]
+            
+            # Queue each interrupt that's set in the bitmask
+            for i in range(6):
+                if int_mask & (1 << i):
+                    self.pending_interrupts.append(i)
+                    self.interrupt_count += 1
+            
+            if self.debug:
+                int_names = [INT_NAMES.get(i, f'?{i}') for i in range(6) if int_mask & (1 << i)]
+                print(f"[PROXY] >>> INTERRUPT mask=0x{int_mask:02X} ({', '.join(int_names)}) - {len(self.pending_interrupts)} pending")
+
     def echo(self, value: int) -> int:
         """
         Echo test - send byte and expect same byte back.
@@ -358,6 +398,7 @@ class UARTProxy:
         self._last_addr = addr  # Track for debugging
         self._write_bytes(bytes([CMD_READ, addr >> 8, addr & 0xFF]))
         value = self._read_response(f"READ 0x{addr:04X}")
+        self._check_for_interrupt_signal()
         self.read_count += 1
         # Debug print handled by caller (hardware.py hook) which has PC context
         return value
@@ -374,6 +415,7 @@ class UARTProxy:
         value &= 0xFF
         self._write_bytes(bytes([CMD_WRITE, addr >> 8, addr & 0xFF, value]))
         ack = self._read_response(f"WRITE 0x{addr:04X}=0x{value:02X}")
+        self._check_for_interrupt_signal()
         self.write_count += 1
 
         if ack != 0x00:
@@ -393,6 +435,7 @@ class UARTProxy:
         addr &= 0xFF
         self._write_bytes(bytes([CMD_SFR_READ, addr]))
         value = self._read_response(f"SFR_READ 0x{addr:02X}")
+        self._check_for_interrupt_signal()
 
         # Debug print handled by caller (hardware.py hook) which has PC context
         return value
@@ -409,6 +452,7 @@ class UARTProxy:
         value &= 0xFF
         self._write_bytes(bytes([CMD_SFR_WRITE, addr, value]))
         ack = self._read_response(f"SFR_WRITE 0x{addr:02X}=0x{value:02X}")
+        self._check_for_interrupt_signal()
 
         if ack != 0x00:
             raise RuntimeError(f"SFR Write ACK failed: expected 0x00, got 0x{ack:02X}")

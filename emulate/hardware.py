@@ -3061,7 +3061,8 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
             value = proxy_ref.read(addr)
             if proxy_ref.debug:
                 pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
-                print(f"[PROXY] PC=0x{pc:04X} Read  0x{addr:04X} = 0x{value:02X}")
+                cyc = hw_ref.cycles
+                print(f"[{cyc:8d}] PC=0x{pc:04X} Read  0x{addr:04X} = 0x{value:02X}")
             return value
         return hook
 
@@ -3071,7 +3072,8 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
             proxy_ref.write(addr, value)
             if proxy_ref.debug:
                 pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
-                print(f"[PROXY] PC=0x{pc:04X} Write 0x{addr:04X} = 0x{value:02X}")
+                cyc = hw_ref.cycles
+                print(f"[{cyc:8d}] PC=0x{pc:04X} Write 0x{addr:04X} = 0x{value:02X}")
         return hook
 
     # Select hooks based on proxy mode
@@ -3127,7 +3129,8 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
                 proxy_ref.sfr_write(sfr_addr, value)
                 if proxy_ref.debug:
                     pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
-                    print(f"[PROXY] PC=0x{pc:04X} SFR Write 0x{sfr_addr:02X} = 0x{value:02X}")
+                    cyc = hw_ref.cycles
+                    print(f"[{cyc:8d}] PC=0x{pc:04X} SFR Write 0x{sfr_addr:02X} = 0x{value:02X}")
             return hook
         
         def make_sfr_proxy_read_hook(proxy_ref, sfr_addr, hw_ref):
@@ -3136,7 +3139,8 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
                 value = proxy_ref.sfr_read(sfr_addr)
                 if proxy_ref.debug:
                     pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
-                    print(f"[PROXY] PC=0x{pc:04X} SFR Read  0x{sfr_addr:02X} = 0x{value:02X}")
+                    cyc = hw_ref.cycles
+                    print(f"[{cyc:8d}] PC=0x{pc:04X} SFR Read  0x{sfr_addr:02X} = 0x{value:02X}")
                 return value
             return hook
         

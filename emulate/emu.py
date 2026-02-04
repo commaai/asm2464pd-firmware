@@ -669,6 +669,10 @@ Examples:
                 print("Make sure proxy firmware is flashed: cd clean && make flash-proxy")
                 sys.exit(1)
             print("Proxy connection OK!")
+            
+            # Clear any interrupts that fired during boot/test
+            # These are from hardware state, not from firmware execution
+            proxy.pending_interrupts = []
         except Exception as e:
             print(f"Error: Failed to connect to UART proxy: {e}")
             print("Make sure:")
