@@ -2979,10 +2979,16 @@ class HardwareState:
 
 
 
-def create_hardware_hooks(memory: 'Memory', hw: HardwareState):
+def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy' = None):
     """
     Register hardware hooks with memory system.
     Only hooks hardware register addresses (>= 0x6000).
+    
+    Args:
+        memory: Memory system to hook
+        hw: HardwareState for emulation mode
+        proxy: Optional UARTProxy for real hardware mode
+               If provided, MMIO reads/writes go to real hardware instead of emulation
     """
 
     # Hardware register ranges (all >= 0x6000)
@@ -3037,8 +3043,31 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState):
             hw_ref.write(addr, value)
         return hook
 
-    read_hook = make_read_hook(hw)
-    write_hook = make_write_hook(hw)
+    # ============================================
+    # Proxy Mode Hooks (real hardware via UART)
+    # ============================================
+    def make_proxy_read_hook(proxy_ref):
+        """Create a read hook that proxies to real hardware."""
+        def hook(addr):
+            return proxy_ref.read(addr)
+        return hook
+
+    def make_proxy_write_hook(proxy_ref):
+        """Create a write hook that proxies to real hardware."""
+        def hook(addr, value):
+            proxy_ref.write(addr, value)
+        return hook
+
+    # Select hooks based on proxy mode
+    if proxy is not None:
+        # Proxy mode - MMIO goes to real hardware
+        print(f"[HW] Using UART proxy for MMIO access")
+        read_hook = make_proxy_read_hook(proxy)
+        write_hook = make_proxy_write_hook(proxy)
+    else:
+        # Emulation mode - use HardwareState
+        read_hook = make_read_hook(hw)
+        write_hook = make_write_hook(hw)
 
     for start, end in mmio_ranges:
         for addr in range(start, end):

@@ -12,6 +12,7 @@ Options:
     --trace         Enable instruction tracing
     --break ADDR    Set breakpoint at address (hex)
     --max-cycles N  Stop after N cycles
+    --proxy         Use UART proxy to real hardware for MMIO
     --help          Show this help
 """
 
@@ -36,7 +37,8 @@ class Emulator:
     """ASM2464PD Firmware Emulator."""
 
     def __init__(self, trace: bool = False, log_hw: bool = False,
-                 log_uart: bool = True, usb_delay: int = 200000):
+                 log_uart: bool = True, usb_delay: int = 200000,
+                 proxy: 'UARTProxy' = None):
         self.memory = Memory()
         self.cpu = CPU8051(
             read_code=self.memory.read_code,
@@ -51,11 +53,14 @@ class Emulator:
             trace=trace,
         )
 
+        # UART proxy for real hardware mode
+        self.proxy = proxy
+
         # Hardware emulation (replaces simple stubs)
         self.hw = HardwareState(log_reads=log_hw, log_writes=log_hw, log_uart=log_uart)
         self.hw.usb_connect_delay = usb_delay
         self.hw._memory = self.memory  # Give hardware access to XDATA for USB descriptors
-        create_hardware_hooks(self.memory, self.hw)
+        create_hardware_hooks(self.memory, self.hw, proxy=proxy)
         # Store CPU reference for PC tracing in hardware callbacks
         self.hw._cpu_ref = self.cpu
 
@@ -523,6 +528,13 @@ Examples:
 
   # Debug with hardware logging
   python emu.py --log-hw --trace-pc 0x0322
+
+  # Run with UART proxy to real hardware (requires proxy firmware)
+  # First: cd clean && make flash-proxy
+  python emu.py --proxy fw.bin
+
+  # Proxy mode with debug output
+  python emu.py --proxy --proxy-debug fw.bin
 """
     )
     parser.add_argument('firmware', nargs='?', default='fw.bin',
@@ -564,6 +576,12 @@ Examples:
                         help='UDC driver name (default: dummy_udc)')
     parser.add_argument('--usb-device-name', type=str, default='dummy_udc.0',
                         help='UDC device name (default: dummy_udc.0)')
+    parser.add_argument('--proxy', action='store_true',
+                        help='Use UART proxy to real hardware for MMIO (requires proxy firmware)')
+    parser.add_argument('--proxy-device', type=str, default='ftdi://ftdi:230x/1',
+                        help='FTDI device URL for proxy mode (default: ftdi://ftdi:230x/1)')
+    parser.add_argument('--proxy-debug', action='store_true',
+                        help='Enable debug output for proxy MMIO operations')
 
     args = parser.parse_args()
 
@@ -577,9 +595,32 @@ Examples:
             print(f"Error: Cannot find firmware file: {args.firmware}")
             sys.exit(1)
 
+    # Setup UART proxy if requested
+    proxy = None
+    if args.proxy:
+        try:
+            from uart_proxy import UARTProxy
+            print(f"Connecting to UART proxy at {args.proxy_device}...")
+            proxy = UARTProxy(args.proxy_device)
+            proxy.debug = args.proxy_debug
+            
+            # Test connection
+            if not proxy.test_connection():
+                print("Error: Proxy connection test failed")
+                print("Make sure proxy firmware is flashed: cd clean && make flash-proxy")
+                sys.exit(1)
+            print("Proxy connection OK!")
+        except Exception as e:
+            print(f"Error: Failed to connect to UART proxy: {e}")
+            print("Make sure:")
+            print("  1. FTDI device is connected")
+            print("  2. Proxy firmware is flashed: cd clean && make flash-proxy")
+            sys.exit(1)
+
     # Create emulator
     emu = Emulator(trace=args.trace, log_hw=args.log_hw,
-                   log_uart=not args.no_uart_log, usb_delay=args.usb_delay)
+                   log_uart=not args.no_uart_log, usb_delay=args.usb_delay,
+                   proxy=proxy)
 
     # Load firmware
     emu.load_firmware(str(fw_path))
@@ -662,6 +703,10 @@ Examples:
         # Stop USB device if running
         if emu.usb_device:
             emu.stop_usb_device()
+        # Close proxy connection if open
+        if proxy:
+            print(f"\nProxy stats: {proxy.stats()}")
+            proxy.close()
 
     if args.dump:
         emu.dump_state()
