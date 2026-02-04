@@ -765,6 +765,10 @@ class HardwareState:
     log_uart: bool = True
     log_pcie: bool = True  # Log PCIe DMA operations
 
+    # Proxy mode - when True, disable all fake USB/interrupt injection
+    # Real hardware handles everything, we just proxy MMIO
+    proxy_mode: bool = False
+
     # Reference to memory system (set by Emulator during init)
     # Used for reading XDATA (e.g., USB descriptors)
     _memory: 'Memory' = None
@@ -2903,6 +2907,11 @@ class HardwareState:
         """Advance hardware state by cycles."""
         self.cycles += cycles
 
+        # In proxy mode, skip all fake USB/interrupt injection
+        # Real hardware handles everything
+        if self.proxy_mode:
+            return
+
         # USB plug-in event after delay
         # Skip if a USB command is already pending to avoid interfering with it
         if not self.usb_connected and self.cycles > self.usb_connect_delay and not self.usb_cmd_pending:
@@ -3060,22 +3069,75 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
 
     # Select hooks based on proxy mode
     if proxy is not None:
-        # Proxy mode - MMIO goes to real hardware (except UART)
+        # Proxy mode - MMIO goes to real hardware (except certain ranges)
         print(f"[HW] Using UART proxy for MMIO access")
         proxy_read_hook = make_proxy_read_hook(proxy)
         proxy_write_hook = make_proxy_write_hook(proxy)
         emu_read_hook = make_read_hook(hw)
         emu_write_hook = make_write_hook(hw)
         
+        def should_emulate(addr):
+            """Check if address should be emulated instead of proxied."""
+            # UART (0xC000-0xC00F) - proxy uses these for communication
+            if 0xC000 <= addr <= 0xC00F:
+                return True
+            # PHY register 0xC65A - causes bus hang on real hardware
+            if addr == 0xC65A:
+                return True
+            return False
+        
         for start, end in mmio_ranges:
             for addr in range(start, end):
-                # UART (0xC000-0xC00F) stays emulated - proxy uses these for communication!
-                if 0xC000 <= addr <= 0xC00F:
+                if should_emulate(addr):
                     memory.xdata_read_hooks[addr] = emu_read_hook
                     memory.xdata_write_hooks[addr] = emu_write_hook
                 else:
                     memory.xdata_read_hooks[addr] = proxy_read_hook
                     memory.xdata_write_hooks[addr] = proxy_write_hook
+        
+        # ============================================
+        # SFR Proxy Hooks
+        # ============================================
+        # Key SFRs must be proxied to real hardware for interrupts to work.
+        # The emulator runs the code but hardware state (IE, timers, etc.) 
+        # must be synchronized with real hardware.
+        
+        # SFRs to proxy (interrupt and timer related)
+        proxy_sfrs = [
+            0xA8,  # IE - Interrupt Enable
+            0xB8,  # IP - Interrupt Priority  
+            0x88,  # TCON - Timer Control
+            0x89,  # TMOD - Timer Mode
+            0x8A,  # TL0 - Timer 0 Low
+            0x8B,  # TL1 - Timer 1 Low
+            0x8C,  # TH0 - Timer 0 High
+            0x8D,  # TH1 - Timer 1 High
+        ]
+        
+        def make_sfr_proxy_write_hook(proxy_ref, sfr_addr, hw_ref):
+            """Create SFR write hook that proxies to real hardware."""
+            def hook(addr, value):
+                proxy_ref.sfr_write(sfr_addr, value)
+                if proxy_ref.debug:
+                    pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
+                    print(f"[PROXY] PC=0x{pc:04X} SFR Write 0x{sfr_addr:02X} = 0x{value:02X}")
+            return hook
+        
+        def make_sfr_proxy_read_hook(proxy_ref, sfr_addr, hw_ref):
+            """Create SFR read hook that proxies to real hardware."""
+            def hook(addr):
+                value = proxy_ref.sfr_read(sfr_addr)
+                if proxy_ref.debug:
+                    pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
+                    print(f"[PROXY] PC=0x{pc:04X} SFR Read  0x{sfr_addr:02X} = 0x{value:02X}")
+                return value
+            return hook
+        
+        for sfr_addr in proxy_sfrs:
+            memory.sfr_write_hooks[sfr_addr] = make_sfr_proxy_write_hook(proxy, sfr_addr, hw)
+            memory.sfr_read_hooks[sfr_addr] = make_sfr_proxy_read_hook(proxy, sfr_addr, hw)
+        
+        print(f"[HW] Proxying {len(proxy_sfrs)} SFRs to real hardware")
     else:
         # Emulation mode - use HardwareState
         read_hook = make_read_hook(hw)

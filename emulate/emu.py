@@ -59,6 +59,10 @@ class Emulator:
         # Hardware emulation (replaces simple stubs)
         self.hw = HardwareState(log_reads=log_hw, log_writes=log_hw, log_uart=log_uart)
         self.hw.usb_connect_delay = usb_delay
+        # In proxy mode, disable all fake USB/interrupt injection and CPU interrupt polling
+        if proxy is not None:
+            self.hw.proxy_mode = True
+            self.cpu.proxy_mode = True
         self.hw._memory = self.memory  # Give hardware access to XDATA for USB descriptors
         create_hardware_hooks(self.memory, self.hw, proxy=proxy)
         # Store CPU reference for PC tracing in hardware callbacks
@@ -109,6 +113,10 @@ class Emulator:
         self.last_pc = self.cpu.pc
         pc = self.cpu.pc
 
+        # In proxy mode, check for hardware interrupts from real device
+        if self.proxy:
+            self._check_proxy_interrupts()
+
         # Track PC hit for statistics
         if self.pc_stats is not None:
             self.pc_stats[pc] = self.pc_stats.get(pc, 0) + 1
@@ -129,6 +137,36 @@ class Emulator:
         self.hw.tick(cycles, self.cpu)
 
         return not self.cpu.halted
+    
+    def _check_proxy_interrupts(self):
+        """Check for and handle interrupts from proxy hardware."""
+        int_num = self.proxy.get_pending_interrupt()
+        if int_num is not None:
+            # Map interrupt number to CPU interrupt flag
+            # 8051 interrupt vectors:
+            #   0: INT0 (External 0) - vector 0x0003
+            #   1: Timer0           - vector 0x000B
+            #   2: INT1 (External 1) - vector 0x0013
+            #   3: Timer1           - vector 0x001B
+            #   4: Serial           - vector 0x0023
+            #   5: Timer2           - vector 0x002B
+            if int_num == 0:
+                self.cpu._ext0_pending = True
+            elif int_num == 1:
+                self.cpu._timer0_pending = True
+            elif int_num == 2:
+                self.cpu._ext1_pending = True
+            elif int_num == 3:
+                self.cpu._timer1_pending = True
+            elif int_num == 4:
+                self.cpu._serial_pending = True
+            elif int_num == 5:
+                self.cpu._timer2_pending = True
+            
+            if self.proxy.debug:
+                from uart_proxy import INT_NAMES
+                int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
+                print(f"[{self.hw.cycles:8d}] [EMU] Triggering interrupt: {int_name}")
 
     def _trace_pc_hit(self, pc: int):
         """Log when a traced PC is hit."""

@@ -27,6 +27,21 @@ from pyftdi.ftdi import Ftdi
 CMD_ECHO = 0x00
 CMD_READ = 0x01
 CMD_WRITE = 0x02
+CMD_SFR_READ = 0x03
+CMD_SFR_WRITE = 0x04
+
+# Interrupt signal - double 0xFE prefix
+INT_SIGNAL = 0xFE
+
+# Interrupt numbers (matches 8051 interrupt vectors)
+INT_NAMES = {
+    0: 'INT0',
+    1: 'Timer0', 
+    2: 'INT1',
+    3: 'Timer1',
+    4: 'Serial',
+    5: 'Timer2',
+}
 
 
 class UARTProxy:
@@ -51,6 +66,12 @@ class UARTProxy:
 
         # Debug mode
         self.debug = False
+
+        # Pending interrupts from hardware (queue of interrupt numbers)
+        self.pending_interrupts = []
+        
+        # Interrupt statistics
+        self.interrupt_count = 0
 
         self._open()
 
@@ -113,8 +134,8 @@ class UARTProxy:
     def __exit__(self, *args):
         self.close()
 
-    def _read_byte(self) -> int:
-        """Read one byte from UART with timeout."""
+    def _read_byte_raw(self) -> int:
+        """Read one byte from UART with timeout (no interrupt handling)."""
         start = time.monotonic()
         while True:
             data = self.ftdi.read_data(1)
@@ -123,6 +144,84 @@ class UARTProxy:
             if time.monotonic() - start > self.timeout:
                 raise TimeoutError(f"UART read timeout after {self.timeout}s")
             time.sleep(0.0001)  # 100us poll interval
+
+    def _read_response(self) -> int:
+        """
+        Read 2-byte response, handling interrupt signals.
+        
+        Protocol:
+          - Normal response: <value> <~value>
+          - Interrupt signal: 0xFE 0xFE <int_num>
+        
+        Returns:
+            The value from the response
+        """
+        while True:
+            byte0 = self._read_byte_raw()
+            byte1 = self._read_byte_raw()
+            
+            # Check for interrupt signal (0xFE 0xFE)
+            if byte0 == INT_SIGNAL and byte1 == INT_SIGNAL:
+                # Third byte is interrupt number
+                int_num = self._read_byte_raw()
+                self.pending_interrupts.append(int_num)
+                self.interrupt_count += 1
+                
+                if self.debug:
+                    int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
+                    print(f"[PROXY] >>> INTERRUPT: {int_name} (queued, {len(self.pending_interrupts)} pending)")
+                
+                # Keep reading until we get actual response
+                continue
+            
+            # Verify complement
+            expected_complement = (~byte0) & 0xFF
+            if byte1 != expected_complement:
+                raise RuntimeError(f"Response verification failed: got 0x{byte0:02X} 0x{byte1:02X}, "
+                                   f"expected complement 0x{expected_complement:02X}")
+            
+            return byte0
+    
+    def check_interrupts(self) -> list:
+        """
+        Check for and return any pending interrupts (non-blocking).
+        
+        Returns:
+            List of interrupt numbers that fired (empty if none)
+        """
+        # Do a non-blocking read to check for interrupt signals
+        data = self.ftdi.read_data(64)  # Read any available data
+        
+        i = 0
+        while i < len(data):
+            # Look for interrupt pattern: 0xFE 0xFE <int_num>
+            if i + 2 < len(data) and data[i] == INT_SIGNAL and data[i + 1] == INT_SIGNAL:
+                int_num = data[i + 2]
+                self.pending_interrupts.append(int_num)
+                self.interrupt_count += 1
+                if self.debug:
+                    int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
+                    print(f"[PROXY] >>> INTERRUPT: {int_name}")
+                i += 3
+            else:
+                # Unexpected data - might be leftover from previous operation
+                i += 1
+        
+        # Return and clear pending interrupts
+        interrupts = self.pending_interrupts
+        self.pending_interrupts = []
+        return interrupts
+    
+    def get_pending_interrupt(self) -> Optional[int]:
+        """
+        Get next pending interrupt if any.
+        
+        Returns:
+            Interrupt number or None if no interrupts pending
+        """
+        if self.pending_interrupts:
+            return self.pending_interrupts.pop(0)
+        return None
 
     def _write_bytes(self, data: bytes):
         """Write bytes to UART."""
@@ -140,7 +239,7 @@ class UARTProxy:
         """
         value &= 0xFF
         self._write_bytes(bytes([CMD_ECHO, value]))
-        result = self._read_byte()
+        result = self._read_response()
         self.echo_count += 1
 
         if self.debug:
@@ -159,8 +258,12 @@ class UARTProxy:
             Byte value at address
         """
         addr &= 0xFFFF
+        self._last_addr = addr  # Track for debugging
         self._write_bytes(bytes([CMD_READ, addr >> 8, addr & 0xFF]))
-        value = self._read_byte()
+        try:
+            value = self._read_response()
+        except TimeoutError:
+            raise TimeoutError(f"UART read timeout reading from 0x{addr:04X} after {self.timeout}s")
         self.read_count += 1
 
         if self.debug:
@@ -179,7 +282,7 @@ class UARTProxy:
         addr &= 0xFFFF
         value &= 0xFF
         self._write_bytes(bytes([CMD_WRITE, addr >> 8, addr & 0xFF, value]))
-        ack = self._read_byte()
+        ack = self._read_response()
         self.write_count += 1
 
         if ack != 0x00:
@@ -187,6 +290,44 @@ class UARTProxy:
 
         if self.debug:
             print(f"[PROXY] Write 0x{addr:04X} = 0x{value:02X}")
+
+    def sfr_read(self, addr: int) -> int:
+        """
+        Read SFR (Special Function Register) on real hardware.
+
+        Args:
+            addr: SFR address (0x80-0xFF)
+
+        Returns:
+            Byte value of SFR
+        """
+        addr &= 0xFF
+        self._write_bytes(bytes([CMD_SFR_READ, addr]))
+        try:
+            value = self._read_response()
+        except TimeoutError:
+            raise TimeoutError(f"UART read timeout reading SFR 0x{addr:02X} after {self.timeout}s")
+
+        # Debug print handled by caller (hardware.py hook) which has PC context
+        return value
+
+    def sfr_write(self, addr: int, value: int):
+        """
+        Write SFR (Special Function Register) on real hardware.
+
+        Args:
+            addr: SFR address (0x80-0xFF)
+            value: Byte value to write
+        """
+        addr &= 0xFF
+        value &= 0xFF
+        self._write_bytes(bytes([CMD_SFR_WRITE, addr, value]))
+        ack = self._read_response()
+
+        if ack != 0x00:
+            raise RuntimeError(f"SFR Write ACK failed: expected 0x00, got 0x{ack:02X}")
+
+        # Debug print handled by caller (hardware.py hook) which has PC context
 
     def read_block(self, addr: int, size: int) -> bytes:
         """
@@ -238,6 +379,7 @@ class UARTProxy:
             'read_count': self.read_count,
             'write_count': self.write_count,
             'echo_count': self.echo_count,
+            'interrupt_count': self.interrupt_count,
         }
 
 

@@ -56,6 +56,9 @@ class CPU8051:
     _timer0_pending: bool = False  # Timer 0 interrupt pending flag
     _ext0_pending: bool = False     # External Interrupt 0 pending flag
     _ext1_pending: bool = False     # External Interrupt 1 pending flag
+    
+    # Proxy mode - when True, skip interrupt checking (hardware handles it)
+    proxy_mode: bool = False
 
     # SFR addresses
     SFR_ACC = 0xE0
@@ -303,7 +306,9 @@ class CPU8051:
         self.cycles += cycles
 
         # Check for interrupts after executing instruction (so hardware can set flags)
-        self._check_interrupts()
+        # Skip in proxy mode - hardware handles interrupts and signals via UART
+        if not self.proxy_mode:
+            self._check_interrupts()
 
         return cycles
 
