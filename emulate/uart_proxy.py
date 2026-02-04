@@ -44,6 +44,22 @@ INT_NAMES = {
 }
 
 
+class InterruptPending(Exception):
+    """
+    Raised when an interrupt signal is received instead of a command response.
+    
+    The proxy is now inside the ISR handler, waiting for commands.
+    The caller must:
+    1. Handle the interrupt (run ISR in emulator)
+    2. Send ack (0xFE) when ISR completes
+    3. Retry the original operation
+    """
+    def __init__(self, int_num: int):
+        self.int_num = int_num
+        int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
+        super().__init__(f"Interrupt pending: {int_name}")
+
+
 class UARTProxy:
     """Proxy MMIO access to real ASM2464PD hardware over UART."""
 
@@ -137,15 +153,22 @@ class UARTProxy:
     def _read_byte_raw(self) -> int:
         """Read one byte from UART with timeout (no interrupt handling)."""
         start = time.monotonic()
+        poll_count = 0
         while True:
             data = self.ftdi.read_data(1)
             if data:
                 return data[0]
-            if time.monotonic() - start > self.timeout:
+            poll_count += 1
+            elapsed = time.monotonic() - start
+            if elapsed > self.timeout:
+                if self.debug:
+                    # Check if there's any data in buffer we might have missed
+                    extra = self.ftdi.read_data(64)
+                    print(f"[PROXY] _read_byte_raw timeout after {poll_count} polls, {elapsed:.3f}s, extra data: {extra.hex() if extra else 'none'}")
                 raise TimeoutError(f"UART read timeout after {self.timeout}s")
             time.sleep(0.0001)  # 100us poll interval
 
-    def _read_response(self) -> int:
+    def _read_response(self, context: str = None) -> int:
         """
         Read 2-byte response, handling interrupt signals.
         
@@ -153,12 +176,29 @@ class UARTProxy:
           - Normal response: <value> <~value>
           - Interrupt signal: 0xFE 0xFE <int_num>
         
+        Args:
+            context: Description of what operation we're waiting for (for debug)
+        
         Returns:
             The value from the response
+            
+        When an interrupt signal is received:
+          - The interrupt is queued in pending_interrupts
+          - We continue reading for the actual response (the command was already
+            sent and the proxy's ISR handler will process it and send the response)
         """
         while True:
-            byte0 = self._read_byte_raw()
-            byte1 = self._read_byte_raw()
+            try:
+                byte0 = self._read_byte_raw()
+            except TimeoutError:
+                ctx = f" (waiting for: {context})" if context else ""
+                raise TimeoutError(f"UART read timeout waiting for response byte 0{ctx}")
+            
+            try:
+                byte1 = self._read_byte_raw()
+            except TimeoutError:
+                ctx = f" (waiting for: {context})" if context else ""
+                raise TimeoutError(f"UART read timeout waiting for response byte 1 (got byte0=0x{byte0:02X}){ctx}")
             
             # Check for interrupt signal (0xFE 0xFE)
             if byte0 == INT_SIGNAL and byte1 == INT_SIGNAL:
@@ -171,7 +211,8 @@ class UARTProxy:
                     int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
                     print(f"[PROXY] >>> INTERRUPT: {int_name} (queued, {len(self.pending_interrupts)} pending)")
                 
-                # Keep reading until we get actual response
+                # Continue reading to get the actual response.
+                # The proxy may still be processing our command.
                 continue
             
             # Verify complement
@@ -223,9 +264,65 @@ class UARTProxy:
             return self.pending_interrupts.pop(0)
         return None
 
+    def ack_interrupt(self):
+        """
+        Send acknowledgment that emulator finished running ISR.
+        
+        The proxy firmware waits for this 0xFE byte before returning
+        from the interrupt handler. This ensures the emulator runs
+        the ISR code before the hardware continues.
+        """
+        self._write_bytes(bytes([INT_SIGNAL]))  # Send 0xFE
+        if self.debug:
+            print(f"[PROXY] <<< ACK interrupt (sent 0xFE)")
+
     def _write_bytes(self, data: bytes):
-        """Write bytes to UART."""
+        """Write bytes to UART and ensure they're transmitted."""
         self.ftdi.write_data(data)
+        # Small delay to ensure bytes are transmitted before we start reading
+        # This prevents race condition where interrupt signal arrives before
+        # our command bytes have been transmitted
+        import time
+        time.sleep(0.001)  # 1ms - enough for ~100 bytes at 921600 baud
+
+    def _drain_interrupt_signals(self):
+        """
+        Check for and drain any pending interrupt signals from the RX buffer.
+        
+        This should be called before sending a new command to handle the case
+        where an interrupt fired between the previous response and our new command.
+        
+        Returns:
+            True if interrupts were drained (caller should handle them)
+        """
+        had_interrupts = False
+        
+        while True:
+            # Non-blocking peek at available data
+            data = self.ftdi.read_data(3)  # Need at least 3 bytes for interrupt signal
+            if len(data) < 3:
+                # Not enough data - put it back by... well, we can't put it back
+                # So we need a different approach
+                break
+            
+            if data[0] == INT_SIGNAL and data[1] == INT_SIGNAL:
+                # Interrupt signal
+                int_num = data[2]
+                self.pending_interrupts.append(int_num)
+                self.interrupt_count += 1
+                had_interrupts = True
+                
+                if self.debug:
+                    int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
+                    print(f"[PROXY] >>> INTERRUPT (drained): {int_name}")
+            else:
+                # Not an interrupt signal - this is unexpected data
+                # Put it back... we can't, so this is a problem
+                if self.debug:
+                    print(f"[PROXY] WARNING: Unexpected data in buffer: {data.hex()}")
+                break
+        
+        return had_interrupts
 
     def echo(self, value: int) -> int:
         """
@@ -239,7 +336,7 @@ class UARTProxy:
         """
         value &= 0xFF
         self._write_bytes(bytes([CMD_ECHO, value]))
-        result = self._read_response()
+        result = self._read_response(f"ECHO 0x{value:02X}")
         self.echo_count += 1
 
         if self.debug:
@@ -260,15 +357,9 @@ class UARTProxy:
         addr &= 0xFFFF
         self._last_addr = addr  # Track for debugging
         self._write_bytes(bytes([CMD_READ, addr >> 8, addr & 0xFF]))
-        try:
-            value = self._read_response()
-        except TimeoutError:
-            raise TimeoutError(f"UART read timeout reading from 0x{addr:04X} after {self.timeout}s")
+        value = self._read_response(f"READ 0x{addr:04X}")
         self.read_count += 1
-
-        if self.debug:
-            print(f"[PROXY] Read  0x{addr:04X} = 0x{value:02X}")
-
+        # Debug print handled by caller (hardware.py hook) which has PC context
         return value
 
     def write(self, addr: int, value: int):
@@ -282,14 +373,12 @@ class UARTProxy:
         addr &= 0xFFFF
         value &= 0xFF
         self._write_bytes(bytes([CMD_WRITE, addr >> 8, addr & 0xFF, value]))
-        ack = self._read_response()
+        ack = self._read_response(f"WRITE 0x{addr:04X}=0x{value:02X}")
         self.write_count += 1
 
         if ack != 0x00:
             raise RuntimeError(f"Write ACK failed: expected 0x00, got 0x{ack:02X}")
-
-        if self.debug:
-            print(f"[PROXY] Write 0x{addr:04X} = 0x{value:02X}")
+        # Debug print handled by caller (hardware.py hook) which has PC context
 
     def sfr_read(self, addr: int) -> int:
         """
@@ -303,10 +392,7 @@ class UARTProxy:
         """
         addr &= 0xFF
         self._write_bytes(bytes([CMD_SFR_READ, addr]))
-        try:
-            value = self._read_response()
-        except TimeoutError:
-            raise TimeoutError(f"UART read timeout reading SFR 0x{addr:02X} after {self.timeout}s")
+        value = self._read_response(f"SFR_READ 0x{addr:02X}")
 
         # Debug print handled by caller (hardware.py hook) which has PC context
         return value
@@ -322,7 +408,7 @@ class UARTProxy:
         addr &= 0xFF
         value &= 0xFF
         self._write_bytes(bytes([CMD_SFR_WRITE, addr, value]))
-        ack = self._read_response()
+        ack = self._read_response(f"SFR_WRITE 0x{addr:02X}=0x{value:02X}")
 
         if ack != 0x00:
             raise RuntimeError(f"SFR Write ACK failed: expected 0x00, got 0x{ack:02X}")

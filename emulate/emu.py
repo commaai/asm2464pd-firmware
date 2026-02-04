@@ -87,6 +87,9 @@ class Emulator:
         self.usb_thread = None
         self.usb_running = False
 
+        # Proxy interrupt tracking - number of ISRs we owe acks for
+        self._proxy_isr_pending_acks = 0
+
     def load_firmware(self, path: str):
         """Load firmware binary."""
         with open(path, 'rb') as f:
@@ -132,9 +135,19 @@ class Emulator:
         if self.cpu.trace:
             self._trace_instruction()
 
+        # Track if we're in an ISR before stepping
+        was_in_isr = self.cpu.in_interrupt if self.proxy else False
+
         cycles = self.cpu.step()
         self.inst_count += 1
         self.hw.tick(cycles, self.cpu)
+
+        # In proxy mode, check if ISR just completed (RETI executed)
+        if self.proxy and was_in_isr and not self.cpu.in_interrupt:
+            # ISR completed, send ack to proxy so it can return from its ISR
+            if self._proxy_isr_pending_acks > 0:
+                self.proxy.ack_interrupt()
+                self._proxy_isr_pending_acks -= 1
 
         return not self.cpu.halted
     
@@ -162,6 +175,9 @@ class Emulator:
                 self.cpu._serial_pending = True
             elif int_num == 5:
                 self.cpu._timer2_pending = True
+            
+            # Track that we owe the proxy an ack when this ISR completes
+            self._proxy_isr_pending_acks += 1
             
             if self.proxy.debug:
                 from uart_proxy import INT_NAMES

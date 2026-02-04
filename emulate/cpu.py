@@ -244,12 +244,17 @@ class CPU8051:
         if self.in_interrupt:
             return  # Don't nest interrupts
 
-        # Read interrupt enable register
-        ie = self.read_sfr(0xA8)  # IE register at 0xA8
+        # In proxy mode, assume interrupts are enabled - the hardware fired the interrupt
+        # so it must be enabled. Don't read IE via proxy (expensive and causes recursion).
+        if not self.proxy_mode:
+            # Read interrupt enable register
+            ie = self.read_sfr(0xA8)  # IE register at 0xA8
 
-        # Global interrupt enable (EA bit 7)
-        if not (ie & 0x80):
-            return
+            # Global interrupt enable (EA bit 7)
+            if not (ie & 0x80):
+                return
+        else:
+            ie = 0xFF  # In proxy mode, assume all interrupts enabled
 
         # Check External Interrupt 0 (EX0 bit 0)
         # ASM2464PD uses EX0 (at 0x0003) for main ISR at 0x0E33
@@ -306,9 +311,8 @@ class CPU8051:
         self.cycles += cycles
 
         # Check for interrupts after executing instruction (so hardware can set flags)
-        # Skip in proxy mode - hardware handles interrupts and signals via UART
-        if not self.proxy_mode:
-            self._check_interrupts()
+        # In proxy mode, pending flags are set by the proxy when hardware interrupts fire
+        self._check_interrupts()
 
         return cycles
 

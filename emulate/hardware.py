@@ -3055,24 +3055,31 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
     # ============================================
     # Proxy Mode Hooks (real hardware via UART)
     # ============================================
-    def make_proxy_read_hook(proxy_ref):
+    def make_proxy_read_hook(proxy_ref, hw_ref):
         """Create a read hook that proxies to real hardware."""
         def hook(addr):
-            return proxy_ref.read(addr)
+            value = proxy_ref.read(addr)
+            if proxy_ref.debug:
+                pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
+                print(f"[PROXY] PC=0x{pc:04X} Read  0x{addr:04X} = 0x{value:02X}")
+            return value
         return hook
 
-    def make_proxy_write_hook(proxy_ref):
+    def make_proxy_write_hook(proxy_ref, hw_ref):
         """Create a write hook that proxies to real hardware."""
         def hook(addr, value):
             proxy_ref.write(addr, value)
+            if proxy_ref.debug:
+                pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
+                print(f"[PROXY] PC=0x{pc:04X} Write 0x{addr:04X} = 0x{value:02X}")
         return hook
 
     # Select hooks based on proxy mode
     if proxy is not None:
         # Proxy mode - MMIO goes to real hardware (except certain ranges)
         print(f"[HW] Using UART proxy for MMIO access")
-        proxy_read_hook = make_proxy_read_hook(proxy)
-        proxy_write_hook = make_proxy_write_hook(proxy)
+        proxy_read_hook = make_proxy_read_hook(proxy, hw)
+        proxy_write_hook = make_proxy_write_hook(proxy, hw)
         emu_read_hook = make_read_hook(hw)
         emu_write_hook = make_write_hook(hw)
         

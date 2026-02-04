@@ -1,17 +1,27 @@
 /*
  * MMIO Proxy Firmware for ASM2464PD
  *
+ * This firmware runs on real hardware and proxies MMIO reads/writes from
+ * an emulator running the original firmware. This allows USB enumeration
+ * to happen on real hardware while firmware executes in the emulator.
+ *
  * Protocol (binary):
- *   CMD_ECHO (0x00):  Send 1 byte -> receive 2 bytes: <value> <~value>
- *   CMD_READ (0x01):  Send addr_hi, addr_lo -> receive 2 bytes: <value> <~value>
- *   CMD_WRITE (0x02): Send addr_hi, addr_lo, value -> receive 2 bytes: 0x00 0xFF
+ *   CMD_ECHO (0x00):      Send 1 byte -> receive 2 bytes: <value> <~value>
+ *   CMD_READ (0x01):      Send addr_hi, addr_lo -> receive 2 bytes: <value> <~value>
+ *   CMD_WRITE (0x02):     Send addr_hi, addr_lo, value -> receive 2 bytes: 0x00 0xFF
+ *   CMD_SFR_READ (0x03):  Send sfr_addr -> receive 2 bytes: <value> <~value>
+ *   CMD_SFR_WRITE (0x04): Send sfr_addr, value -> receive 2 bytes: 0x00 0xFF
  *
  * Interrupt signaling:
- *   When an interrupt fires, proxy sends: 0xFE 0xFE <int_num>
- *   int_num: 0=INT0, 1=Timer0, 2=INT1, 3=Timer1, 4=Serial, etc.
+ *   When a hardware interrupt fires, proxy sends: 0xFE 0xFE <int_num>
+ *   int_num: 0=INT0, 1=Timer0, 2=INT1, 3=Timer1, 4=Serial, 5=Timer2
  *
- * All responses are 2 bytes. If first two bytes are 0xFE 0xFE, it's an interrupt.
- * Otherwise byte[0] is value and byte[1] is ~value (complement for verification).
+ *   After signaling, proxy continues handling MMIO commands (so emulator can
+ *   do reads/writes while running the ISR code). When emulator's ISR completes,
+ *   it sends 0xFE as acknowledgment, and proxy returns from its ISR.
+ *
+ * All responses are 2 bytes: byte[0]=value, byte[1]=~value (complement for verification).
+ * Exception: interrupt signal is 3 bytes (0xFE 0xFE <int_num>).
  */
 
 typedef unsigned char uint8_t;
@@ -65,6 +75,18 @@ uint8_t xdata_read(uint16_t addr)
  * We use inline assembly since C can't do arbitrary SFR access.
  */
 __sfr __at(0xA8) SFR_IE;    /* Interrupt Enable */
+#define EA_BIT 0x80         /* Global interrupt enable bit in IE */
+
+/* Send 2-byte response atomically (interrupts disabled) */
+void send_response(uint8_t b0, uint8_t b1)
+{
+    uint8_t saved_ie = SFR_IE;
+    SFR_IE &= ~EA_BIT;  /* Disable interrupts */
+    uart_putc(b0);
+    uart_putc(b1);
+    SFR_IE = saved_ie;  /* Restore interrupts */
+}
+
 __sfr __at(0xB8) SFR_IP;    /* Interrupt Priority */
 __sfr __at(0x88) SFR_TCON;  /* Timer Control */
 __sfr __at(0x89) SFR_TMOD;  /* Timer Mode */
@@ -130,17 +152,95 @@ void xdata_write(uint16_t addr, uint8_t val)
     *(__xdata volatile uint8_t *)addr = val;
 }
 
-/* Send interrupt signal: 0xFE 0xFE <int_num> */
+/*
+ * Handle a single MMIO command from the emulator.
+ * Returns 1 if command was INT_SIGNAL (ack), 0 otherwise.
+ * 
+ * This is called from both main loop and ISRs.
+ * In ISR context, we continue handling MMIO commands until we get the ack.
+ */
+uint8_t handle_command(uint8_t cmd)
+{
+    uint8_t val;
+    uint8_t addr_hi, addr_lo;
+    uint16_t addr;
+
+    switch (cmd) {
+    case INT_SIGNAL:
+        /* This is the ISR ack from emulator */
+        return 1;
+
+    case CMD_ECHO:
+        val = uart_getc();
+        send_response(val, ~val);
+        break;
+
+    case CMD_READ:
+        addr_hi = uart_getc();
+        addr_lo = uart_getc();
+        addr = ((uint16_t)addr_hi << 8) | addr_lo;
+        val = xdata_read(addr);
+        send_response(val, ~val);
+        break;
+
+    case CMD_WRITE:
+        addr_hi = uart_getc();
+        addr_lo = uart_getc();
+        val = uart_getc();
+        addr = ((uint16_t)addr_hi << 8) | addr_lo;
+        xdata_write(addr, val);
+        send_response(0x00, 0xFF);
+        break;
+
+    case CMD_SFR_READ:
+        addr_lo = uart_getc();  /* SFR address (0x80-0xFF) */
+        val = sfr_read(addr_lo);
+        send_response(val, ~val);
+        break;
+
+    case CMD_SFR_WRITE:
+        addr_lo = uart_getc();  /* SFR address (0x80-0xFF) */
+        val = uart_getc();
+        sfr_write(addr_lo, val);
+        send_response(0x00, 0xFF);
+        break;
+
+    default:
+        send_response('?', '?');
+        break;
+    }
+    return 0;
+}
+
+/* 
+ * Signal interrupt to emulator and handle commands until ack.
+ * Protocol:
+ *   1. Send: 0xFE 0xFE <int_num>
+ *   2. Handle MMIO commands while emulator runs ISR code
+ *   3. When we receive 0xFE (ack), return from ISR
+ *
+ * This allows the emulator to do MMIO reads/writes while running
+ * the ISR code in the original firmware.
+ */
 void signal_interrupt(uint8_t int_num)
 {
+    uint8_t cmd;
+    
     uart_putc(INT_SIGNAL);
     uart_putc(INT_SIGNAL);
     uart_putc(int_num);
+    
+    /* Handle commands until we get the ack (0xFE) */
+    while (1) {
+        cmd = uart_getc();
+        if (handle_command(cmd))
+            return;  /* Got ack, ISR complete */
+    }
 }
 
 /*
- * Interrupt handlers - signal to emulator and return
- * The emulator will run the actual ISR code
+ * Interrupt handlers - signal to emulator and handle commands until ack
+ * The emulator runs the actual ISR code, doing MMIO via us, then sends ack
  */
 void int0_isr(void) __interrupt(0)
 {
@@ -174,9 +274,7 @@ void timer2_isr(void) __interrupt(5)
 
 void main(void)
 {
-    uint8_t cmd, val;
-    uint8_t addr_hi, addr_lo;
-    uint16_t addr;
+    uint8_t cmd;
 
     /* Disable parity to get 8N1 */
     REG_UART_LCR &= 0xF7;
@@ -186,55 +284,9 @@ void main(void)
     uart_putc('K');
     uart_putc('\n');
 
-    /* Proxy loop */
+    /* Proxy loop - just handle commands forever */
     while (1) {
         cmd = uart_getc();
-
-        switch (cmd) {
-        case CMD_ECHO:
-            val = uart_getc();
-            uart_putc(val);
-            uart_putc(~val);  /* complement for verification */
-            break;
-
-        case CMD_READ:
-            addr_hi = uart_getc();
-            addr_lo = uart_getc();
-            addr = ((uint16_t)addr_hi << 8) | addr_lo;
-            val = xdata_read(addr);
-            uart_putc(val);
-            uart_putc(~val);  /* complement for verification */
-            break;
-
-        case CMD_WRITE:
-            addr_hi = uart_getc();
-            addr_lo = uart_getc();
-            val = uart_getc();
-            addr = ((uint16_t)addr_hi << 8) | addr_lo;
-            xdata_write(addr, val);
-            uart_putc(0x00);
-            uart_putc(0xFF);  /* complement of 0x00 */
-            break;
-
-        case CMD_SFR_READ:
-            addr_lo = uart_getc();  /* SFR address (0x80-0xFF) */
-            val = sfr_read(addr_lo);
-            uart_putc(val);
-            uart_putc(~val);
-            break;
-
-        case CMD_SFR_WRITE:
-            addr_lo = uart_getc();  /* SFR address (0x80-0xFF) */
-            val = uart_getc();
-            sfr_write(addr_lo, val);
-            uart_putc(0x00);
-            uart_putc(0xFF);
-            break;
-
-        default:
-            uart_putc('?');
-            uart_putc('?');  /* 2-byte response for unknown */
-            break;
-        }
+        handle_command(cmd);
     }
 }
