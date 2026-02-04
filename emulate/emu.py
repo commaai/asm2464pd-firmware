@@ -148,6 +148,8 @@ class Emulator:
             # ISR completed, send ack to proxy with the interrupt mask
             if self._proxy_isr_pending_acks:
                 int_mask = self._proxy_isr_pending_acks.pop(0)
+                if self.proxy.debug:
+                    print(f"[{self.hw.cycles:8d}] [EMU] RETI - sending INT_ACK mask=0x{int_mask:02X}")
                 self.proxy.ack_interrupt(int_mask)
 
         return not self.cpu.halted

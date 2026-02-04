@@ -281,10 +281,21 @@ class CPU8051:
         if ie & 0x04:  # EX1 enabled
             if hasattr(self, '_ext1_pending') and self._ext1_pending:
                 self._ext1_pending = False
+                if self.proxy_mode:
+                    print(f"[CPU] Servicing INT1, jumping to vector 0x0013, in_interrupt={self.in_interrupt}")
                 self._trigger_interrupt(2)  # EX1 interrupt vector at 0x13
 
     def _trigger_interrupt(self, vector: int):
-        """Trigger an interrupt with the given vector number."""
+        """Trigger an interrupt with the given vector number.
+        
+        8051 interrupt vectors:
+          0: INT0   -> 0x0003
+          1: Timer0 -> 0x000B
+          2: INT1   -> 0x0013
+          3: Timer1 -> 0x001B
+          4: Serial -> 0x0023
+          5: Timer2 -> 0x002B
+        """
         if self.in_interrupt:
             return
 
@@ -294,7 +305,8 @@ class CPU8051:
         self.push((self.pc >> 8) & 0xFF)  # PC high (on top for RET)
 
         # Set PC to interrupt vector address
-        self.pc = vector * 8
+        # Formula: vector * 8 + 3
+        self.pc = vector * 8 + 3
         self.in_interrupt = True
 
     def step(self) -> int:
