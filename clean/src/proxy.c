@@ -11,12 +11,13 @@
  *   CMD_WRITE (0x02):     Send addr_hi, addr_lo, value -> receive 2 bytes: 0x00 0xFF
  *   CMD_SFR_READ (0x03):  Send sfr_addr -> receive 2 bytes: <value> <~value>
  *   CMD_SFR_WRITE (0x04): Send sfr_addr, value -> receive 2 bytes: 0x00 0xFF
+ *   CMD_INT_ACK (0x05):   Send int_mask -> receive 2 bytes: 0x00 0xFF (ACK ISR complete)
  *
  * Interrupt signaling:
- *   After each command response, if any interrupts fired, proxy sends:
+ *   After each command response, if any NEW interrupts fired, proxy sends:
  *     0xFE 0xFE <bitmask>
  *   where bitmask has bits set for each pending interrupt:
- *     bit 0 = INT0, bit 1 = Timer0, bit 2 = INT1, bit 3 = Timer1, 
+ *     bit 0 = INT0, bit 1 = Timer0, bit 2 = INT1, bit 3 = Timer1,
  *     bit 4 = Serial, bit 5 = Timer2
  *
  * All responses are 2 bytes: byte[0]=value, byte[1]=~value (complement for verification).
@@ -38,49 +39,24 @@ typedef unsigned int uint16_t;
 #define CMD_WRITE       0x02
 #define CMD_SFR_READ    0x03
 #define CMD_SFR_WRITE   0x04
+#define CMD_INT_ACK     0x05
 
 /* Interrupt signal - double 0xFE prefix to avoid confusion with data */
 #define INT_SIGNAL      0xFE
 
-/* Pending interrupt bitmask - set by ISRs, cleared after sending */
+/* Pending interrupt bitmask - set by ISRs */
 volatile uint8_t pending_int_mask = 0;
 
-/* Shadow of IE value that emulator set - we restore this after command */
+/* Interrupts that have been sent to emulator but not yet ACKed (waiting for RETI) */
+volatile uint8_t sent_int_mask = 0;
+
+/* Shadow IE - what the emulator thinks IE is */
 uint8_t shadow_ie = 0x00;
-
-void uart_putc(uint8_t c)
-{
-    REG_UART_THR = c;
-}
-
-uint8_t uart_getc(void)
-{
-    /* Wait for data in RX FIFO */
-    while (REG_UART_RFBR == 0)
-        ;
-    return REG_UART_RBR;
-}
-
-uint8_t is_uart_addr(uint16_t addr)
-{
-    return (addr >= 0xC000 && addr <= 0xC00F);
-}
-
-uint8_t xdata_read(uint16_t addr)
-{
-    if (is_uart_addr(addr)) {
-        if (addr == 0xC009) return 0x60;
-        return 0x00;
-    }
-    return *(__xdata volatile uint8_t *)addr;
-}
 
 /*
  * SFR access - SFRs are at 0x80-0xFF and require direct addressing.
  */
 __sfr __at(0xA8) SFR_IE;    /* Interrupt Enable */
-#define EA_BIT 0x80         /* Global interrupt enable bit in IE */
-
 __sfr __at(0xB8) SFR_IP;    /* Interrupt Priority */
 __sfr __at(0x88) SFR_TCON;  /* Timer Control */
 __sfr __at(0x89) SFR_TMOD;  /* Timer Mode */
@@ -96,10 +72,48 @@ __sfr __at(0x82) SFR_DPL;   /* Data Pointer Low */
 __sfr __at(0x83) SFR_DPH;   /* Data Pointer High */
 __sfr __at(0x87) SFR_PCON;  /* Power Control */
 
-uint8_t sfr_read(uint8_t addr)
+static uint8_t uart_getc(void)
+{
+    while (REG_UART_RFBR == 0);
+    return REG_UART_RBR;
+}
+
+static void send_response(uint8_t val)
+{
+    REG_UART_THR = val;
+    REG_UART_THR = ~val;
+}
+
+static void send_ack(void)
+{
+    REG_UART_THR = 0x00;
+    REG_UART_THR = 0xFF;
+}
+
+static uint8_t is_uart_addr(uint16_t addr)
+{
+    return (addr >= 0xC000 && addr <= 0xC00F);
+}
+
+static uint8_t xdata_read(uint16_t addr)
+{
+    if (is_uart_addr(addr)) {
+        if (addr == 0xC009) return 0x60;
+        return 0x00;
+    }
+    return *(__xdata volatile uint8_t *)addr;
+}
+
+static void xdata_write(uint16_t addr, uint8_t val)
+{
+    if (is_uart_addr(addr)) return;
+    *(__xdata volatile uint8_t *)addr = val;
+}
+
+static uint8_t sfr_read(uint8_t addr)
 {
     switch (addr) {
-        case 0xA8: return SFR_IE;
+        case 0xA8: return shadow_ie;  /* Return what emulator expects */
         case 0xB8: return SFR_IP;
         case 0x88: return SFR_TCON;
         case 0x89: return SFR_TMOD;
@@ -118,14 +132,10 @@ uint8_t sfr_read(uint8_t addr)
     }
 }
 
-void sfr_write(uint8_t addr, uint8_t val)
+static void sfr_write(uint8_t addr, uint8_t val)
 {
     switch (addr) {
-        case 0xA8: 
-            /* IE - update shadow and write to real IE */
-            shadow_ie = val;
-            SFR_IE = val;
-            break;
+        case 0xA8: shadow_ie = val; break;
         case 0xB8: SFR_IP = val; break;
         case 0x88: SFR_TCON = val; break;
         case 0x89: SFR_TMOD = val; break;
@@ -144,143 +154,101 @@ void sfr_write(uint8_t addr, uint8_t val)
     }
 }
 
-void xdata_write(uint16_t addr, uint8_t val)
-{
-    if (is_uart_addr(addr)) return;
-    *(__xdata volatile uint8_t *)addr = val;
-}
-
-/* Send 2-byte response */
-void send_response(uint8_t b0, uint8_t b1)
-{
-    uart_putc(b0);
-    uart_putc(b1);
-}
-
-/*
- * Handle a single MMIO command from the emulator.
- */
-void handle_command(uint8_t cmd)
-{
-    uint8_t val;
-    uint8_t addr_hi, addr_lo;
-    uint16_t addr;
-
-    switch (cmd) {
-    case CMD_ECHO:
-        val = uart_getc();
-        send_response(val, ~val);
-        break;
-
-    case CMD_READ:
-        addr_hi = uart_getc();
-        addr_lo = uart_getc();
-        addr = ((uint16_t)addr_hi << 8) | addr_lo;
-        val = xdata_read(addr);
-        send_response(val, ~val);
-        break;
-
-    case CMD_WRITE:
-        addr_hi = uart_getc();
-        addr_lo = uart_getc();
-        val = uart_getc();
-        addr = ((uint16_t)addr_hi << 8) | addr_lo;
-        xdata_write(addr, val);
-        send_response(0x00, 0xFF);
-        break;
-
-    case CMD_SFR_READ:
-        addr_lo = uart_getc();  /* SFR address (0x80-0xFF) */
-        val = sfr_read(addr_lo);
-        send_response(val, ~val);
-        break;
-
-    case CMD_SFR_WRITE:
-        addr_lo = uart_getc();  /* SFR address (0x80-0xFF) */
-        val = uart_getc();
-        sfr_write(addr_lo, val);
-        send_response(0x00, 0xFF);
-        break;
-
-    default:
-        send_response('?', '?');
-        break;
-    }
-}
-
 /*
  * Interrupt handlers - just set flag bit and return.
- * Interrupts are disabled during command handling so these only fire
- * between commands.
+ * We track which interrupts we've sent to emulator in sent_int_mask.
  */
-void int0_isr(void) __interrupt(0)
-{
-    pending_int_mask |= (1 << 0);
-}
-
-void timer0_isr(void) __interrupt(1)
-{
-    pending_int_mask |= (1 << 1);
-}
-
-void int1_isr(void) __interrupt(2)
-{
-    pending_int_mask |= (1 << 2);
-}
-
-void timer1_isr(void) __interrupt(3)
-{
-    pending_int_mask |= (1 << 3);
-}
-
-void serial_isr(void) __interrupt(4)
-{
-    pending_int_mask |= (1 << 4);
-}
-
-void timer2_isr(void) __interrupt(5)
-{
-    pending_int_mask |= (1 << 5);
-}
+void int0_isr(void) __interrupt(0)   { pending_int_mask |= (1 << 0); }
+void timer0_isr(void) __interrupt(1) { pending_int_mask |= (1 << 1); }
+void int1_isr(void) __interrupt(2)   { pending_int_mask |= (1 << 2); }
+void timer1_isr(void) __interrupt(3) { pending_int_mask |= (1 << 3); }
+void serial_isr(void) __interrupt(4) { pending_int_mask |= (1 << 4); }
+void timer2_isr(void) __interrupt(5) { pending_int_mask |= (1 << 5); }
 
 void main(void)
 {
-    uint8_t cmd;
-    uint8_t mask;
+    uint8_t cmd, val, addr_hi, addr_lo, mask;
+    uint16_t addr;
 
     /* Disable parity to get 8N1 */
     REG_UART_LCR &= 0xF7;
-    
+
     /* Hello */
-    uart_putc('P');
-    uart_putc('K');
-    uart_putc('\n');
+    REG_UART_THR = 'P';
+    REG_UART_THR = 'K';
+    REG_UART_THR = '\n';
 
     /* Proxy loop */
     while (1) {
-        /* Wait for UART data with interrupts enabled (using shadow_ie) */
-        while (REG_UART_RFBR == 0)
-            ;
-        
-        /* Disable interrupts while handling command */
-        SFR_IE &= ~EA_BIT;
-        
-        /* Read and handle command */
-        cmd = REG_UART_RBR;
-        handle_command(cmd);
-        
-        /* Check for pending interrupts after command completes */
-        if (pending_int_mask) {
-            mask = pending_int_mask;
-            pending_int_mask = 0;
-            
-            /* Send interrupt signal */
-            uart_putc(INT_SIGNAL);
-            uart_putc(INT_SIGNAL);
-            uart_putc(mask);
-        }
-        
-        /* Restore interrupts from shadow (which may have been updated by sfr_write) */
         SFR_IE = shadow_ie;
+
+        /* Wait for UART data - interrupts can fire here */
+        while (REG_UART_RFBR == 0);
+
+        SFR_IE = 0;
+
+        /* Read command byte */
+        cmd = REG_UART_RBR;
+
+        switch (cmd) {
+        case CMD_ECHO:
+            val = uart_getc();
+            send_response(val);
+            break;
+
+        case CMD_READ:
+            addr_hi = uart_getc();
+            addr_lo = uart_getc();
+            addr = ((uint16_t)addr_hi << 8) | addr_lo;
+            val = xdata_read(addr);
+            send_response(val);
+            break;
+
+        case CMD_WRITE:
+            addr_hi = uart_getc();
+            addr_lo = uart_getc();
+            val = uart_getc();
+            addr = ((uint16_t)addr_hi << 8) | addr_lo;
+            xdata_write(addr, val);
+            send_ack();
+            break;
+
+        case CMD_SFR_READ:
+            addr_lo = uart_getc();
+            val = sfr_read(addr_lo);
+            send_response(val);
+            break;
+
+        case CMD_SFR_WRITE:
+            addr_lo = uart_getc();
+            val = uart_getc();
+            sfr_write(addr_lo, val);
+            send_ack();
+            break;
+
+        case CMD_INT_ACK:
+            /* Emulator completed ISR (RETI) - clear from sent mask */
+            val = uart_getc();
+            sent_int_mask &= ~val;
+            /* Also clear from pending so it can fire again */
+            pending_int_mask &= ~val;
+            send_ack();
+            break;
+
+        default:
+            REG_UART_THR = '?';
+            REG_UART_THR = '?';
+            break;
+        }
+
+        /* Check for NEW interrupts (fired but not yet sent to emulator) */
+        mask = pending_int_mask & ~sent_int_mask;
+        if (mask) {
+            sent_int_mask |= mask;
+            REG_UART_THR = INT_SIGNAL;
+            REG_UART_THR = INT_SIGNAL;
+            REG_UART_THR = mask;
+        }
+
     }
 }

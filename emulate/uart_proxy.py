@@ -29,6 +29,7 @@ CMD_READ = 0x01
 CMD_WRITE = 0x02
 CMD_SFR_READ = 0x03
 CMD_SFR_WRITE = 0x04
+CMD_INT_ACK = 0x05  # Emulator finished ISR (RETI)
 
 # Interrupt signal - double 0xFE prefix
 INT_SIGNAL = 0xFE
@@ -279,17 +280,22 @@ class UARTProxy:
             return self.pending_interrupts.pop(0)
         return None
 
-    def ack_interrupt(self):
+    def ack_interrupt(self, int_mask: int):
         """
-        Send acknowledgment that emulator finished running ISR.
+        Send acknowledgment that emulator finished running ISR (RETI).
         
-        The proxy firmware waits for this 0xFE byte before returning
-        from the interrupt handler. This ensures the emulator runs
-        the ISR code before the hardware continues.
+        This tells the proxy firmware to clear the pending_int_mask for
+        the specified interrupts, allowing them to fire again.
+        
+        Args:
+            int_mask: Bitmask of interrupts being acknowledged (same as received)
         """
-        self._write_bytes(bytes([INT_SIGNAL]))  # Send 0xFE
+        self._write_bytes(bytes([CMD_INT_ACK, int_mask]))
+        ack = self._read_response(f"INT_ACK mask=0x{int_mask:02X}")
+        if ack != 0x00:
+            raise RuntimeError(f"INT_ACK failed: expected 0x00, got 0x{ack:02X}")
         if self.debug:
-            print(f"[PROXY] <<< ACK interrupt (sent 0xFE)")
+            print(f"[PROXY] <<< ACK interrupt mask=0x{int_mask:02X}")
 
     def _write_bytes(self, data: bytes):
         """Write bytes to UART."""

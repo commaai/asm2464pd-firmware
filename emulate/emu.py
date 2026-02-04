@@ -87,8 +87,9 @@ class Emulator:
         self.usb_thread = None
         self.usb_running = False
 
-        # Proxy interrupt tracking - number of ISRs we owe acks for
-        self._proxy_isr_pending_acks = 0
+        # Proxy interrupt tracking - queue of interrupt masks we owe acks for
+        # Each entry is the bitmask (1 << int_num) for the interrupt being serviced
+        self._proxy_isr_pending_acks = []
 
     def load_firmware(self, path: str):
         """Load firmware binary."""
@@ -144,10 +145,10 @@ class Emulator:
 
         # In proxy mode, check if ISR just completed (RETI executed)
         if self.proxy and was_in_isr and not self.cpu.in_interrupt:
-            # ISR completed, send ack to proxy so it can return from its ISR
-            if self._proxy_isr_pending_acks > 0:
-                self.proxy.ack_interrupt()
-                self._proxy_isr_pending_acks -= 1
+            # ISR completed, send ack to proxy with the interrupt mask
+            if self._proxy_isr_pending_acks:
+                int_mask = self._proxy_isr_pending_acks.pop(0)
+                self.proxy.ack_interrupt(int_mask)
 
         return not self.cpu.halted
     
@@ -177,7 +178,8 @@ class Emulator:
                 self.cpu._timer2_pending = True
             
             # Track that we owe the proxy an ack when this ISR completes
-            self._proxy_isr_pending_acks += 1
+            # Store the bitmask so we can send it in the ACK
+            self._proxy_isr_pending_acks.append(1 << int_num)
             
             if self.proxy.debug:
                 from uart_proxy import INT_NAMES
