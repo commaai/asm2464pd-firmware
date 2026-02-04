@@ -591,8 +591,10 @@ Examples:
   # First: cd clean && make flash-proxy
   python emu.py --proxy fw.bin
 
-  # Proxy mode with debug output
-  python emu.py --proxy --proxy-debug fw.bin
+  # Proxy mode with debug levels: 1=interrupts, 2=+xdata, 3=+sfr
+  python emu.py --proxy --proxy-debug fw.bin      # level 2 (default when flag used)
+  python emu.py --proxy --proxy-debug 1 fw.bin    # interrupts only
+  python emu.py --proxy --proxy-debug 3 fw.bin    # full debug including SFRs
 """
     )
     parser.add_argument('firmware', nargs='?', default='fw.bin',
@@ -638,8 +640,8 @@ Examples:
                         help='Use UART proxy to real hardware for MMIO (requires proxy firmware)')
     parser.add_argument('--proxy-device', type=str, default='ftdi://ftdi:230x/1',
                         help='FTDI device URL for proxy mode (default: ftdi://ftdi:230x/1)')
-    parser.add_argument('--proxy-debug', action='store_true',
-                        help='Enable debug output for proxy MMIO operations')
+    parser.add_argument('--proxy-debug', type=int, nargs='?', const=2, default=0,
+                        help='Debug level: 1=interrupts, 2=+xdata, 3=+sfr (default: 0=off, bare flag=2)')
 
     args = parser.parse_args()
 
@@ -660,7 +662,7 @@ Examples:
             from uart_proxy import UARTProxy
             print(f"Connecting to UART proxy at {args.proxy_device}...")
             proxy = UARTProxy(args.proxy_device)
-            proxy.debug = args.proxy_debug
+            proxy.debug = args.proxy_debug  # 0=off, 1=interrupts, 2=+xdata, 3=+sfr
             
             # Reset device and wait for proxy firmware to boot
             print("Resetting device...")

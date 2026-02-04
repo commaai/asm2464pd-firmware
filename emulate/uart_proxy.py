@@ -81,8 +81,8 @@ class UARTProxy:
         self.write_count = 0
         self.echo_count = 0
 
-        # Debug mode
-        self.debug = False
+        # Debug level: 0=off, 1=interrupts, 2=interrupts+xdata, 3=interrupts+xdata+sfr
+        self.debug = 0
 
         # Pending interrupts from hardware (queue of interrupt numbers)
         self.pending_interrupts = []
@@ -171,7 +171,7 @@ class UARTProxy:
             poll_count += 1
             elapsed = time.monotonic() - start
             if elapsed > self.timeout:
-                if self.debug:
+                if self.debug >= 1:
                     # Check if there's any data in buffer we might have missed
                     extra = self.ftdi.read_data(64)
                     print(f"[PROXY] _read_byte_raw timeout after {poll_count} polls, {elapsed:.3f}s, extra data: {extra.hex() if extra else 'none'}")
@@ -224,7 +224,7 @@ class UARTProxy:
                         self.pending_interrupts.append(i)
                         self.interrupt_count += 1
                 
-                if self.debug:
+                if self.debug >= 1:
                     int_names = [INT_NAMES.get(i, f'?{i}') for i in range(6) if int_mask & (1 << i)]
                     print(f"[PROXY] >>> INTERRUPT mask=0x{int_mask:02X} ({', '.join(int_names)}) - {len(self.pending_interrupts)} pending")
                 
@@ -261,7 +261,7 @@ class UARTProxy:
                 int_num = data[i + 2]
                 self.pending_interrupts.append(int_num)
                 self.interrupt_count += 1
-                if self.debug:
+                if self.debug >= 1:
                     int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
                     print(f"[PROXY] >>> INTERRUPT: {int_name}")
                 i += 3
@@ -299,7 +299,7 @@ class UARTProxy:
         ack = self._read_response(f"INT_ACK mask=0x{int_mask:02X}")
         if ack != 0x00:
             raise RuntimeError(f"INT_ACK failed: expected 0x00, got 0x{ack:02X}")
-        if self.debug:
+        if self.debug >= 1:
             print(f"[PROXY] <<< ACK interrupt mask=0x{int_mask:02X}")
 
     def _write_bytes(self, data: bytes):
@@ -333,13 +333,13 @@ class UARTProxy:
                 self.interrupt_count += 1
                 had_interrupts = True
                 
-                if self.debug:
+                if self.debug >= 1:
                     int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
                     print(f"[PROXY] >>> INTERRUPT (drained): {int_name}")
             else:
                 # Not an interrupt signal - this is unexpected data
                 # Put it back... we can't, so this is a problem
-                if self.debug:
+                if self.debug >= 1:
                     print(f"[PROXY] WARNING: Unexpected data in buffer: {data.hex()}")
                 break
         
@@ -377,7 +377,7 @@ class UARTProxy:
         result = self._read_response(f"ECHO 0x{value:02X}")
         self.echo_count += 1
 
-        if self.debug:
+        if self.debug >= 1:
             print(f"[PROXY] Echo 0x{value:02X} -> 0x{result:02X}")
 
         return result

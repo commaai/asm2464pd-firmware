@@ -746,6 +746,8 @@
 #define REG_FLASH_MODE          XDATA_REG8(0xC8AD)
 #define   FLASH_MODE_ENABLE       0x01  // Bit 0: Flash mode enable
 #define REG_FLASH_BUF_OFFSET    XDATA_REG16(0xC8AE)
+#define REG_FLASH_BUF_OFFSET_LO XDATA_REG8(0xC8AE)  /* Flash buffer offset low byte */
+#define REG_FLASH_BUF_OFFSET_HI XDATA_REG8(0xC8AF)  /* Flash buffer offset high byte */
 
 //=============================================================================
 // DMA Engine Registers (0xC8B0-0xC8D9)
@@ -779,7 +781,9 @@
 // CPU Mode/Control (0xCA00-0xCAFF)
 //=============================================================================
 #define REG_CPU_MODE_NEXT       XDATA_REG8(0xCA06)
+#define REG_CPU_CTRL_CA2E       XDATA_REG8(0xCA2E)  /* CPU control */
 #define REG_CPU_CTRL_CA60       XDATA_REG8(0xCA60)  /* CPU control CA60 */
+#define REG_CPU_CTRL_CA70       XDATA_REG8(0xCA70)  /* CPU control */
 #define REG_CPU_CTRL_CA81       XDATA_REG8(0xCA81)  /* CPU control CA81 - PCIe init */
 
 //=============================================================================
@@ -821,9 +825,12 @@
 #define REG_CPU_EXEC_STATUS_3   XDATA_REG8(0xCC35)  /* CPU execution status 3 */
 #define   CPU_EXEC_STATUS_3_BIT0  0x01  // Bit 0: Exec active flag
 #define   CPU_EXEC_STATUS_3_BIT2  0x04  // Bit 2: Exec status flag
+#define REG_CPU_CTRL_CC36       XDATA_REG8(0xCC36)  /* CPU control */
+#define REG_CPU_CTRL_CC37       XDATA_REG8(0xCC37)  /* CPU control */
 // Timer enable/disable control registers
 #define REG_TIMER_ENABLE_A      XDATA_REG8(0xCC38)  /* Timer enable control A */
 #define   TIMER_ENABLE_A_BIT      0x02              /* Bit 1: Timer enable */
+#define REG_TIMER_CTRL_CC39     XDATA_REG8(0xCC39)  /* Timer control */
 #define REG_TIMER_ENABLE_B      XDATA_REG8(0xCC3A)  /* Timer enable control B */
 #define   TIMER_ENABLE_B_BIT      0x02              /* Bit 1: Timer enable */
 #define   TIMER_ENABLE_B_BITS56   0x60              /* Bits 5-6: Timer extended mode */
@@ -1090,6 +1097,10 @@
 #define REG_SYS_CTRL_E763       XDATA_REG8(0xE763)
 #define REG_PHY_TIMER_CTRL_E764 XDATA_REG8(0xE764)  /* PHY timer control */
 #define REG_SYS_CTRL_E765       XDATA_REG8(0xE765)  /* System control E765 */
+#define REG_SYS_CTRL_E76C       XDATA_REG8(0xE76C)  /* System control */
+#define REG_SYS_CTRL_E774       XDATA_REG8(0xE774)  /* System control */
+#define REG_SYS_CTRL_E77C       XDATA_REG8(0xE77C)  /* System control */
+#define REG_SYS_CTRL_E780       XDATA_REG8(0xE780)  /* System control */
 #define REG_FLASH_READY_STATUS  XDATA_REG8(0xE795)
 #define REG_PHY_LINK_CTRL       XDATA_REG8(0xE7E3)
 #define   PHY_LINK_CTRL_BIT6      0x40  // Bit 6: PHY link control flag

@@ -9,9 +9,47 @@ RAM (XDATA < 0x6000) is handled by the memory system, not this module.
 from typing import TYPE_CHECKING, Dict, Set, Callable, Optional
 from dataclasses import dataclass, field
 from enum import IntEnum
+import re
+import os
 
 if TYPE_CHECKING:
     from memory import Memory
+
+# =============================================================================
+# Register Name Lookup
+# =============================================================================
+# Parse registers.h to build addr -> name lookup table
+
+_REGISTER_NAMES: Dict[int, str] = {}
+
+def _load_register_names():
+    """Parse registers.h and build address-to-name lookup table."""
+    global _REGISTER_NAMES
+    if _REGISTER_NAMES:
+        return  # Already loaded
+    
+    # Find registers.h relative to this file
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    registers_h = os.path.join(this_dir, '..', 'src', 'include', 'registers.h')
+    
+    if not os.path.exists(registers_h):
+        return
+    
+    # Pattern: #define REG_NAME  XDATA_REG8(0xADDR) or similar
+    pattern = re.compile(r'#define\s+(REG_\w+)\s+XDATA_REG\d+\((0x[0-9A-Fa-f]+)\)')
+    
+    with open(registers_h, 'r') as f:
+        for line in f:
+            match = pattern.search(line)
+            if match:
+                name = match.group(1)
+                addr = int(match.group(2), 16)
+                _REGISTER_NAMES[addr] = name
+
+def get_register_name(addr: int) -> str:
+    """Get register name for address, or empty string if unknown."""
+    _load_register_names()
+    return _REGISTER_NAMES.get(addr, "")
 
 
 class USBState(IntEnum):
@@ -3059,10 +3097,14 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
         """Create a read hook that proxies to real hardware."""
         def hook(addr):
             value = proxy_ref.read(addr)
-            if proxy_ref.debug:
+            if proxy_ref.debug >= 2:
                 pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
                 cyc = hw_ref.cycles
-                print(f"[{cyc:8d}] PC=0x{pc:04X} Read  0x{addr:04X} = 0x{value:02X}")
+                reg_name = get_register_name(addr)
+                if reg_name:
+                    print(f"[{cyc:8d}] PC=0x{pc:04X} Read  0x{addr:04X} = 0x{value:02X}  {reg_name}")
+                else:
+                    print(f"[{cyc:8d}] PC=0x{pc:04X} Read  0x{addr:04X} = 0x{value:02X}")
             return value
         return hook
 
@@ -3070,10 +3112,14 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
         """Create a write hook that proxies to real hardware."""
         def hook(addr, value):
             proxy_ref.write(addr, value)
-            if proxy_ref.debug:
+            if proxy_ref.debug >= 2:
                 pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
                 cyc = hw_ref.cycles
-                print(f"[{cyc:8d}] PC=0x{pc:04X} Write 0x{addr:04X} = 0x{value:02X}")
+                reg_name = get_register_name(addr)
+                if reg_name:
+                    print(f"[{cyc:8d}] PC=0x{pc:04X} Write 0x{addr:04X} = 0x{value:02X}  {reg_name}")
+                else:
+                    print(f"[{cyc:8d}] PC=0x{pc:04X} Write 0x{addr:04X} = 0x{value:02X}")
         return hook
 
     # Select hooks based on proxy mode
@@ -3130,7 +3176,7 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
             """Create SFR write hook that proxies to real hardware."""
             def hook(addr, value):
                 proxy_ref.sfr_write(sfr_addr, value)
-                if proxy_ref.debug:
+                if proxy_ref.debug >= 3:
                     pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
                     cyc = hw_ref.cycles
                     print(f"[{cyc:8d}] PC=0x{pc:04X} SFR Write 0x{sfr_addr:02X} = 0x{value:02X}")
@@ -3140,7 +3186,7 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
             """Create SFR read hook that proxies to real hardware."""
             def hook(addr):
                 value = proxy_ref.sfr_read(sfr_addr)
-                if proxy_ref.debug:
+                if proxy_ref.debug >= 3:
                     pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
                     cyc = hw_ref.cycles
                     print(f"[{cyc:8d}] PC=0x{pc:04X} SFR Read  0x{sfr_addr:02X} = 0x{value:02X}")
