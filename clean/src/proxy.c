@@ -170,6 +170,11 @@ void main(void)
     uint8_t cmd, val, addr_hi, addr_lo, mask;
     uint16_t addr;
 
+    // global init doesn't work, need to do it here
+    pending_int_mask = 0;
+    sent_int_mask = 0;
+    shadow_ie = 0;
+
     /* Disable parity to get 8N1 */
     REG_UART_LCR &= 0xF7;
 
