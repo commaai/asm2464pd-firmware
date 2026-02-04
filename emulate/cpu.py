@@ -281,8 +281,6 @@ class CPU8051:
         if ie & 0x04:  # EX1 enabled
             if hasattr(self, '_ext1_pending') and self._ext1_pending:
                 self._ext1_pending = False
-                if self.proxy_mode:
-                    print(f"[CPU] Servicing INT1, jumping to vector 0x0013, in_interrupt={self.in_interrupt}")
                 self._trigger_interrupt(2)  # EX1 interrupt vector at 0x13
 
     def _trigger_interrupt(self, vector: int):

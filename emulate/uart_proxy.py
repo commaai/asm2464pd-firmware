@@ -234,6 +234,11 @@ class UARTProxy:
             # Verify complement
             expected_complement = (~byte0) & 0xFF
             if byte1 != expected_complement:
+                # Check if this looks like a device reset (seeing 'PK' hello)
+                if byte0 == ord('%') or byte0 == ord('P') or byte1 == ord('P') or byte1 == ord('K'):
+                    raise RuntimeError(f"Device appears to have reset! got 0x{byte0:02X} 0x{byte1:02X} "
+                                       f"('{chr(byte0) if 32 <= byte0 < 127 else '?'}'"
+                                       f"'{chr(byte1) if 32 <= byte1 < 127 else '?'}')")
                 raise RuntimeError(f"Response verification failed: got 0x{byte0:02X} 0x{byte1:02X}, "
                                    f"expected complement 0x{expected_complement:02X}")
             
@@ -347,28 +352,15 @@ class UARTProxy:
         With the new protocol, interrupt signals come AFTER command responses:
         1. Command response: <val> <~val>
         2. If interrupts pending: 0xFE 0xFE <bitmask>
-        3. Proxy waits for ack (0xFE)
         
         This does a non-blocking check and queues any interrupts found.
-        """
-        # Small delay to let interrupt signal arrive if there is one
-        import time
-        time.sleep(0.001)
         
-        # Non-blocking read - check if there's data
-        data = self.ftdi.read_data(3)
-        if len(data) >= 3 and data[0] == INT_SIGNAL and data[1] == INT_SIGNAL:
-            int_mask = data[2]
-            
-            # Queue each interrupt that's set in the bitmask
-            for i in range(6):
-                if int_mask & (1 << i):
-                    self.pending_interrupts.append(i)
-                    self.interrupt_count += 1
-            
-            if self.debug:
-                int_names = [INT_NAMES.get(i, f'?{i}') for i in range(6) if int_mask & (1 << i)]
-                print(f"[PROXY] >>> INTERRUPT mask=0x{int_mask:02X} ({', '.join(int_names)}) - {len(self.pending_interrupts)} pending")
+        IMPORTANT: We must not consume bytes that aren't interrupt signals,
+        as they could be from the next command's response.
+        """
+        # Don't do anything - interrupt signals are handled inline in _read_response
+        # This function was causing sync issues by consuming bytes non-blocking
+        pass
 
     def echo(self, value: int) -> int:
         """
