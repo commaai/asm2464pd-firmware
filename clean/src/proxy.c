@@ -185,7 +185,12 @@ void main(void)
 
     /* Proxy loop */
     while (1) {
-        SFR_IE = shadow_ie;
+        /* Enable interrupts, but mask out any currently being handled by emulator.
+         * This prevents the same interrupt from firing again before emulator ACKs it.
+         * sent_int_mask bits: 0=INT0, 1=T0, 2=INT1, 3=T1, 4=Serial, 5=T2
+         * IE bits: 0=EX0, 1=ET0, 2=EX1, 3=ET1, 4=ES, 5=ET2, 7=EA
+         * They match! So we can directly mask them. */
+        SFR_IE = shadow_ie & ~sent_int_mask;
 
         /* Wait for UART data - interrupts can fire here */
         while (REG_UART_RFBR == 0);
