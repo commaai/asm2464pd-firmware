@@ -292,7 +292,30 @@
 #define   USB_PERIPH_BULK_REQ     0x08  // Bit 3: Bulk transfer request (vendor cmd path)
 #define   USB_PERIPH_VENDOR_CMD   0x20  // Bit 5: Vendor command handler path
 #define   USB_PERIPH_SUSPENDED    0x40  // Bit 6: Peripheral suspended / USB init
-#define REG_USB_PHY_STATUS_9105 XDATA_REG8(0x9105)  /* USB PHY status check (0xFF = active) */
+
+/*
+ * USB Setup Packet Registers (0x9104-0x910B)
+ * Hardware writes the 8-byte USB setup packet here when received.
+ * Read at PC=0xA5F5 in ISR during control transfer setup phase.
+ * Different from 0x9E00-0x9E07 which is the response buffer.
+ *
+ * Standard USB Setup Packet Format:
+ *   Byte 0 (bmRequestType): Direction(1) | Type(2) | Recipient(5)
+ *   Byte 1 (bRequest): Request code (GET_DESCRIPTOR=0x06, SET_ADDRESS=0x05, etc.)
+ *   Bytes 2-3 (wValue): Request-specific (descriptor type/index for GET_DESCRIPTOR)
+ *   Bytes 4-5 (wIndex): Request-specific (language ID for string descriptors)
+ *   Bytes 6-7 (wLength): Number of bytes to transfer
+ */
+#define REG_USB_SETUP_BMREQ     XDATA_REG8(0x9104)  /* bmRequestType */
+#define REG_USB_SETUP_BREQ      XDATA_REG8(0x9105)  /* bRequest */
+#define REG_USB_SETUP_WVAL_L    XDATA_REG8(0x9106)  /* wValue low (descriptor index) */
+#define REG_USB_SETUP_WVAL_H    XDATA_REG8(0x9107)  /* wValue high (descriptor type) */
+#define REG_USB_SETUP_WIDX_L    XDATA_REG8(0x9108)  /* wIndex low */
+#define REG_USB_SETUP_WIDX_H    XDATA_REG8(0x9109)  /* wIndex high */
+#define REG_USB_SETUP_WLEN_L    XDATA_REG8(0x910A)  /* wLength low */
+#define REG_USB_SETUP_WLEN_H    XDATA_REG8(0x910B)  /* wLength high */
+
+#define REG_USB_PHY_STATUS_9105 XDATA_REG8(0x9105)  /* USB PHY status check (0xFF = active) - alias for SETUP_BREQ */
 #define REG_USB_STAT_EXT_L      XDATA_REG8(0x910D)
 #define REG_USB_STAT_EXT_H      XDATA_REG8(0x910E)
 /* USB CDB (Command Descriptor Block) registers for vendor commands */
