@@ -65,9 +65,26 @@ class USBGPUDebug:
     time.sleep(0.5)
     self.ftdi.set_cbus_gpio(self.CBUS_BOOTLOADER if bootloader else 0)
     if bootloader:
-      time.sleep(1)
+      self._wait_for_bootloader()
       self.ftdi.set_cbus_gpio(0)
     print("Device reset complete.")
+
+  def _wait_for_bootloader(self, timeout=10.0):
+    """Wait for the ASM2464 bootloader to enumerate on USB."""
+    import usb.core
+    SUPPORTED_CONTROLLERS = [
+      (0x174C, 0x2464),
+      (0x174C, 0x2463),
+      (0xADD1, 0x0001),
+    ]
+    start = time.time()
+    while time.time() - start < timeout:
+      for vendor, device in SUPPORTED_CONTROLLERS:
+        dev = usb.core.find(idVendor=vendor, idProduct=device)
+        if dev is not None:
+          return  # Found it!
+      time.sleep(0.1)
+    raise RuntimeError(f"Bootloader did not enumerate within {timeout}s")
 
   def read(self) -> bytes:
     return self.ftdi.read_data(256).decode('utf-8', errors='replace')

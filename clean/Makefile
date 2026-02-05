@@ -112,7 +112,6 @@ wrapped: $(BUILD_DIR)/firmware_wrapped.bin
 flash: $(BUILD_DIR)/firmware_wrapped.bin
 	@echo "Resetting to bootloader..."
 	@python3 ../ftdi_debug.py -bn
-	@sleep 0.5
 	@echo "Flashing firmware to device..."
 	@python3 ../flash.py $<
 	@echo "Resetting device..."
@@ -181,7 +180,6 @@ proxy: $(BUILD_DIR)/proxy_wrapped.bin
 flash-proxy: $(BUILD_DIR)/proxy_wrapped.bin
 	@echo "Resetting to bootloader..."
 	@python3 ../ftdi_debug.py -bn
-	@sleep 0.5
 	@echo "Flashing proxy firmware to device..."
 	@python3 ../flash.py $<
 	@echo "Resetting device..."
