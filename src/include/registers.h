@@ -211,27 +211,59 @@
 
 /*
  * USB Control Transfer Phase Register (0x9091)
- * Two-phase control transfer handling at ISR 0xCDE7:
- *   Bit 0 (SETUP): Setup packet received - triggers 0xA5A6 (setup handler)
- *   Bit 1 (DATA):  Data phase - triggers 0xD088 (DMA descriptor response)
- * Firmware loops writing 0x01, hardware clears bit 0 when ready for data phase.
- * Bit 1 is then SET to indicate data phase, firmware calls DMA trigger.
+ * 
+ * Controls USB control transfer state machine. Read to check current phase,
+ * write to acknowledge/advance phase.
+ *
+ * Control Transfer Sequence (verified working):
+ * 
+ * 1. SETUP Phase:
+ *    - Hardware sets bit 0 when SETUP packet received
+ *    - Read 0x9002, write back; read 0x9220
+ *    - Write 0x01 to acknowledge setup phase
+ *    - Read setup packet from 0x9104-0x910B
+ *
+ * 2. DATA Phase (GET_DESCRIPTOR):
+ *    - Poll until bit 3 (0x08) is set = data phase ready
+ *    - Write descriptor to 0x9E00+ buffer
+ *    - Set length: 0x9003=0, 0x9004=len
+ *    - Write 0x9092=0x04 to trigger DMA send
+ *    - Poll 0x9092 until 0 (DMA complete)
+ *    - Write 0x08 to acknowledge data phase
+ *
+ * 3. STATUS Phase:
+ *    - Poll until bit 4 (0x10) is set = status phase ready
+ *    - Write 0x9092=0x08 to complete status
+ *    - Write 0x10 to acknowledge status phase
+ *
+ * For no-data requests (SET_ADDRESS, SET_CONFIG):
+ *    - Skip data phase, go directly to status phase
  */
 #define REG_USB_CTRL_PHASE      XDATA_REG8(0x9091)
-#define   USB_CTRL_PHASE_SETUP    0x01  // Bit 0: Setup phase active (triggers 0xA5A6)
-#define   USB_CTRL_PHASE_DATA     0x02  // Bit 1: Data phase active (triggers 0xD088)
-#define   USB_CTRL_PHASE_STATUS   0x04  // Bit 2: Status phase active
-#define   USB_CTRL_PHASE_STALL    0x08  // Bit 3: Endpoint stalled
-#define   USB_CTRL_PHASE_NAK      0x10  // Bit 4: NAK status
+#define   USB_CTRL_PHASE_SETUP    0x01  // Bit 0: Setup packet received
+#define   USB_CTRL_PHASE_DATA     0x08  // Bit 3: Data phase ready (poll for this)
+#define   USB_CTRL_PHASE_STATUS   0x10  // Bit 4: Status phase ready (poll for this)
 
 /*
- * USB DMA Trigger Register (0x9092)
- * Write 0x01 to trigger DMA transfer of descriptor from ROM to USB buffer.
- * The source address is set via REG_USB_EP_BUF_HI/LO (0x905B/0x905C).
- * The length is set via REG_USB_EP0_LEN_L (0x9004).
+ * USB EP0 DMA Control Register (0x9092)
+ * 
+ * Controls DMA transfers for EP0 control transfers.
+ * Write to trigger operations, reads back 0 when complete.
+ *
+ * Values:
+ *   0x04 = Start DMA send (IN transfer - device to host)
+ *          Used for GET_DESCRIPTOR data phase.
+ *          Set 0x9003=0, 0x9004=length first, then write 0x04.
+ *          Poll until reads 0 for completion.
+ *
+ *   0x08 = Complete status phase
+ *          Write after status phase ready (0x9091 & 0x10).
+ *          For IN transfers: host sends ZLP, we ACK.
+ *          For OUT transfers: we send ZLP.
  */
 #define REG_USB_DMA_TRIGGER     XDATA_REG8(0x9092)
-#define   USB_DMA_TRIGGER_START   0x01  // Bit 0: Start DMA transfer
+#define   USB_DMA_SEND            0x04  // Trigger DMA send (IN data phase)
+#define   USB_DMA_STATUS_COMPLETE 0x08  // Complete status phase
 
 /*
  * USB Endpoint Config 1 (0x9093)
