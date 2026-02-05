@@ -215,7 +215,7 @@ class UARTProxy:
                 
                 if self.debug >= 1:
                     int_names = [INT_NAMES.get(i, f'?{i}') for i in range(6) if int_mask & (1 << i)]
-                    print(f"[PROXY] >>> INTERRUPT mask=0x{int_mask:02X} ({', '.join(int_names)}) - {len(self.pending_interrupts)} pending")
+                    print(f"[PROXY] >>> INTERRUPT mask=0x{int_mask:02X} ({', '.join(int_names)})")
                 
                 # Continue to read actual response
                 continue
@@ -258,8 +258,6 @@ class UARTProxy:
         ack = self._read_response(f"INT_ACK mask=0x{int_mask:02X}")
         if ack != 0x00:
             raise RuntimeError(f"INT_ACK failed: expected 0x00, got 0x{ack:02X}")
-        if self.debug >= 1:
-            print(f"[PROXY] <<< ACK interrupt mask=0x{int_mask:02X}")
 
     def _write_bytes(self, data: bytes):
         """Write bytes to UART."""
