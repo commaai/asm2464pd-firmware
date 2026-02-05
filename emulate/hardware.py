@@ -3026,7 +3026,7 @@ class HardwareState:
 
 
 
-def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy' = None):
+def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy' = None, proxy_mask: list = None):
     """
     Register hardware hooks with memory system.
     Only hooks hardware register addresses (>= 0x6000).
@@ -3036,7 +3036,11 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
         hw: HardwareState for emulation mode
         proxy: Optional UARTProxy for real hardware mode
                If provided, MMIO reads/writes go to real hardware instead of emulation
+        proxy_mask: List of (start, end) tuples for address ranges to emulate instead of proxy
+                    Used to discover minimum set of registers that need real hardware
     """
+    if proxy_mask is None:
+        proxy_mask = []
 
     # Hardware register ranges (all >= 0x6000)
     # NOTE: 0x7000-0x7FFF is flash buffer RAM, NOT hardware registers
@@ -3151,7 +3155,17 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
             # CPU interrupt/DMA control - may cause reset when written via proxy
             if addr == 0xCC81:
                 return True
+            # Check user-specified mask ranges
+            for mask_start, mask_end in proxy_mask:
+                if mask_start <= addr < mask_end:
+                    return True
             return False
+        
+        # Print mask info if any
+        if proxy_mask:
+            print(f"[HW] Proxy mask (emulated instead of proxied):")
+            for start, end in proxy_mask:
+                print(f"[HW]   0x{start:04X}-0x{end:04X}")
         
         for start, end in mmio_ranges:
             for addr in range(start, end):

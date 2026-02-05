@@ -38,7 +38,7 @@ class Emulator:
 
     def __init__(self, trace: bool = False, log_hw: bool = False,
                  log_uart: bool = True, usb_delay: int = 200000,
-                 proxy: 'UARTProxy' = None):
+                 proxy: 'UARTProxy' = None, proxy_mask: list = None):
         self.memory = Memory()
         self.cpu = CPU8051(
             read_code=self.memory.read_code,
@@ -64,7 +64,7 @@ class Emulator:
             self.hw.proxy_mode = True
             self.cpu.proxy_mode = True
         self.hw._memory = self.memory  # Give hardware access to XDATA for USB descriptors
-        create_hardware_hooks(self.memory, self.hw, proxy=proxy)
+        create_hardware_hooks(self.memory, self.hw, proxy=proxy, proxy_mask=proxy_mask or [])
         # Store CPU reference for PC tracing in hardware callbacks
         self.hw._cpu_ref = self.cpu
 
@@ -642,6 +642,8 @@ Examples:
                         help='FTDI device URL for proxy mode (default: ftdi://ftdi:230x/1)')
     parser.add_argument('--proxy-debug', type=int, nargs='?', const=2, default=0,
                         help='Debug level: 1=interrupts, 2=+xdata, 3=+sfr (default: 0=off, bare flag=2)')
+    parser.add_argument('--proxy-mask', type=str, action='append', default=[],
+                        help='MMIO range to emulate instead of proxy (e.g. 0x9000-0x9100 or 0x9000). Can repeat.')
 
     args = parser.parse_args()
 
@@ -686,10 +688,20 @@ Examples:
             print("  2. Proxy firmware is flashed: cd clean && make flash-proxy")
             sys.exit(1)
 
+    # Parse proxy mask ranges
+    proxy_mask = []
+    for mask_str in args.proxy_mask:
+        if '-' in mask_str:
+            start, end = mask_str.split('-')
+            proxy_mask.append((int(start, 16), int(end, 16)))
+        else:
+            addr = int(mask_str, 16)
+            proxy_mask.append((addr, addr + 1))
+    
     # Create emulator
     emu = Emulator(trace=args.trace, log_hw=args.log_hw,
                    log_uart=not args.no_uart_log, usb_delay=args.usb_delay,
-                   proxy=proxy)
+                   proxy=proxy, proxy_mask=proxy_mask)
 
     # Load firmware
     emu.load_firmware(str(fw_path))
