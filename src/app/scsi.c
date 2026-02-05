@@ -945,11 +945,11 @@ void uart_print_hex_byte(uint8_t val)
 
     /* Output high nibble */
     ch = (hi < 10) ? '0' : '7';
-    REG_UART_THR_RBR = ch + hi;
+    REG_UART_THR = ch + hi;
 
     /* Output low nibble */
     ch = (lo < 10) ? '0' : '7';
-    REG_UART_THR_RBR = ch + lo;
+    REG_UART_THR = ch + lo;
 }
 
 /*
@@ -1649,11 +1649,11 @@ void scsi_uart_print_hex(uint8_t value)
 
     /* Output high nibble */
     base = (hi_nibble < 10) ? '0' : ('A' - 10);
-    REG_UART_THR_RBR = base + hi_nibble;
+    REG_UART_THR = base + hi_nibble;
 
     /* Output low nibble */
     base = (lo_nibble < 10) ? '0' : ('A' - 10);
-    REG_UART_THR_RBR = base + lo_nibble;
+    REG_UART_THR = base + lo_nibble;
 }
 
 /*
@@ -1664,7 +1664,7 @@ void scsi_uart_print_hex(uint8_t value)
  */
 void scsi_uart_print_digit(uint8_t digit)
 {
-    REG_UART_THR_RBR = '0' + digit;
+    REG_UART_THR = '0' + digit;
 }
 
 /*
