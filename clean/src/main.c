@@ -4,13 +4,16 @@
  * Initializes UART (disables parity) and prints "hello" in a loop
  */
 
-/* Standard integer types */
-typedef unsigned char uint8_t;
-typedef unsigned int uint16_t;
+#include "types.h"
+#include "registers.h"
 
-/* UART registers */
-#define REG_UART_THR    (*(__xdata volatile uint8_t *)0xC001)  /* TX data */
-#define REG_UART_LCR    (*(__xdata volatile uint8_t *)0xC007)  /* Line Control Register */
+/* ISR stubs (required by crt0) */
+void int0_isr(void) __interrupt(0) {}
+void timer0_isr(void) __interrupt(1) {}
+void int1_isr(void) __interrupt(2) {}
+void timer1_isr(void) __interrupt(3) {}
+void serial_isr(void) __interrupt(4) {}
+void timer2_isr(void) __interrupt(5) {}
 
 /*
  * uart_init - Initialize UART (disable parity)
