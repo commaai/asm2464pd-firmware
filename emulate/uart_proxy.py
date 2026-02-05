@@ -164,23 +164,20 @@ class UARTProxy:
     def __exit__(self, *args):
         self.close()
 
-    def _read_byte_raw(self) -> int:
-        """Read one byte from UART with timeout (no interrupt handling)."""
+    def _read_bytes(self, n: int, context: str = None) -> bytes:
+        """Read exactly n bytes from UART with timeout."""
         start = time.monotonic()
-        poll_count = 0
-        while True:
-            data = self.ftdi.read_data(1)
+        result = bytearray()
+        while len(result) < n:
+            data = self.ftdi.read_data(n - len(result))
             if data:
-                return data[0]
-            poll_count += 1
-            elapsed = time.monotonic() - start
-            if elapsed > self.timeout:
-                if self.debug >= 1:
-                    # Check if there's any data in buffer we might have missed
-                    extra = self.ftdi.read_data(64)
-                    print(f"[PROXY] _read_byte_raw timeout after {poll_count} polls, {elapsed:.3f}s, extra data: {extra.hex() if extra else 'none'}")
-                raise TimeoutError(f"UART read timeout after {self.timeout}s")
-            time.sleep(0.00001)  # 10us poll interval
+                result.extend(data)
+            elif time.monotonic() - start > self.timeout:
+                ctx = f" ({context})" if context else ""
+                raise TimeoutError(f"UART read timeout after {self.timeout}s, got {len(result)}/{n} bytes{ctx}")
+            else:
+                time.sleep(0.00001)  # 10us poll interval
+        return bytes(result)
 
     def _read_response(self, context: str = None) -> int:
         """
@@ -188,7 +185,7 @@ class UARTProxy:
         
         Protocol:
           - Normal response: <value> <~value>
-          - Interrupt signal: 0xFE 0xFE <int_num>
+          - Interrupt signal: 0x7E <int_mask> (mask is 0x00-0x3F)
         
         Args:
             context: Description of what operation we're waiting for (for debug)
@@ -198,21 +195,11 @@ class UARTProxy:
             
         When an interrupt signal is received:
           - The interrupt is queued in pending_interrupts
-          - We continue reading for the actual response (the command was already
-            sent and the proxy's ISR handler will process it and send the response)
+          - We continue reading for the actual response
         """
         while True:
-            try:
-                byte0 = self._read_byte_raw()
-            except TimeoutError:
-                ctx = f" (waiting for: {context})" if context else ""
-                raise TimeoutError(f"UART read timeout waiting for response byte 0{ctx}")
-            
-            try:
-                byte1 = self._read_byte_raw()
-            except TimeoutError:
-                ctx = f" (waiting for: {context})" if context else ""
-                raise TimeoutError(f"UART read timeout waiting for response byte 1 (got byte0=0x{byte0:02X}){ctx}")
+            data = self._read_bytes(2, context)
+            byte0, byte1 = data[0], data[1]
             
             # Check for interrupt signal (0x7E followed by int_mask 0x00-0x3F)
             # byte1 is the int_mask, which can never be 0x81 (~0x7E)
