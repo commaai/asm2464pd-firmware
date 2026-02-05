@@ -3181,9 +3181,10 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
             0x8D,  # TH1 - Timer 1 High
         ]
         
-        def make_sfr_proxy_write_hook(proxy_ref, sfr_addr, hw_ref):
-            """Create SFR write hook that proxies to real hardware."""
+        def make_sfr_proxy_write_hook(proxy_ref, sfr_addr, hw_ref, cache):
+            """Create SFR write hook that proxies to real hardware and caches value."""
             def hook(addr, value):
+                cache[sfr_addr] = value  # Cache the written value
                 proxy_ref.sfr_write(sfr_addr, value)
                 if proxy_ref.debug >= 3:
                     pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
@@ -3191,20 +3192,24 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
                     print(f"[{cyc:8d}] PC=0x{pc:04X} SFR Write 0x{sfr_addr:02X} = 0x{value:02X}")
             return hook
         
-        def make_sfr_proxy_read_hook(proxy_ref, sfr_addr, hw_ref):
-            """Create SFR read hook that proxies to real hardware."""
+        # Cache for SFR values - return last written value instead of proxying reads
+        sfr_cache = {}
+        
+        def make_sfr_proxy_read_hook(proxy_ref, sfr_addr, hw_ref, cache):
+            """Create SFR read hook that returns cached value (no proxy read needed)."""
             def hook(addr):
-                value = proxy_ref.sfr_read(sfr_addr)
+                # Return cached value (default 0 if never written)
+                value = cache.get(sfr_addr, 0)
                 if proxy_ref.debug >= 3:
                     pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
                     cyc = hw_ref.cycles
-                    print(f"[{cyc:8d}] PC=0x{pc:04X} SFR Read  0x{sfr_addr:02X} = 0x{value:02X}")
+                    print(f"[{cyc:8d}] PC=0x{pc:04X} SFR Read  0x{sfr_addr:02X} = 0x{value:02X} (cached)")
                 return value
             return hook
         
         for sfr_addr in proxy_sfrs:
-            memory.sfr_write_hooks[sfr_addr] = make_sfr_proxy_write_hook(proxy, sfr_addr, hw)
-            memory.sfr_read_hooks[sfr_addr] = make_sfr_proxy_read_hook(proxy, sfr_addr, hw)
+            memory.sfr_write_hooks[sfr_addr] = make_sfr_proxy_write_hook(proxy, sfr_addr, hw, sfr_cache)
+            memory.sfr_read_hooks[sfr_addr] = make_sfr_proxy_read_hook(proxy, sfr_addr, hw, sfr_cache)
         
         print(f"[HW] Proxying {len(proxy_sfrs)} SFRs to real hardware")
     else:

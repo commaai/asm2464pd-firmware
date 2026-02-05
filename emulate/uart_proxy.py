@@ -31,8 +31,10 @@ CMD_SFR_READ = 0x03
 CMD_SFR_WRITE = 0x04
 CMD_INT_ACK = 0x05  # Emulator finished ISR (RETI)
 
-# Interrupt signal - double 0xFE prefix
-INT_SIGNAL = 0xFE
+# Interrupt signal - 0x7E followed by int_mask (0x00-0x3F)
+# This can never be confused with a valid response since ~0x7E = 0x81,
+# and int_mask high bits are never set
+INT_SIGNAL = 0x7E
 
 # Interrupt numbers (matches 8051 interrupt vectors)
 INT_NAMES = {
@@ -100,6 +102,8 @@ class UARTProxy:
         self.ftdi.open_from_url(self.device_url)
         self.ftdi.set_baudrate(921600)
         self.ftdi.set_line_property(8, 1, 'N')  # 8N1, no parity
+        # Reduce latency timer for faster response (default is 16ms, minimum is 1ms)
+        self.ftdi.set_latency_timer(1)
 
         # Setup CBUS GPIO for reset control (same as ftdi_debug.py)
         # CBUS1 = GPIO (bootloader), CBUS2 = GPIO (reset)
@@ -176,7 +180,7 @@ class UARTProxy:
                     extra = self.ftdi.read_data(64)
                     print(f"[PROXY] _read_byte_raw timeout after {poll_count} polls, {elapsed:.3f}s, extra data: {extra.hex() if extra else 'none'}")
                 raise TimeoutError(f"UART read timeout after {self.timeout}s")
-            time.sleep(0.0001)  # 100us poll interval
+            time.sleep(0.00001)  # 10us poll interval
 
     def _read_response(self, context: str = None) -> int:
         """
@@ -210,13 +214,11 @@ class UARTProxy:
                 ctx = f" (waiting for: {context})" if context else ""
                 raise TimeoutError(f"UART read timeout waiting for response byte 1 (got byte0=0x{byte0:02X}){ctx}")
             
-            # Check for interrupt signal (0xFE 0xFE)
-            # With new protocol, interrupt signal comes AFTER response, so this
-            # shouldn't normally happen during _read_response. But we handle it
-            # anyway for robustness - queue the interrupts and continue reading.
-            if byte0 == INT_SIGNAL and byte1 == INT_SIGNAL:
-                # Third byte is bitmask of pending interrupts
-                int_mask = self._read_byte_raw()
+            # Check for interrupt signal (0x7E followed by int_mask 0x00-0x3F)
+            # byte1 is the int_mask, which can never be 0x81 (~0x7E)
+            if byte0 == INT_SIGNAL and (byte1 & 0xC0) == 0:
+                # byte1 is the interrupt bitmask (0x00-0x3F)
+                int_mask = byte1
                 
                 # Queue each interrupt that's set in the bitmask
                 for i in range(6):
@@ -243,36 +245,6 @@ class UARTProxy:
                                    f"expected complement 0x{expected_complement:02X}")
             
             return byte0
-    
-    def check_interrupts(self) -> list:
-        """
-        Check for and return any pending interrupts (non-blocking).
-        
-        Returns:
-            List of interrupt numbers that fired (empty if none)
-        """
-        # Do a non-blocking read to check for interrupt signals
-        data = self.ftdi.read_data(64)  # Read any available data
-        
-        i = 0
-        while i < len(data):
-            # Look for interrupt pattern: 0xFE 0xFE <int_num>
-            if i + 2 < len(data) and data[i] == INT_SIGNAL and data[i + 1] == INT_SIGNAL:
-                int_num = data[i + 2]
-                self.pending_interrupts.append(int_num)
-                self.interrupt_count += 1
-                if self.debug >= 1:
-                    int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
-                    print(f"[PROXY] >>> INTERRUPT: {int_name}")
-                i += 3
-            else:
-                # Unexpected data - might be leftover from previous operation
-                i += 1
-        
-        # Return and clear pending interrupts
-        interrupts = self.pending_interrupts
-        self.pending_interrupts = []
-        return interrupts
     
     def get_pending_interrupt(self) -> Optional[int]:
         """
@@ -305,62 +277,6 @@ class UARTProxy:
     def _write_bytes(self, data: bytes):
         """Write bytes to UART."""
         self.ftdi.write_data(data)
-
-    def _drain_interrupt_signals(self):
-        """
-        Check for and drain any pending interrupt signals from the RX buffer.
-        
-        This should be called before sending a new command to handle the case
-        where an interrupt fired between the previous response and our new command.
-        
-        Returns:
-            True if interrupts were drained (caller should handle them)
-        """
-        had_interrupts = False
-        
-        while True:
-            # Non-blocking peek at available data
-            data = self.ftdi.read_data(3)  # Need at least 3 bytes for interrupt signal
-            if len(data) < 3:
-                # Not enough data - put it back by... well, we can't put it back
-                # So we need a different approach
-                break
-            
-            if data[0] == INT_SIGNAL and data[1] == INT_SIGNAL:
-                # Interrupt signal
-                int_num = data[2]
-                self.pending_interrupts.append(int_num)
-                self.interrupt_count += 1
-                had_interrupts = True
-                
-                if self.debug >= 1:
-                    int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
-                    print(f"[PROXY] >>> INTERRUPT (drained): {int_name}")
-            else:
-                # Not an interrupt signal - this is unexpected data
-                # Put it back... we can't, so this is a problem
-                if self.debug >= 1:
-                    print(f"[PROXY] WARNING: Unexpected data in buffer: {data.hex()}")
-                break
-        
-        return had_interrupts
-
-    def _check_for_interrupt_signal(self):
-        """
-        Check if proxy sent an interrupt signal after the response.
-        
-        With the new protocol, interrupt signals come AFTER command responses:
-        1. Command response: <val> <~val>
-        2. If interrupts pending: 0xFE 0xFE <bitmask>
-        
-        This does a non-blocking check and queues any interrupts found.
-        
-        IMPORTANT: We must not consume bytes that aren't interrupt signals,
-        as they could be from the next command's response.
-        """
-        # Don't do anything - interrupt signals are handled inline in _read_response
-        # This function was causing sync issues by consuming bytes non-blocking
-        pass
 
     def echo(self, value: int) -> int:
         """
@@ -396,7 +312,6 @@ class UARTProxy:
         self._last_addr = addr  # Track for debugging
         self._write_bytes(bytes([CMD_READ, addr >> 8, addr & 0xFF]))
         value = self._read_response(f"READ 0x{addr:04X}")
-        self._check_for_interrupt_signal()
         self.read_count += 1
         # Debug print handled by caller (hardware.py hook) which has PC context
         return value
@@ -413,7 +328,6 @@ class UARTProxy:
         value &= 0xFF
         self._write_bytes(bytes([CMD_WRITE, addr >> 8, addr & 0xFF, value]))
         ack = self._read_response(f"WRITE 0x{addr:04X}=0x{value:02X}")
-        self._check_for_interrupt_signal()
         self.write_count += 1
 
         if ack != 0x00:
@@ -433,8 +347,6 @@ class UARTProxy:
         addr &= 0xFF
         self._write_bytes(bytes([CMD_SFR_READ, addr]))
         value = self._read_response(f"SFR_READ 0x{addr:02X}")
-        self._check_for_interrupt_signal()
-
         # Debug print handled by caller (hardware.py hook) which has PC context
         return value
 
@@ -450,8 +362,6 @@ class UARTProxy:
         value &= 0xFF
         self._write_bytes(bytes([CMD_SFR_WRITE, addr, value]))
         ack = self._read_response(f"SFR_WRITE 0x{addr:02X}=0x{value:02X}")
-        self._check_for_interrupt_signal()
-
         if ack != 0x00:
             raise RuntimeError(f"SFR Write ACK failed: expected 0x00, got 0x{ack:02X}")
 

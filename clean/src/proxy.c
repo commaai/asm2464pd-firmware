@@ -41,8 +41,10 @@ typedef unsigned int uint16_t;
 #define CMD_SFR_WRITE   0x04
 #define CMD_INT_ACK     0x05
 
-/* Interrupt signal - double 0xFE prefix to avoid confusion with data */
-#define INT_SIGNAL      0xFE
+/* Interrupt signal - 0x7E followed by int_mask (0x00-0x3F)
+ * This can never be confused with a valid response since ~0x7E = 0x81,
+ * and int_mask high bits are never set */
+#define INT_SIGNAL      0x7E
 
 /* Pending interrupt bitmask - set by ISRs */
 volatile uint8_t pending_int_mask = 0;
@@ -255,9 +257,8 @@ void main(void)
         mask = pending_int_mask & ~sent_int_mask;
         if (mask) {
             sent_int_mask |= mask;
-            REG_UART_THR = INT_SIGNAL;
-            REG_UART_THR = INT_SIGNAL;
-            REG_UART_THR = mask;
+            REG_UART_THR = INT_SIGNAL;  /* 0x7E */
+            REG_UART_THR = mask;        /* 0x00-0x3F, never 0x81 (~0x7E) */
         }
 
     }
