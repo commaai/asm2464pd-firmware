@@ -39,21 +39,10 @@ static void complete_no_data_request(void) {
 
 /* Send descriptor data and complete status phase */
 static void send_descriptor(uint8_t len) {
-    (void)REG_USB_LINK_STATUS;
-    (void)REG_USB_CONFIG;
-    (void)REG_USB_CTRL_PHASE;
-    (void)REG_USB_CTRL_PHASE;
-    (void)REG_USB_CTRL_PHASE;
-    
     REG_USB_EP0_STATUS = 0x00;
     REG_USB_EP0_LEN_L = len;
     REG_USB_DMA_TRIGGER = USB_DMA_SEND;
     while (REG_USB_DMA_TRIGGER) { }
-    
-    (void)REG_USB_EP0_STATUS;
-    (void)REG_USB_EP0_LEN_L;
-    (void)REG_USB_EP0_STATUS;
-    (void)REG_USB_EP0_LEN_L;
     
     REG_USB_CTRL_PHASE = USB_CTRL_PHASE_DATA;
     while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
@@ -66,37 +55,26 @@ static void send_descriptor(uint8_t len) {
  *==========================================================================*/
 
 static void handle_set_address(void) {
-    uint8_t tmp;
-    
     while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
     
-    (void)REG_USB_INT_MASK_9090;
     REG_USB_INT_MASK_9090 = 0x01;
     REG_USB_EP_CTRL_91D0 = 0x02;
-    (void)REG_USB_LINK_STATUS;
-    (void)XDATA_REG8(0x92F8);
-    (void)XDATA_REG8(0x92F8);
-    tmp = XDATA_REG8(0xE716);
     XDATA_REG8(0xE716) = 0x01;
-    (void)REG_USB_CONFIG;
     
     while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
     
-    /* Endpoint setup sequence */
-    (void)XDATA_REG8(0x9206); XDATA_REG8(0x9206) = 0x03;
-    (void)XDATA_REG8(0x9207); XDATA_REG8(0x9207) = 0x03;
-    (void)XDATA_REG8(0x9206); XDATA_REG8(0x9206) = 0x07;
-    (void)XDATA_REG8(0x9207); XDATA_REG8(0x9207) = 0x07;
-    (void)XDATA_REG8(0x92F8);
-    (void)XDATA_REG8(0x9206); XDATA_REG8(0x9206) = 0x07;
-    (void)XDATA_REG8(0x9207); XDATA_REG8(0x9207) = 0x07;
-    (void)XDATA_REG8(0x92F8);
+    XDATA_REG8(0x9206) = 0x03;
+    XDATA_REG8(0x9207) = 0x03;
+    XDATA_REG8(0x9206) = 0x07;
+    XDATA_REG8(0x9207) = 0x07;
+    XDATA_REG8(0x9206) = 0x07;
+    XDATA_REG8(0x9207) = 0x07;
     
-    XDATA_REG8(0x9208) = 0x00; XDATA_REG8(0x9209) = 0x0A;
-    XDATA_REG8(0x920A) = 0x00; XDATA_REG8(0x920B) = 0x0A;
-    
-    tmp = XDATA_REG8(0x9202); XDATA_REG8(0x9202) = tmp;
-    tmp = XDATA_REG8(0x9220); XDATA_REG8(0x9220) = 0x04;
+    XDATA_REG8(0x9208) = 0x00;
+    XDATA_REG8(0x9209) = 0x0A;
+    XDATA_REG8(0x920A) = 0x00;
+    XDATA_REG8(0x920B) = 0x0A;
+    XDATA_REG8(0x9220) = 0x04;
     
     REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
     REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STATUS;
@@ -107,7 +85,6 @@ static void handle_get_descriptor(uint8_t type, uint8_t idx, uint8_t len) {
     __xdata uint8_t *buf = (__xdata uint8_t *)USB_CTRL_BUF_BASE;
     
     while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA)) { }
-    (void)REG_USB_LINK_STATUS;
     
     if (type == USB_DESC_TYPE_DEVICE) {
         /* 18-byte Device Descriptor */
@@ -189,35 +166,21 @@ void int0_isr(void) __interrupt(0) {
     uint8_t status, phase;
     uint8_t bmReq, bReq, wValL, wValH, wLenL;
     
-    (void)REG_INT_USB_STATUS;
-    
     status = REG_USB_PERIPH_STATUS;
-    (void)REG_USB_PERIPH_STATUS;
-    (void)REG_USB_PERIPH_STATUS;
-    (void)REG_USB_PERIPH_STATUS;
-    
     phase = REG_USB_CTRL_PHASE;
-    (void)REG_USB_CTRL_PHASE;
     
     if (status & USB_PERIPH_DESC_REQ) {
         if ((phase & USB_CTRL_PHASE_STATUS) && !(phase & USB_CTRL_PHASE_SETUP)) {
             REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STATUS;
         } else if (phase & USB_CTRL_PHASE_SETUP) {
-            uint8_t tmp = REG_USB_CONFIG;
-            REG_USB_CONFIG = tmp;
-            (void)XDATA_REG8(0x9220);
             REG_USB_CTRL_PHASE = USB_CTRL_PHASE_SETUP;
             
             bmReq = REG_USB_SETUP_BMREQ;
             bReq  = REG_USB_SETUP_BREQ;
             wValL = REG_USB_SETUP_WVAL_L;
             wValH = REG_USB_SETUP_WVAL_H;
-            (void)REG_USB_SETUP_WIDX_L;
-            (void)REG_USB_SETUP_WIDX_H;
             wLenL = REG_USB_SETUP_WLEN_L;
-            (void)REG_USB_SETUP_WLEN_H;
             
-            /* Debug: show USB request */
             uart_puts("U:");
             uart_puthex(bReq);
             uart_putc('\n');
@@ -231,31 +194,10 @@ void int0_isr(void) __interrupt(0) {
             }
         }
     }
-    
-    (void)REG_INT_SYSTEM;
-    (void)REG_INT_USB_STATUS;
 }
 
 void int1_isr(void) __interrupt(2) {
-    uint8_t sys = REG_INT_SYSTEM;  /* Read clears interrupt source */
-    
-    uart_puts("I1:");
-    uart_puthex(sys);
-    uart_putc('\n');
-    
-    /* Trace reads these registers to handle INT1 */
-    (void)XDATA_REG8(0xCC23);  /* Timer3 CSR */
-    (void)XDATA_REG8(0xCC91);  /* DMA int */
-    XDATA_REG8(0xCC91) = XDATA_REG8(0xCC91);
-    (void)XDATA_REG8(0xCC99);
-    (void)XDATA_REG8(0xCCD9);
-    (void)XDATA_REG8(0xCCF9);
-    (void)REG_CPU_EXEC_STATUS_2;
-    (void)REG_INT_PCIE_NVME;
-    (void)REG_INT_PCIE_NVME;
-    (void)REG_INT_PCIE_NVME;
-    (void)REG_INT_PCIE_NVME;
-    (void)REG_INT_SYSTEM;  /* Should be 0 now */
+    uart_puts("I1\n");
 }
 
 void timer0_isr(void) __interrupt(1) { }
