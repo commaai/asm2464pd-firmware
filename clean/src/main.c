@@ -26,6 +26,10 @@ static void uart_puthex(uint8_t val) {
     uart_putc(hex[val & 0x0F]);
 }
 
+static void memcpy_x(__xdata uint8_t *dst, const uint8_t *src, uint8_t n) {
+    while (n--) *dst++ = *src++;
+}
+
 /*==========================================================================
  * USB Control Transfer Helpers
  *==========================================================================*/
@@ -80,82 +84,62 @@ static void handle_set_address(void) {
     REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STATUS;
 }
 
+/* USB Descriptors */
+const uint8_t desc_device[] = {
+    0x12, 0x01,             /* bLength, bDescriptorType */
+    0x20, 0x03,             /* bcdUSB = 3.2 */
+    0x00, 0x00, 0x00,       /* bDeviceClass, bDeviceSubClass, bDeviceProtocol */
+    0x09,                   /* bMaxPacketSize0 = 512 */
+    0x22, 0x11,             /* idVendor = 0x1122 */
+    0x44, 0x33,             /* idProduct = 0x3344 */
+    0x01, 0x00,             /* bcdDevice */
+    0x01, 0x02, 0x03,       /* iManufacturer, iProduct, iSerialNumber */
+    0x01                    /* bNumConfigurations */
+};
+
+const uint8_t desc_bos[] = {
+    0x05, 0x0F, 0x16, 0x00, 0x02,   /* BOS header: 22 bytes, 2 caps */
+    0x07, 0x10, 0x02, 0x02, 0x00, 0x00, 0x00,  /* USB 2.0 Extension */
+    0x0A, 0x10, 0x03, 0x00, 0x0E, 0x00, 0x03, 0x00, 0x00, 0x00  /* SuperSpeed */
+};
+
+const uint8_t desc_config[] = {
+    0x09, 0x02,             /* bLength, bDescriptorType */
+    0x09, 0x00,             /* wTotalLength = 9 */
+    0x00, 0x01,             /* bNumInterfaces, bConfigurationValue */
+    0x00, 0x80, 0x32        /* iConfiguration, bmAttributes, bMaxPower */
+};
+
+const uint8_t desc_string0[] = { 0x04, 0x03, 0x09, 0x04 };
+const uint8_t desc_string1[] = { 0x0A, 0x03, 't', 0, 'i', 0, 'n', 0, 'y', 0 };
+const uint8_t desc_string2[] = { 0x08, 0x03, 'u', 0, 's', 0, 'b', 0 };
+const uint8_t desc_string3[] = { 0x08, 0x03, '0', 0, '0', 0, '1', 0 };
+
 static void handle_get_descriptor(uint8_t type, uint8_t idx, uint8_t len) {
-    uint8_t actual_len;
+    const uint8_t *src;
+    uint8_t desc_len;
     __xdata uint8_t *buf = (__xdata uint8_t *)USB_CTRL_BUF_BASE;
     
     while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA)) { }
     
     if (type == USB_DESC_TYPE_DEVICE) {
-        /* 18-byte Device Descriptor */
-        buf[0] = 0x12; buf[1] = 0x01;
-        buf[2] = 0x20; buf[3] = 0x03;  /* USB 3.2 */
-        buf[4] = 0x00; buf[5] = 0x00;
-        buf[6] = 0x00; buf[7] = 0x09;  /* 512B max packet */
-        buf[8] = 0x22; buf[9] = 0x11;  /* VID 0x1122 */
-        buf[10] = 0x44; buf[11] = 0x33; /* PID 0x3344 */
-        buf[12] = 0x01; buf[13] = 0x00;
-        buf[14] = 0x01; buf[15] = 0x02;
-        buf[16] = 0x03; buf[17] = 0x01;
-        actual_len = (len < 18) ? len : 18;
-        
+        src = desc_device; desc_len = sizeof(desc_device);
     } else if (type == USB_DESC_TYPE_BOS) {
-        /* 22-byte BOS Descriptor */
-        buf[0] = 0x05; buf[1] = 0x0F;
-        buf[2] = 0x16; buf[3] = 0x00;
-        buf[4] = 0x02;
-        /* USB 2.0 Extension */
-        buf[5] = 0x07; buf[6] = 0x10;
-        buf[7] = 0x02; buf[8] = 0x02;
-        buf[9] = 0x00; buf[10] = 0x00;
-        buf[11] = 0x00;
-        /* SuperSpeed Capability */
-        buf[12] = 0x0A; buf[13] = 0x10;
-        buf[14] = 0x03; buf[15] = 0x00;
-        buf[16] = 0x0E; buf[17] = 0x00;
-        buf[18] = 0x03; buf[19] = 0x00;
-        buf[20] = 0x00; buf[21] = 0x00;
-        actual_len = (len < 22) ? len : 22;
-        
+        src = desc_bos; desc_len = sizeof(desc_bos);
     } else if (type == USB_DESC_TYPE_CONFIG) {
-        /* 9-byte Config Descriptor (no interfaces) */
-        buf[0] = 0x09; buf[1] = 0x02;
-        buf[2] = 0x09; buf[3] = 0x00;
-        buf[4] = 0x00; buf[5] = 0x01;
-        buf[6] = 0x00; buf[7] = 0x80;
-        buf[8] = 0x32;
-        actual_len = (len < 9) ? len : 9;
-        
+        src = desc_config; desc_len = sizeof(desc_config);
     } else if (type == USB_DESC_TYPE_STRING) {
-        if (idx == 0) {
-            buf[0] = 0x04; buf[1] = 0x03;
-            buf[2] = 0x09; buf[3] = 0x04;
-            actual_len = (len < 4) ? len : 4;
-        } else if (idx == 1) {
-            buf[0] = 0x0A; buf[1] = 0x03;
-            buf[2] = 't'; buf[3] = 0;
-            buf[4] = 'i'; buf[5] = 0;
-            buf[6] = 'n'; buf[7] = 0;
-            buf[8] = 'y'; buf[9] = 0;
-            actual_len = (len < 10) ? len : 10;
-        } else if (idx == 2) {
-            buf[0] = 0x08; buf[1] = 0x03;
-            buf[2] = 'u'; buf[3] = 0;
-            buf[4] = 's'; buf[5] = 0;
-            buf[6] = 'b'; buf[7] = 0;
-            actual_len = (len < 8) ? len : 8;
-        } else {
-            buf[0] = 0x08; buf[1] = 0x03;
-            buf[2] = '0'; buf[3] = 0;
-            buf[4] = '0'; buf[5] = 0;
-            buf[6] = '1'; buf[7] = 0;
-            actual_len = (len < 8) ? len : 8;
-        }
+        if (idx == 0) { src = desc_string0; desc_len = sizeof(desc_string0); }
+        else if (idx == 1) { src = desc_string1; desc_len = sizeof(desc_string1); }
+        else if (idx == 2) { src = desc_string2; desc_len = sizeof(desc_string2); }
+        else { src = desc_string3; desc_len = sizeof(desc_string3); }
     } else {
-        return; /* Unknown descriptor */
+        return;
     }
     
-    send_descriptor(actual_len);
+    if (len < desc_len) desc_len = len;
+    memcpy_x(buf, src, desc_len);
+    send_descriptor(desc_len);
 }
 
 /*==========================================================================
