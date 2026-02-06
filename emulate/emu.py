@@ -12,6 +12,7 @@ Options:
     --trace         Enable instruction tracing
     --break ADDR    Set breakpoint at address (hex)
     --max-cycles N  Stop after N cycles
+    --proxy         Use UART proxy to real hardware for MMIO
     --help          Show this help
 """
 
@@ -36,7 +37,8 @@ class Emulator:
     """ASM2464PD Firmware Emulator."""
 
     def __init__(self, trace: bool = False, log_hw: bool = False,
-                 log_uart: bool = True, usb_delay: int = 200000):
+                 log_uart: bool = True, usb_delay: int = 200000,
+                 proxy: 'UARTProxy' = None, proxy_mask: list = None):
         self.memory = Memory()
         self.cpu = CPU8051(
             read_code=self.memory.read_code,
@@ -51,11 +53,18 @@ class Emulator:
             trace=trace,
         )
 
+        # UART proxy for real hardware mode
+        self.proxy = proxy
+
         # Hardware emulation (replaces simple stubs)
         self.hw = HardwareState(log_reads=log_hw, log_writes=log_hw, log_uart=log_uart)
         self.hw.usb_connect_delay = usb_delay
+        # In proxy mode, disable all fake USB/interrupt injection and CPU interrupt polling
+        if proxy is not None:
+            self.hw.proxy_mode = True
+            self.cpu.proxy_mode = True
         self.hw._memory = self.memory  # Give hardware access to XDATA for USB descriptors
-        create_hardware_hooks(self.memory, self.hw)
+        create_hardware_hooks(self.memory, self.hw, proxy=proxy, proxy_mask=proxy_mask or [])
         # Store CPU reference for PC tracing in hardware callbacks
         self.hw._cpu_ref = self.cpu
 
@@ -77,6 +86,10 @@ class Emulator:
         self.usb_device = None
         self.usb_thread = None
         self.usb_running = False
+
+        # Proxy interrupt tracking - queue of interrupt masks we owe acks for
+        # Each entry is the bitmask (1 << int_num) for the interrupt being serviced
+        self._proxy_isr_pending_acks = []
 
     def load_firmware(self, path: str):
         """Load firmware binary."""
@@ -104,6 +117,10 @@ class Emulator:
         self.last_pc = self.cpu.pc
         pc = self.cpu.pc
 
+        # In proxy mode, check for hardware interrupts from real device
+        if self.proxy:
+            self._check_proxy_interrupts()
+
         # Track PC hit for statistics
         if self.pc_stats is not None:
             self.pc_stats[pc] = self.pc_stats.get(pc, 0) + 1
@@ -119,11 +136,57 @@ class Emulator:
         if self.cpu.trace:
             self._trace_instruction()
 
+        # Track if we're in an ISR before stepping
+        was_in_isr = self.cpu.in_interrupt if self.proxy else False
+
         cycles = self.cpu.step()
         self.inst_count += 1
         self.hw.tick(cycles, self.cpu)
 
+        # In proxy mode, check if ISR just completed (RETI executed)
+        if self.proxy and was_in_isr and not self.cpu.in_interrupt:
+            # ISR completed, send ack to proxy with the interrupt mask
+            if self._proxy_isr_pending_acks:
+                int_mask = self._proxy_isr_pending_acks.pop(0)
+                if self.proxy.debug:
+                    print(f"[{self.hw.cycles:8d}] [EMU] RETI - sending INT_ACK mask=0x{int_mask:02X}")
+                self.proxy.ack_interrupt(int_mask)
+
         return not self.cpu.halted
+    
+    def _check_proxy_interrupts(self):
+        """Check for and handle interrupts from proxy hardware."""
+        int_num = self.proxy.get_pending_interrupt()
+        if int_num is not None:
+            # Map interrupt number to CPU interrupt flag
+            # 8051 interrupt vectors:
+            #   0: INT0 (External 0) - vector 0x0003
+            #   1: Timer0           - vector 0x000B
+            #   2: INT1 (External 1) - vector 0x0013
+            #   3: Timer1           - vector 0x001B
+            #   4: Serial           - vector 0x0023
+            #   5: Timer2           - vector 0x002B
+            if int_num == 0:
+                self.cpu._ext0_pending = True
+            elif int_num == 1:
+                self.cpu._timer0_pending = True
+            elif int_num == 2:
+                self.cpu._ext1_pending = True
+            elif int_num == 3:
+                self.cpu._timer1_pending = True
+            elif int_num == 4:
+                self.cpu._serial_pending = True
+            elif int_num == 5:
+                self.cpu._timer2_pending = True
+            
+            # Track that we owe the proxy an ack when this ISR completes
+            # Store the bitmask so we can send it in the ACK
+            self._proxy_isr_pending_acks.append(1 << int_num)
+            
+            if self.proxy.debug:
+                from uart_proxy import INT_NAMES
+                int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
+                print(f"[{self.hw.cycles:8d}] [EMU] Triggering interrupt: {int_name}")
 
     def _trace_pc_hit(self, pc: int):
         """Log when a traced PC is hit."""
@@ -523,6 +586,15 @@ Examples:
 
   # Debug with hardware logging
   python emu.py --log-hw --trace-pc 0x0322
+
+  # Run with UART proxy to real hardware (requires proxy firmware)
+  # First: cd clean && make flash-proxy
+  python emu.py --proxy fw.bin
+
+  # Proxy mode with debug levels: 1=interrupts, 2=+xdata, 3=+sfr
+  python emu.py --proxy --proxy-debug fw.bin      # level 2 (default when flag used)
+  python emu.py --proxy --proxy-debug 1 fw.bin    # interrupts only
+  python emu.py --proxy --proxy-debug 3 fw.bin    # full debug including SFRs
 """
     )
     parser.add_argument('firmware', nargs='?', default='fw.bin',
@@ -564,6 +636,14 @@ Examples:
                         help='UDC driver name (default: dummy_udc)')
     parser.add_argument('--usb-device-name', type=str, default='dummy_udc.0',
                         help='UDC device name (default: dummy_udc.0)')
+    parser.add_argument('--proxy', action='store_true',
+                        help='Use UART proxy to real hardware for MMIO (requires proxy firmware)')
+    parser.add_argument('--proxy-device', type=str, default='ftdi://ftdi:230x/1',
+                        help='FTDI device URL for proxy mode (default: ftdi://ftdi:230x/1)')
+    parser.add_argument('--proxy-debug', type=int, nargs='?', const=2, default=0,
+                        help='Debug level: 1=interrupts, 2=+xdata, 3=+sfr (default: 0=off, bare flag=2)')
+    parser.add_argument('--proxy-mask', type=str, action='append', default=[],
+                        help='MMIO range to emulate instead of proxy (e.g. 0x9000-0x9100 or 0x9000). Can repeat.')
 
     args = parser.parse_args()
 
@@ -577,9 +657,51 @@ Examples:
             print(f"Error: Cannot find firmware file: {args.firmware}")
             sys.exit(1)
 
+    # Setup UART proxy if requested
+    proxy = None
+    if args.proxy:
+        try:
+            from uart_proxy import UARTProxy
+            print(f"Connecting to UART proxy at {args.proxy_device}...")
+            proxy = UARTProxy(args.proxy_device)
+            proxy.debug = args.proxy_debug  # 0=off, 1=interrupts, 2=+xdata, 3=+sfr
+            
+            # Reset device and wait for proxy firmware to boot
+            print("Resetting device...")
+            proxy.reset_device()
+            print("Proxy firmware booted (received 'PK')")
+            
+            # Test connection with echo
+            if not proxy.test_connection():
+                print("Error: Proxy connection test failed")
+                print("Make sure proxy firmware is flashed: cd clean && make flash-proxy")
+                sys.exit(1)
+            print("Proxy connection OK!")
+            
+            # Clear any interrupts that fired during boot/test
+            # These are from hardware state, not from firmware execution
+            proxy.pending_interrupts = []
+        except Exception as e:
+            print(f"Error: Failed to connect to UART proxy: {e}")
+            print("Make sure:")
+            print("  1. FTDI device is connected")
+            print("  2. Proxy firmware is flashed: cd clean && make flash-proxy")
+            sys.exit(1)
+
+    # Parse proxy mask ranges
+    proxy_mask = []
+    for mask_str in args.proxy_mask:
+        if '-' in mask_str:
+            start, end = mask_str.split('-')
+            proxy_mask.append((int(start, 16), int(end, 16)))
+        else:
+            addr = int(mask_str, 16)
+            proxy_mask.append((addr, addr + 1))
+    
     # Create emulator
     emu = Emulator(trace=args.trace, log_hw=args.log_hw,
-                   log_uart=not args.no_uart_log, usb_delay=args.usb_delay)
+                   log_uart=not args.no_uart_log, usb_delay=args.usb_delay,
+                   proxy=proxy, proxy_mask=proxy_mask)
 
     # Load firmware
     emu.load_firmware(str(fw_path))
@@ -662,6 +784,10 @@ Examples:
         # Stop USB device if running
         if emu.usb_device:
             emu.stop_usb_device()
+        # Close proxy connection if open
+        if proxy:
+            print(f"\nProxy stats: {proxy.stats()}")
+            proxy.close()
 
     if args.dump:
         emu.dump_state()

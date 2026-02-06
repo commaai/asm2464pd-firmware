@@ -56,6 +56,9 @@ class CPU8051:
     _timer0_pending: bool = False  # Timer 0 interrupt pending flag
     _ext0_pending: bool = False     # External Interrupt 0 pending flag
     _ext1_pending: bool = False     # External Interrupt 1 pending flag
+    
+    # Proxy mode - when True, skip interrupt checking (hardware handles it)
+    proxy_mode: bool = False
 
     # SFR addresses
     SFR_ACC = 0xE0
@@ -241,12 +244,17 @@ class CPU8051:
         if self.in_interrupt:
             return  # Don't nest interrupts
 
-        # Read interrupt enable register
-        ie = self.read_sfr(0xA8)  # IE register at 0xA8
+        # In proxy mode, assume interrupts are enabled - the hardware fired the interrupt
+        # so it must be enabled. Don't read IE via proxy (expensive and causes recursion).
+        if not self.proxy_mode:
+            # Read interrupt enable register
+            ie = self.read_sfr(0xA8)  # IE register at 0xA8
 
-        # Global interrupt enable (EA bit 7)
-        if not (ie & 0x80):
-            return
+            # Global interrupt enable (EA bit 7)
+            if not (ie & 0x80):
+                return
+        else:
+            ie = 0xFF  # In proxy mode, assume all interrupts enabled
 
         # Check External Interrupt 0 (EX0 bit 0)
         # ASM2464PD uses EX0 (at 0x0003) for main ISR at 0x0E33
@@ -276,7 +284,16 @@ class CPU8051:
                 self._trigger_interrupt(2)  # EX1 interrupt vector at 0x13
 
     def _trigger_interrupt(self, vector: int):
-        """Trigger an interrupt with the given vector number."""
+        """Trigger an interrupt with the given vector number.
+        
+        8051 interrupt vectors:
+          0: INT0   -> 0x0003
+          1: Timer0 -> 0x000B
+          2: INT1   -> 0x0013
+          3: Timer1 -> 0x001B
+          4: Serial -> 0x0023
+          5: Timer2 -> 0x002B
+        """
         if self.in_interrupt:
             return
 
@@ -286,7 +303,8 @@ class CPU8051:
         self.push((self.pc >> 8) & 0xFF)  # PC high (on top for RET)
 
         # Set PC to interrupt vector address
-        self.pc = vector * 8
+        # Formula: vector * 8 + 3
+        self.pc = vector * 8 + 3
         self.in_interrupt = True
 
     def step(self) -> int:
@@ -303,6 +321,7 @@ class CPU8051:
         self.cycles += cycles
 
         # Check for interrupts after executing instruction (so hardware can set flags)
+        # In proxy mode, pending flags are set by the proxy when hardware interrupts fire
         self._check_interrupts()
 
         return cycles
