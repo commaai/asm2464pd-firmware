@@ -4,31 +4,39 @@
  * Dedicated UART controller for debug output on the ASM2464PD USB4/Thunderbolt
  * to NVMe bridge. This is NOT the standard 8051 SBUF serial interface - it's a
  * separate hardware block based on ASMedia USB host controller UART design.
+ * Similar to ASM1142 UART (documented at 0xF100-0xF10A).
  *
  * HARDWARE CONFIGURATION
  *   Baud rate: 921600 fixed (no configuration registers)
- *   Format: 8N1 (8 data bits, no parity, 1 stop bit)
+ *   Default format: 8O1 (LCR reset value = 0x0B)
+ *   For 8N1: Set LCR to 0x03 (or LCR &= 0xF7 to just clear parity)
  *   TX pin: B21, RX pin: A21
- *   FIFO: 16-byte transmit FIFO
+ *   FIFO: 16-byte transmit/receive FIFOs
  *
  * REGISTER MAP (0xC000-0xC00F)
- *   0xC000  UART_BASE    Base/control register
+ *   0xC000  RBR (RO)     Receive Buffer Register - read received byte
  *   0xC001  THR (WO)     Transmit Holding Register - write byte to send
- *           RBR (RO)     Receive Buffer Register - read received byte
  *   0xC002  IER          Interrupt Enable Register
  *   0xC004  FCR (WO)     FIFO Control Register
  *           IIR (RO)     Interrupt Identification Register
- *   0xC006  TFBF         Transmit FIFO Buffer Full - check before write
- *   0xC007  LCR          Line Control Register
+ *   0xC005  RFBR (RO)    RX FIFO Bytes Received - count of bytes in RX FIFO
+ *   0xC006  TFBF (RO)    TX FIFO Bytes Free - available space in TX FIFO
+ *   0xC007  LCR          Line Control Register (reset=0x0B: 8O1)
  *   0xC008  MCR          Modem Control Register
  *   0xC009  LSR          Line Status Register
  *   0xC00A  MSR          Modem Status Register
  *
  * DATA FLOW
  *   TX: CPU writes THR -> TX FIFO (16 bytes) -> Shift Register -> TX Pin
- *       Check TFBF before writing to avoid overflow
+ *       Check TFBF > 0 before writing to avoid overflow
  *   RX: RX Pin -> Shift Register -> RX FIFO -> RBR -> CPU reads
- *       (RX not used in stock firmware - debug output only)
+ *       Poll RFBR > 0 to check for received data, then read from RBR
+ *
+ * LCR BITS
+ *   [1:0] Data bits: 0=5, 1=6, 2=7, 3=8
+ *   [2]   Stop bits: 0=1 stop, 1=2 stop
+ *   [5:3] Parity: XX0=None, 001=Odd, 011=Even, 101=Mark, 111=Space
+ *   [7]   Loopback enable
  *
  * DEBUG OUTPUT FORMAT
  *   Trace messages: "\nXX:YY]" where XX:YY are hex register values

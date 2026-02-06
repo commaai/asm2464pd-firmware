@@ -211,27 +211,59 @@
 
 /*
  * USB Control Transfer Phase Register (0x9091)
- * Two-phase control transfer handling at ISR 0xCDE7:
- *   Bit 0 (SETUP): Setup packet received - triggers 0xA5A6 (setup handler)
- *   Bit 1 (DATA):  Data phase - triggers 0xD088 (DMA descriptor response)
- * Firmware loops writing 0x01, hardware clears bit 0 when ready for data phase.
- * Bit 1 is then SET to indicate data phase, firmware calls DMA trigger.
+ * 
+ * Controls USB control transfer state machine. Read to check current phase,
+ * write to acknowledge/advance phase.
+ *
+ * Control Transfer Sequence (verified working):
+ * 
+ * 1. SETUP Phase:
+ *    - Hardware sets bit 0 when SETUP packet received
+ *    - Read 0x9002, write back; read 0x9220
+ *    - Write 0x01 to acknowledge setup phase
+ *    - Read setup packet from 0x9104-0x910B
+ *
+ * 2. DATA Phase (GET_DESCRIPTOR):
+ *    - Poll until bit 3 (0x08) is set = data phase ready
+ *    - Write descriptor to 0x9E00+ buffer
+ *    - Set length: 0x9003=0, 0x9004=len
+ *    - Write 0x9092=0x04 to trigger DMA send
+ *    - Poll 0x9092 until 0 (DMA complete)
+ *    - Write 0x08 to acknowledge data phase
+ *
+ * 3. STATUS Phase:
+ *    - Poll until bit 4 (0x10) is set = status phase ready
+ *    - Write 0x9092=0x08 to complete status
+ *    - Write 0x10 to acknowledge status phase
+ *
+ * For no-data requests (SET_ADDRESS, SET_CONFIG):
+ *    - Skip data phase, go directly to status phase
  */
 #define REG_USB_CTRL_PHASE      XDATA_REG8(0x9091)
-#define   USB_CTRL_PHASE_SETUP    0x01  // Bit 0: Setup phase active (triggers 0xA5A6)
-#define   USB_CTRL_PHASE_DATA     0x02  // Bit 1: Data phase active (triggers 0xD088)
-#define   USB_CTRL_PHASE_STATUS   0x04  // Bit 2: Status phase active
-#define   USB_CTRL_PHASE_STALL    0x08  // Bit 3: Endpoint stalled
-#define   USB_CTRL_PHASE_NAK      0x10  // Bit 4: NAK status
+#define   USB_CTRL_PHASE_SETUP    0x01  // Bit 0: Setup packet received
+#define   USB_CTRL_PHASE_DATA     0x08  // Bit 3: Data phase ready (poll for this)
+#define   USB_CTRL_PHASE_STATUS   0x10  // Bit 4: Status phase ready (poll for this)
 
 /*
- * USB DMA Trigger Register (0x9092)
- * Write 0x01 to trigger DMA transfer of descriptor from ROM to USB buffer.
- * The source address is set via REG_USB_EP_BUF_HI/LO (0x905B/0x905C).
- * The length is set via REG_USB_EP0_LEN_L (0x9004).
+ * USB EP0 DMA Control Register (0x9092)
+ * 
+ * Controls DMA transfers for EP0 control transfers.
+ * Write to trigger operations, reads back 0 when complete.
+ *
+ * Values:
+ *   0x04 = Start DMA send (IN transfer - device to host)
+ *          Used for GET_DESCRIPTOR data phase.
+ *          Set 0x9003=0, 0x9004=length first, then write 0x04.
+ *          Poll until reads 0 for completion.
+ *
+ *   0x08 = Complete status phase
+ *          Write after status phase ready (0x9091 & 0x10).
+ *          For IN transfers: host sends ZLP, we ACK.
+ *          For OUT transfers: we send ZLP.
  */
 #define REG_USB_DMA_TRIGGER     XDATA_REG8(0x9092)
-#define   USB_DMA_TRIGGER_START   0x01  // Bit 0: Start DMA transfer
+#define   USB_DMA_SEND            0x04  // Trigger DMA send (IN data phase)
+#define   USB_DMA_STATUS_COMPLETE 0x08  // Complete status phase
 
 /*
  * USB Endpoint Config 1 (0x9093)
@@ -292,7 +324,30 @@
 #define   USB_PERIPH_BULK_REQ     0x08  // Bit 3: Bulk transfer request (vendor cmd path)
 #define   USB_PERIPH_VENDOR_CMD   0x20  // Bit 5: Vendor command handler path
 #define   USB_PERIPH_SUSPENDED    0x40  // Bit 6: Peripheral suspended / USB init
-#define REG_USB_PHY_STATUS_9105 XDATA_REG8(0x9105)  /* USB PHY status check (0xFF = active) */
+
+/*
+ * USB Setup Packet Registers (0x9104-0x910B)
+ * Hardware writes the 8-byte USB setup packet here when received.
+ * Read at PC=0xA5F5 in ISR during control transfer setup phase.
+ * Different from 0x9E00-0x9E07 which is the response buffer.
+ *
+ * Standard USB Setup Packet Format:
+ *   Byte 0 (bmRequestType): Direction(1) | Type(2) | Recipient(5)
+ *   Byte 1 (bRequest): Request code (GET_DESCRIPTOR=0x06, SET_ADDRESS=0x05, etc.)
+ *   Bytes 2-3 (wValue): Request-specific (descriptor type/index for GET_DESCRIPTOR)
+ *   Bytes 4-5 (wIndex): Request-specific (language ID for string descriptors)
+ *   Bytes 6-7 (wLength): Number of bytes to transfer
+ */
+#define REG_USB_SETUP_BMREQ     XDATA_REG8(0x9104)  /* bmRequestType */
+#define REG_USB_SETUP_BREQ      XDATA_REG8(0x9105)  /* bRequest */
+#define REG_USB_SETUP_WVAL_L    XDATA_REG8(0x9106)  /* wValue low (descriptor index) */
+#define REG_USB_SETUP_WVAL_H    XDATA_REG8(0x9107)  /* wValue high (descriptor type) */
+#define REG_USB_SETUP_WIDX_L    XDATA_REG8(0x9108)  /* wIndex low */
+#define REG_USB_SETUP_WIDX_H    XDATA_REG8(0x9109)  /* wIndex high */
+#define REG_USB_SETUP_WLEN_L    XDATA_REG8(0x910A)  /* wLength low */
+#define REG_USB_SETUP_WLEN_H    XDATA_REG8(0x910B)  /* wLength high */
+
+#define REG_USB_PHY_STATUS_9105 XDATA_REG8(0x9105)  /* USB PHY status check (0xFF = active) - alias for SETUP_BREQ */
 #define REG_USB_STAT_EXT_L      XDATA_REG8(0x910D)
 #define REG_USB_STAT_EXT_H      XDATA_REG8(0x910E)
 /* USB CDB (Command Descriptor Block) registers for vendor commands */
@@ -516,19 +571,26 @@
 
 //=============================================================================
 // UART Controller (0xC000-0xC00F)
+// Based on ASM1142 UART at 0xF100-0xF10A, adapted for ASM2464PD
+// Default config: 921600 baud, 8O1 (set LCR=0x03 for 8N1)
 //=============================================================================
-/* NOTE: REG_UART_BASE removed - use REG_UART_THR_RBR */
-#define REG_UART_THR_RBR        XDATA_REG8(0xC000)  // Data register (THR write, RBR read)
-#define REG_UART_THR            XDATA_REG8(0xC001)  // TX (WO)
-#define REG_UART_RBR            XDATA_REG8(0xC001)  // RX (RO)
-#define REG_UART_IER            XDATA_REG8(0xC002)
-#define REG_UART_FCR            XDATA_REG8(0xC004)  // WO
-#define REG_UART_IIR            XDATA_REG8(0xC004)  // RO
-#define REG_UART_TFBF           XDATA_REG8(0xC006)
-#define REG_UART_LCR            XDATA_REG8(0xC007)
-#define REG_UART_MCR            XDATA_REG8(0xC008)
-#define REG_UART_LSR            XDATA_REG8(0xC009)
-#define REG_UART_MSR            XDATA_REG8(0xC00A)
+#define REG_UART_RBR            XDATA_REG8(0xC000)  // Receive Buffer Register (RO)
+#define REG_UART_THR            XDATA_REG8(0xC001)  // Transmit Holding Register (WO)
+#define REG_UART_IER            XDATA_REG8(0xC002)  // Interrupt Enable Register
+#define REG_UART_IIR            XDATA_REG8(0xC004)  // Interrupt Identification Register (RO)
+#define REG_UART_FCR            XDATA_REG8(0xC004)  // FIFO Control Register (WO)
+#define REG_UART_RFBR           XDATA_REG8(0xC005)  // RX FIFO Bytes Received (RO) - count of bytes in RX FIFO
+#define REG_UART_TFBF           XDATA_REG8(0xC006)  // TX FIFO Bytes Free (RO)
+#define REG_UART_LCR            XDATA_REG8(0xC007)  // Line Control Register
+#define   LCR_DATA_BITS_MASK      0x03  // Bits 0-1: 0=5, 1=6, 2=7, 3=8 data bits
+#define   LCR_STOP_BITS           0x04  // Bit 2: 0=1 stop, 1=2 stop bits
+#define   LCR_PARITY_MASK         0x38  // Bits 3-5: Parity (XX0=None, 001=Odd, 011=Even)
+#define   LCR_LOOPBACK            0x80  // Bit 7: Enable loopback mode
+#define REG_UART_MCR            XDATA_REG8(0xC008)  // Modem Control Register
+#define REG_UART_LSR            XDATA_REG8(0xC009)  // Line Status Register
+#define   LSR_RX_FIFO_OVERFLOW    0x01  // Bit 0: RX FIFO overflow (RW1C)
+#define   LSR_TX_EMPTY            0x20  // Bit 5: TX empty
+#define REG_UART_MSR            XDATA_REG8(0xC00A)  // Modem Status Register
 #define REG_UART_STATUS         XDATA_REG8(0xC00E)  // UART status (bits 0-2 = busy flags)
 
 //=============================================================================
@@ -739,6 +801,8 @@
 #define REG_FLASH_MODE          XDATA_REG8(0xC8AD)
 #define   FLASH_MODE_ENABLE       0x01  // Bit 0: Flash mode enable
 #define REG_FLASH_BUF_OFFSET    XDATA_REG16(0xC8AE)
+#define REG_FLASH_BUF_OFFSET_LO XDATA_REG8(0xC8AE)  /* Flash buffer offset low byte */
+#define REG_FLASH_BUF_OFFSET_HI XDATA_REG8(0xC8AF)  /* Flash buffer offset high byte */
 
 //=============================================================================
 // DMA Engine Registers (0xC8B0-0xC8D9)
@@ -772,7 +836,9 @@
 // CPU Mode/Control (0xCA00-0xCAFF)
 //=============================================================================
 #define REG_CPU_MODE_NEXT       XDATA_REG8(0xCA06)
+#define REG_CPU_CTRL_CA2E       XDATA_REG8(0xCA2E)  /* CPU control */
 #define REG_CPU_CTRL_CA60       XDATA_REG8(0xCA60)  /* CPU control CA60 */
+#define REG_CPU_CTRL_CA70       XDATA_REG8(0xCA70)  /* CPU control */
 #define REG_CPU_CTRL_CA81       XDATA_REG8(0xCA81)  /* CPU control CA81 - PCIe init */
 
 //=============================================================================
@@ -814,9 +880,12 @@
 #define REG_CPU_EXEC_STATUS_3   XDATA_REG8(0xCC35)  /* CPU execution status 3 */
 #define   CPU_EXEC_STATUS_3_BIT0  0x01  // Bit 0: Exec active flag
 #define   CPU_EXEC_STATUS_3_BIT2  0x04  // Bit 2: Exec status flag
+#define REG_CPU_CTRL_CC36       XDATA_REG8(0xCC36)  /* CPU control */
+#define REG_CPU_CTRL_CC37       XDATA_REG8(0xCC37)  /* CPU control */
 // Timer enable/disable control registers
 #define REG_TIMER_ENABLE_A      XDATA_REG8(0xCC38)  /* Timer enable control A */
 #define   TIMER_ENABLE_A_BIT      0x02              /* Bit 1: Timer enable */
+#define REG_TIMER_CTRL_CC39     XDATA_REG8(0xCC39)  /* Timer control */
 #define REG_TIMER_ENABLE_B      XDATA_REG8(0xCC3A)  /* Timer enable control B */
 #define   TIMER_ENABLE_B_BIT      0x02              /* Bit 1: Timer enable */
 #define   TIMER_ENABLE_B_BITS56   0x60              /* Bits 5-6: Timer extended mode */
@@ -1083,6 +1152,10 @@
 #define REG_SYS_CTRL_E763       XDATA_REG8(0xE763)
 #define REG_PHY_TIMER_CTRL_E764 XDATA_REG8(0xE764)  /* PHY timer control */
 #define REG_SYS_CTRL_E765       XDATA_REG8(0xE765)  /* System control E765 */
+#define REG_SYS_CTRL_E76C       XDATA_REG8(0xE76C)  /* System control */
+#define REG_SYS_CTRL_E774       XDATA_REG8(0xE774)  /* System control */
+#define REG_SYS_CTRL_E77C       XDATA_REG8(0xE77C)  /* System control */
+#define REG_SYS_CTRL_E780       XDATA_REG8(0xE780)  /* System control */
 #define REG_FLASH_READY_STATUS  XDATA_REG8(0xE795)
 #define REG_PHY_LINK_CTRL       XDATA_REG8(0xE7E3)
 #define   PHY_LINK_CTRL_BIT6      0x40  // Bit 6: PHY link control flag
