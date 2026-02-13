@@ -6,6 +6,16 @@
 #include "types.h"
 #include "registers.h"
 
+/* Override XDATA_REG macros to add volatile for proper MMIO access.
+ * Without volatile, SDCC optimizes away reads whose value is discarded,
+ * which breaks hardware handshake sequences that require register reads. */
+#undef XDATA_REG8
+#undef XDATA_REG16
+#undef XDATA_REG32
+#define XDATA_REG8(addr)   (*(volatile __xdata uint8_t *)(addr))
+#define XDATA_REG16(addr)  (*(volatile __xdata uint16_t *)(addr))
+#define XDATA_REG32(addr)  (*(volatile __xdata uint32_t *)(addr))
+
 /* 8051 SFRs */
 __sfr __at(0xA8) IE;
 __sfr __at(0x88) TCON;
@@ -31,55 +41,49 @@ static void memcpy_x(__xdata uint8_t *dst, const uint8_t *src, uint8_t n) {
 }
 
 /*==========================================================================
- * USB Control Transfer Helpers
+ * Timer/MSC Reinit (from trace lines 4873-4901, 5000-5028)
  *==========================================================================*/
-
-/* Wait for status phase and complete (used for no-data requests) */
-static void complete_no_data_request(void) {
-    while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
-    REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
-    REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STATUS;
-}
-
-/* Send descriptor data and complete status phase */
-static void send_descriptor(uint8_t len) {
-    REG_USB_EP0_STATUS = 0x00;
-    REG_USB_EP0_LEN_L = len;
-    REG_USB_DMA_TRIGGER = USB_DMA_SEND;
-    while (REG_USB_DMA_TRIGGER) { }
-    
-    REG_USB_CTRL_PHASE = USB_CTRL_PHASE_DATA;
-    while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
-    REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
-    REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STATUS;
+static void reinit_timers_and_msc(void) {
+    uint8_t val;
+    /* 92C8 read-writeback x2 */
+    val = REG_POWER_CTRL_92C8; REG_POWER_CTRL_92C8 = val;
+    val = REG_POWER_CTRL_92C8; REG_POWER_CTRL_92C8 = val;
+    /* Timer2: stop, clear; Timer4: stop, clear */
+    REG_TIMER2_CSR = 0x04; REG_TIMER2_CSR = 0x02;
+    REG_TIMER4_CSR = 0x04; REG_TIMER4_CSR = 0x02;
+    /* Timer2 config: read-writeback div, set thresholds */
+    val = REG_TIMER2_DIV; REG_TIMER2_DIV = val;
+    REG_TIMER2_THRESHOLD_LO = 0x00; REG_TIMER2_THRESHOLD_HI = 0x8B;
+    /* Timer4 config */
+    val = REG_TIMER4_DIV; REG_TIMER4_DIV = val;
+    REG_TIMER4_THRESHOLD_LO = 0x00; REG_TIMER4_THRESHOLD_HI = 0xC7;
+    /* MSC progressive init: 0→2→6→7→5→1→0 */
+    val = REG_USB_MSC_CFG; REG_USB_MSC_CFG = val | 0x02;
+    val = REG_USB_MSC_CFG; REG_USB_MSC_CFG = val | 0x04;
+    val = REG_USB_MSC_CFG; REG_USB_MSC_CFG = val | 0x01;
+    val = REG_USB_MSC_CFG; REG_USB_MSC_CFG = val & ~0x02;
+    val = REG_USB_MSC_CFG; REG_USB_MSC_CFG = val & ~0x04;
+    val = REG_USB_MSC_CFG; REG_USB_MSC_CFG = val & ~0x01;
+    REG_USB_MSC_LENGTH = 0x0D;
 }
 
 /*==========================================================================
  * USB Request Handlers
  *==========================================================================*/
 
-static void handle_set_address(void) {
-    while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
-    
-    REG_USB_INT_MASK_9090 = 0x01;
+/* SET_ADDRESS: reference INT0 #2 register sequence
+ * Read 9090, Write 9090=addr, Write 91D0=0x02,
+ * Read 9100, Read 92F8 x2, Read 9002, Poll 9091 for 0x10,
+ * Write 9092=0x08, Write 9091=0x10 */
+static void handle_set_address(uint8_t addr) {
+    (void)REG_USB_INT_MASK_9090;
+    REG_USB_INT_MASK_9090 = addr;
     REG_USB_EP_CTRL_91D0 = 0x02;
-    XDATA_REG8(0xE716) = 0x01;
-    
+    (void)REG_USB_LINK_STATUS;
+    (void)XDATA_REG8(0x92F8);
+    (void)XDATA_REG8(0x92F8);
+    (void)REG_USB_CONFIG;
     while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
-    
-    XDATA_REG8(0x9206) = 0x03;
-    XDATA_REG8(0x9207) = 0x03;
-    XDATA_REG8(0x9206) = 0x07;
-    XDATA_REG8(0x9207) = 0x07;
-    XDATA_REG8(0x9206) = 0x07;
-    XDATA_REG8(0x9207) = 0x07;
-    
-    XDATA_REG8(0x9208) = 0x00;
-    XDATA_REG8(0x9209) = 0x0A;
-    XDATA_REG8(0x920A) = 0x00;
-    XDATA_REG8(0x920B) = 0x0A;
-    XDATA_REG8(0x9220) = 0x04;
-    
     REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
     REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STATUS;
 }
@@ -115,13 +119,17 @@ const uint8_t desc_string1[] = { 0x0A, 0x03, 't', 0, 'i', 0, 'n', 0, 'y', 0 };
 const uint8_t desc_string2[] = { 0x08, 0x03, 'u', 0, 's', 0, 'b', 0 };
 const uint8_t desc_string3[] = { 0x08, 0x03, '0', 0, '0', 0, '1', 0 };
 
-static void handle_get_descriptor(uint8_t type, uint8_t idx, uint8_t len) {
-    const uint8_t *src;
-    uint8_t desc_len;
+/* GET_DESCRIPTOR: trace lines 5176-5205 */
+static void handle_get_descriptor(uint8_t type, uint8_t idx, uint8_t wLenL, uint8_t wLenH) {
+    const uint8_t *src = 0;
+    uint8_t desc_len = 0;
+    uint16_t wLen;
     __xdata uint8_t *buf = (__xdata uint8_t *)USB_CTRL_BUF_BASE;
-    
-    while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA)) { }
-    
+
+    /* Read link status (trace line 5177) */
+    (void)REG_USB_LINK_STATUS;
+
+    /* Select descriptor */
     if (type == USB_DESC_TYPE_DEVICE) {
         src = desc_device; desc_len = sizeof(desc_device);
     } else if (type == USB_DESC_TYPE_BOS) {
@@ -133,55 +141,180 @@ static void handle_get_descriptor(uint8_t type, uint8_t idx, uint8_t len) {
         else if (idx == 1) { src = desc_string1; desc_len = sizeof(desc_string1); }
         else if (idx == 2) { src = desc_string2; desc_len = sizeof(desc_string2); }
         else { src = desc_string3; desc_len = sizeof(desc_string3); }
-    } else {
-        return;
     }
-    
-    if (len < desc_len) desc_len = len;
-    memcpy_x(buf, src, desc_len);
-    send_descriptor(desc_len);
+
+    if (!src) desc_len = 0;  /* Unknown type: send ZLP */
+    wLen = ((uint16_t)wLenH << 8) | wLenL;
+    if (src && wLen < desc_len) desc_len = (uint8_t)wLen;
+    if (desc_len > 0) memcpy_x(buf, src, desc_len);
+
+    /* Read link status again (trace line 5186) */
+    (void)REG_USB_LINK_STATUS;
+    /* Read config, then poll data phase ready (trace lines 5190-5193) */
+    (void)REG_USB_CONFIG;
+    (void)REG_USB_CTRL_PHASE;
+    (void)REG_USB_CTRL_PHASE;
+    (void)REG_USB_CTRL_PHASE;
+
+    /* DMA send (trace lines 5194-5201) */
+    REG_USB_EP0_STATUS = 0x00;
+    REG_USB_EP0_LEN_L = desc_len;
+    REG_USB_DMA_TRIGGER = USB_DMA_SEND;
+    while (REG_USB_DMA_TRIGGER) { }
+    /* Verify transfer (read status+length twice) */
+    (void)REG_USB_EP0_STATUS; (void)REG_USB_EP0_LEN_L;
+    (void)REG_USB_EP0_STATUS; (void)REG_USB_EP0_LEN_L;
+
+    /* Ack data phase (trace line 5202) */
+    REG_USB_CTRL_PHASE = USB_CTRL_PHASE_DATA;
+    /* Wait for status phase (trace line 5203) */
+    while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
+    /* Complete status (trace lines 5204-5205) */
+    REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
+    REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STATUS;
 }
 
 /*==========================================================================
  * Interrupt Handlers
  *==========================================================================*/
 
+static uint8_t link_reinit_count;
+
 void int0_isr(void) __interrupt(0) {
-    uint8_t status, phase;
-    uint8_t bmReq, bReq, wValL, wValH, wLenL;
-    
-    status = REG_USB_PERIPH_STATUS;
-    phase = REG_USB_CTRL_PHASE;
-    
-    if (status & USB_PERIPH_DESC_REQ) {
-        if ((phase & USB_CTRL_PHASE_STATUS) && !(phase & USB_CTRL_PHASE_SETUP)) {
-            REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STATUS;
-        } else if (phase & USB_CTRL_PHASE_SETUP) {
-            REG_USB_CTRL_PHASE = USB_CTRL_PHASE_SETUP;
-            
-            bmReq = REG_USB_SETUP_BMREQ;
-            bReq  = REG_USB_SETUP_BREQ;
-            wValL = REG_USB_SETUP_WVAL_L;
-            wValH = REG_USB_SETUP_WVAL_H;
-            wLenL = REG_USB_SETUP_WLEN_L;
-            
-            uart_puts("U:");
-            uart_puthex(bReq);
-            uart_putc('\n');
-            
-            if (bmReq == 0x00 && bReq == USB_REQ_SET_ADDRESS) {
-                handle_set_address();
-            } else if (bmReq == 0x80 && bReq == USB_REQ_GET_DESCRIPTOR) {
-                handle_get_descriptor(wValH, wValL, wLenL);
-            } else if (bmReq == 0x00 && (bReq == USB_REQ_SET_CONFIGURATION || bReq == 0x31)) {
-                complete_no_data_request();
+    uint8_t s9101, phase, val;
+    uint8_t bmReq, bReq, wValL, wValH, wLenL, wLenH;
+
+    /* Entry: read USB interrupt status (trace: always first) */
+    (void)REG_INT_USB_STATUS;
+
+    /* Read peripheral status */
+    s9101 = REG_USB_PERIPH_STATUS;
+
+    if (s9101 & USB_PERIPH_DESC_REQ) {
+        /*--- SETUP packet (9101 & 0x02) - trace lines 5091-5109 ---*/
+        (void)REG_USB_PERIPH_STATUS;
+        (void)REG_USB_PERIPH_STATUS;
+        (void)REG_USB_PERIPH_STATUS;
+
+        /* Read control phase twice (trace lines 5095-5096) */
+        phase = REG_USB_CTRL_PHASE;
+        phase = REG_USB_CTRL_PHASE;
+
+        /* USB config handshake (trace lines 5097-5098) */
+        val = REG_USB_CONFIG;
+        REG_USB_CONFIG = val;
+
+        /* Read endpoint control (trace line 5099) */
+        (void)XDATA_REG8(0x9220);
+
+        /* Start setup phase (trace line 5100) */
+        REG_USB_CTRL_PHASE = USB_CTRL_PHASE_SETUP;
+
+        /* Read 8-byte setup packet (trace lines 5101-5108) */
+        bmReq = REG_USB_SETUP_BMREQ;
+        bReq  = REG_USB_SETUP_BREQ;
+        wValL = REG_USB_SETUP_WVAL_L;
+        wValH = REG_USB_SETUP_WVAL_H;
+        (void)REG_USB_SETUP_WIDX_L;
+        (void)REG_USB_SETUP_WIDX_H;
+        wLenL = REG_USB_SETUP_WLEN_L;
+        wLenH = REG_USB_SETUP_WLEN_H;
+
+        /* Read phase to determine state (trace line 5109/5176) */
+        phase = REG_USB_CTRL_PHASE;
+
+        if (bmReq == 0x00 && bReq == USB_REQ_SET_ADDRESS) {
+            handle_set_address(wValL);
+        } else if (bmReq == 0x80 && bReq == USB_REQ_GET_DESCRIPTOR) {
+            if (phase & USB_CTRL_PHASE_DATA) {
+                handle_get_descriptor(wValH, wValL, wLenL, wLenH);
             }
+        } else {
+            /* Status-only: SET_ISOCH_DELAY, SET_CONFIGURATION, SET_INTERFACE, etc.
+             * Reference INT0 #4: read 9002, poll 9091, write 9092=0x08, 9091=0x10 */
+            (void)REG_USB_CONFIG;
+            while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
+            REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
+            REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STATUS;
+        }
+
+    } else if (s9101 & USB_PERIPH_BULK_REQ) {
+        /*--- Buffer event (9101 & 0x08) - trace lines 4866-4901 ---*/
+        (void)REG_USB_PERIPH_STATUS;
+
+        val = REG_BUF_CFG_9301;
+        if (val & 0x80) {
+            (void)REG_BUF_CFG_9301;
+            REG_BUF_CFG_9301 = 0x80;
+            (void)REG_POWER_DOMAIN;
+            REG_POWER_DOMAIN = 0x02;
+            reinit_timers_and_msc();
+        } else if (val & 0x40) {
+            /* trace lines 4997-4999: E716 read-writeback, read 92C2 */
+            {
+                uint8_t e716 = XDATA_REG8(0xE716);
+                XDATA_REG8(0xE716) = e716;
+            }
+            (void)REG_POWER_STATUS;
+            reinit_timers_and_msc();
+            REG_BUF_CFG_9301 = val;
+        }
+
+    } else if (s9101 & 0x10) {
+        /*--- Link status event (9101 & 0x10) ---*/
+        (void)REG_USB_PERIPH_STATUS;
+        (void)REG_USB_PERIPH_STATUS;
+        (void)REG_USB_PERIPH_STATUS;
+
+        /* Read 9300, write back with bit 1 cleared (acknowledge event) */
+        val = REG_BUF_CFG_9300;
+        REG_BUF_CFG_9300 = val & ~0x02;
+
+        /* E716 read-writeback */
+        val = XDATA_REG8(0xE716);
+        XDATA_REG8(0xE716) = val;
+
+        /* Link reinit: E716 clear/restore + force power event + timer/MSC reinit.
+         * Rate-limited: only first 2 invocations do the full reinit to avoid
+         * destabilizing during interrupt storms. */
+        if (link_reinit_count < 2) {
+            link_reinit_count++;
+            XDATA_REG8(0xE716) = 0x00;
+            XDATA_REG8(0xE716) = 0x03;
+            val = REG_POWER_STATUS;
+            REG_POWER_STATUS = val | 0x40;
+            reinit_timers_and_msc();
         }
     }
+
+    /* Check/handle power event before exit (original does this inside ISR) */
+    val = REG_POWER_STATUS;
+    if (val & 0x40) {
+        uint8_t e = REG_POWER_EVENT_92E1;
+        REG_POWER_EVENT_92E1 = e | 0x40;
+        REG_POWER_STATUS = val & ~0x40;
+    }
+
+    /* Exit: read system and USB interrupt status (trace lines 5147-5148) */
+    (void)REG_INT_SYSTEM;
+    (void)REG_INT_USB_STATUS;
 }
 
+/* INT1: trace lines 2000-2013 */
 void int1_isr(void) __interrupt(2) {
-    uart_puts("I1\n");
+    uint8_t val;
+    (void)REG_INT_SYSTEM;
+    (void)REG_TIMER3_CSR;
+    val = REG_CPU_DMA_INT; REG_CPU_DMA_INT = val;
+    (void)REG_XFER_DMA_CFG;
+    (void)REG_XFER2_DMA_STATUS;
+    (void)REG_CPU_EXT_STATUS;
+    (void)REG_CPU_EXEC_STATUS_2;
+    (void)REG_INT_PCIE_NVME;
+    (void)REG_INT_PCIE_NVME;
+    (void)REG_INT_PCIE_NVME;
+    (void)REG_INT_PCIE_NVME;
+    (void)REG_INT_SYSTEM;
 }
 
 void timer0_isr(void) __interrupt(1) { }
@@ -356,28 +489,58 @@ static void hw_init(void) {
  *==========================================================================*/
 
 void main(void) {
-    uint8_t event;
-    
+    uint8_t val;
+
     IE = 0;
     REG_UART_LCR &= 0xF7;
     uart_puts("\n[BOOT]\n");
-    
+
     hw_init();
-    
+
     uart_puts("[GO]\n");
-    
+
     TCON = 0;  /* Level-triggered interrupts */
     IE = IE_EA | IE_EX0 | IE_EX1;
-    
+
     while (1) {
-        /* Handle power events in main loop (per trace) */
-        event = REG_POWER_EVENT_92E1;
-        if (event) {
-            REG_POWER_EVENT_92E1 = 0x60;
-            REG_POWER_STATUS = REG_POWER_STATUS & 0x3F;
+        /* Timer control: read, OR in bit 3 (trace: read 0x04, write 0x0C) */
+        val = XDATA_REG8(0xCC2A);
+        XDATA_REG8(0xCC2A) = val | 0x08;
+
+        /* USB DMA state (original main loop reads this) */
+        (void)XDATA_REG8(0xCE89);
+
+        /* Check power status, handle power event (trace: 92C2) */
+        val = REG_POWER_STATUS;
+        if (val & 0x40) {
+            /* Read 92E1 first, then write back (trace: read 0x60, write 0x60) */
+            { uint8_t e = REG_POWER_EVENT_92E1; REG_POWER_EVENT_92E1 = e; }
+            REG_POWER_STATUS = val & ~0x40;
         }
-        
-        XDATA_REG8(0xCC2A) = 0x0C;
+
+        /* CPU timer control (original main loop reads this) */
+        (void)XDATA_REG8(0xCD31);
+
+        /* PHY config: read-writeback (original main loop does this) */
+        val = XDATA_REG8(0xC655);
+        XDATA_REG8(0xC655) = val;
+        val = XDATA_REG8(0xC620);
+        XDATA_REG8(0xC620) = val;
+
+        /* Read power status twice (trace: 92F7 x2) */
         (void)REG_POWER_STATUS_92F7;
+        (void)REG_POWER_STATUS_92F7;
+
+        /* Read USB status (trace: 9000) */
+        (void)REG_USB_STATUS;
+
+        /* High-frequency registers from reference (top accessed):
+         * E716 (2020 accesses), C520 (710), CEF3 (350) */
+        (void)XDATA_REG8(0xE716);
+        (void)XDATA_REG8(0xC520);
+        (void)XDATA_REG8(0xCEF3);
+
+        /* Reset link reinit rate limiter so ISR can reinit again */
+        link_reinit_count = 0;
     }
 }

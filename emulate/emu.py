@@ -31,6 +31,7 @@ from memory import Memory, MemoryMap
 from peripherals import Peripherals
 from hardware import HardwareState, create_hardware_hooks
 from disasm8051 import INSTRUCTIONS
+from ghidra_functions import lookup_function
 
 
 class Emulator:
@@ -38,7 +39,8 @@ class Emulator:
 
     def __init__(self, trace: bool = False, log_hw: bool = False,
                  log_uart: bool = True, usb_delay: int = 200000,
-                 proxy: 'UARTProxy' = None, proxy_mask: list = None):
+                 proxy: 'UARTProxy' = None, proxy_mask: list = None,
+                 call_trace: bool = False):
         self.memory = Memory()
         self.cpu = CPU8051(
             read_code=self.memory.read_code,
@@ -91,6 +93,11 @@ class Emulator:
         # Each entry is the bitmask (1 << int_num) for the interrupt being serviced
         self._proxy_isr_pending_acks = []
 
+        # Call tracing
+        self.call_trace = call_trace
+        self._ct_depth = 0
+        self._ct_stack = []  # Stack of (func_name, addr) for matching returns
+
     def load_firmware(self, path: str):
         """Load firmware binary."""
         with open(path, 'rb') as f:
@@ -136,12 +143,80 @@ class Emulator:
         if self.cpu.trace:
             self._trace_instruction()
 
+        # Call tracing: detect CALL/RET/RETI before stepping
+        # Read bank NOW (before step) so we decode names with the correct bank
+        ct_op = None
+        ct_bank = None
+        if self.call_trace:
+            ct_bank = self.memory.read_sfr(0x96) & 1
+            opcode = self.memory.read_code(pc)
+            if opcode == 0x12:  # LCALL addr16
+                target = (self.memory.read_code((pc + 1) & 0xFFFF) << 8) | self.memory.read_code((pc + 2) & 0xFFFF)
+                ct_op = 'call'
+                ct_target = target
+            elif opcode & 0x1F == 0x11:  # ACALL addr11
+                addr11 = ((opcode & 0xE0) << 3) | self.memory.read_code((pc + 1) & 0xFFFF)
+                ct_target = ((pc + 2) & 0xF800) | addr11
+                ct_op = 'call'
+            elif opcode == 0x22:  # RET
+                ct_op = 'ret'
+            elif opcode == 0x32:  # RETI
+                ct_op = 'reti'
+
         # Track if we're in an ISR before stepping
-        was_in_isr = self.cpu.in_interrupt if self.proxy else False
+        was_in_isr = self.cpu.in_interrupt if (self.proxy or self.call_trace) else False
 
         cycles = self.cpu.step()
         self.inst_count += 1
         self.hw.tick(cycles, self.cpu)
+
+        # Call tracing: emit output
+        if self.call_trace:
+            if ct_op == 'call':
+                # Use pre-step bank (ct_bank) to resolve the target name
+                name = lookup_function(ct_target, ct_bank) or f"FUN_{ct_target:04x}"
+                indent = "  " * self._ct_depth
+                print(f"[{self.hw.cycles:8d}] {indent}CALL {name} (0x{ct_target:04X} bank={ct_bank})")
+                self._ct_stack.append((name, ct_bank))
+                self._ct_depth += 1
+            elif ct_op == 'ret':
+                if self._ct_depth > 0:
+                    self._ct_depth -= 1
+                entry = self._ct_stack.pop() if self._ct_stack else None
+                if isinstance(entry, tuple):
+                    name, call_bank = entry
+                else:
+                    name, call_bank = (entry or "?"), None
+                # Read bank after RET to see where we returned to
+                ret_bank = self.memory.read_sfr(0x96) & 1
+                indent = "  " * self._ct_depth
+                bank_info = f" bank={ct_bank}->{ret_bank}" if ct_bank != ret_bank else ""
+                print(f"[{self.hw.cycles:8d}] {indent}RET  ({name}){bank_info}")
+            elif ct_op == 'reti':
+                if self._ct_depth > 0:
+                    self._ct_depth -= 1
+                entry = self._ct_stack.pop() if self._ct_stack else None
+                if isinstance(entry, tuple):
+                    name, call_bank = entry
+                else:
+                    name, call_bank = (entry or "?"), None
+                ret_bank = self.memory.read_sfr(0x96) & 1
+                indent = "  " * self._ct_depth
+                bank_info = f" bank={ct_bank}->{ret_bank}" if ct_bank != ret_bank else ""
+                print(f"[{self.hw.cycles:8d}] {indent}RETI ({name}){bank_info}")
+            # Detect interrupt entry (happened inside cpu.step via _check_interrupts)
+            if not was_in_isr and self.cpu.in_interrupt:
+                vec = self.cpu.pc
+                INT_NAMES = {0x0003: "INT0", 0x000B: "Timer0", 0x0013: "INT1",
+                             0x001B: "Timer1", 0x0023: "Serial", 0x002B: "Timer2"}
+                int_name = INT_NAMES.get(vec, f"VEC_{vec:04X}")
+                # Bank after interrupt entry (interrupts don't change bank)
+                bank = self.memory.read_sfr(0x96) & 1
+                func_name = lookup_function(vec, bank) or int_name
+                indent = "  " * self._ct_depth
+                print(f"[{self.hw.cycles:8d}] {indent}>>> {int_name}: {func_name} (0x{vec:04X} bank={bank})")
+                self._ct_stack.append((f"ISR:{int_name}", bank))
+                self._ct_depth += 1
 
         # In proxy mode, check if ISR just completed (RETI executed)
         if self.proxy and was_in_isr and not self.cpu.in_interrupt:
@@ -153,7 +228,7 @@ class Emulator:
                 self.proxy.ack_interrupt(int_mask)
 
         return not self.cpu.halted
-    
+
     def _check_proxy_interrupts(self):
         """Check for and handle interrupts from proxy hardware."""
         int_num = self.proxy.get_pending_interrupt()
@@ -178,11 +253,11 @@ class Emulator:
                 self.cpu._serial_pending = True
             elif int_num == 5:
                 self.cpu._timer2_pending = True
-            
+
             # Track that we owe the proxy an ack when this ISR completes
             # Store the bitmask so we can send it in the ACK
             self._proxy_isr_pending_acks.append(1 << int_num)
-            
+
             if self.proxy.debug:
                 from uart_proxy import INT_NAMES
                 int_name = INT_NAMES.get(int_num, f'Unknown({int_num})')
@@ -597,8 +672,8 @@ Examples:
   python emu.py --proxy --proxy-debug 3 fw.bin    # full debug including SFRs
 """
     )
-    parser.add_argument('firmware', nargs='?', default='fw.bin',
-                        help='Firmware binary to load (default: fw.bin)')
+    parser.add_argument('firmware', nargs='?', default='fw_ghidra.bin',
+                        help='Firmware binary to load (default: fw_ghidra.bin)')
     parser.add_argument('--trace', '-t', action='store_true',
                         help='Enable full instruction tracing (verbose)')
     parser.add_argument('--trace-pc', action='append', default=[],
@@ -636,6 +711,8 @@ Examples:
                         help='UDC driver name (default: dummy_udc)')
     parser.add_argument('--usb-device-name', type=str, default='dummy_udc.0',
                         help='UDC device name (default: dummy_udc.0)')
+    parser.add_argument('--call-trace', action='store_true',
+                        help='Enable function call/return tree tracing using Ghidra function names')
     parser.add_argument('--proxy', action='store_true',
                         help='Use UART proxy to real hardware for MMIO (requires proxy firmware)')
     parser.add_argument('--proxy-device', type=str, default='ftdi://ftdi:230x/1',
@@ -665,19 +742,19 @@ Examples:
             print(f"Connecting to UART proxy at {args.proxy_device}...")
             proxy = UARTProxy(args.proxy_device)
             proxy.debug = args.proxy_debug  # 0=off, 1=interrupts, 2=+xdata, 3=+sfr
-            
+
             # Reset device and wait for proxy firmware to boot
             print("Resetting device...")
             proxy.reset_device()
             print("Proxy firmware booted (received 'PK')")
-            
+
             # Test connection with echo
             if not proxy.test_connection():
                 print("Error: Proxy connection test failed")
                 print("Make sure proxy firmware is flashed: cd clean && make flash-proxy")
                 sys.exit(1)
             print("Proxy connection OK!")
-            
+
             # Clear any interrupts that fired during boot/test
             # These are from hardware state, not from firmware execution
             proxy.pending_interrupts = []
@@ -697,11 +774,12 @@ Examples:
         else:
             addr = int(mask_str, 16)
             proxy_mask.append((addr, addr + 1))
-    
+
     # Create emulator
     emu = Emulator(trace=args.trace, log_hw=args.log_hw,
                    log_uart=not args.no_uart_log, usb_delay=args.usb_delay,
-                   proxy=proxy, proxy_mask=proxy_mask)
+                   proxy=proxy, proxy_mask=proxy_mask,
+                   call_trace=args.call_trace)
 
     # Load firmware
     emu.load_firmware(str(fw_path))
