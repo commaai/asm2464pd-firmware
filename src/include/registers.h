@@ -1205,6 +1205,49 @@
 #define REG_BANK_2269           XDATA_REG8(0x2269)  /* Bank register at 0x2269 */
 
 //=============================================================================
+// Additional registers used by enumeration firmware
+//=============================================================================
+#define REG_USB_DATA_9014       XDATA_REG8(0x9014)
+#define REG_USB_DATA_9015       XDATA_REG8(0x9015)
+#define REG_USB_DATA_9016       XDATA_REG8(0x9016)
+#define REG_USB_DATA_9017       XDATA_REG8(0x9017)
+#define REG_USB_EP_MASK_9099    XDATA_REG8(0x9099)
+#define REG_USB_EP_MASK_909A    XDATA_REG8(0x909A)
+#define REG_USB_EP_MASK_909B    XDATA_REG8(0x909B)
+#define REG_USB_EP_MASK_909C    XDATA_REG8(0x909C)
+#define REG_USB_EP_MASK_909D    XDATA_REG8(0x909D)
+#define REG_USB_EP_CTRL_9220    XDATA_REG8(0x9220)
+#define REG_USB_TRAINING_92F8   XDATA_REG8(0x92F8)
+#define REG_BUF_CFG_9310        XDATA_REG8(0x9310)
+#define REG_BUF_CFG_9311        XDATA_REG8(0x9311)
+#define REG_BUF_CFG_9312        XDATA_REG8(0x9312)
+#define REG_BUF_CFG_9313        XDATA_REG8(0x9313)
+#define REG_BUF_CFG_9314        XDATA_REG8(0x9314)
+#define REG_BUF_CFG_9315        XDATA_REG8(0x9315)
+#define REG_BUF_CFG_9316        XDATA_REG8(0x9316)
+#define REG_BUF_CFG_9317        XDATA_REG8(0x9317)
+#define REG_BUF_CFG_9318        XDATA_REG8(0x9318)
+#define REG_BUF_CFG_9319        XDATA_REG8(0x9319)
+#define REG_BUF_CFG_931A        XDATA_REG8(0x931A)
+#define REG_BUF_CFG_931B        XDATA_REG8(0x931B)
+#define REG_BUF_CFG_931C        XDATA_REG8(0x931C)
+#define REG_BUF_CFG_931D        XDATA_REG8(0x931D)
+#define REG_BUF_CFG_931E        XDATA_REG8(0x931E)
+#define REG_BUF_CFG_931F        XDATA_REG8(0x931F)
+#define REG_BUF_CFG_9320        XDATA_REG8(0x9320)
+#define REG_BUF_CFG_9321        XDATA_REG8(0x9321)
+#define REG_BUF_CFG_9322        XDATA_REG8(0x9322)
+#define REG_BUF_CFG_9323        XDATA_REG8(0x9323)
+#define REG_PHY_LINK_CFG_C620   XDATA_REG8(0xC620)
+#define REG_INT_AUX_C807        XDATA_REG8(0xC807)
+#define REG_TIMER_CTRL_CC2A     XDATA_REG8(0xCC2A)
+#define REG_TIMER_CFG_CC2C      XDATA_REG8(0xCC2C)
+#define REG_TIMER_CFG_CC2D      XDATA_REG8(0xCC2D)
+#define REG_CPU_CTRL_CC43       XDATA_REG8(0xCC43)
+#define REG_PHY_CFG_E741        XDATA_REG8(0xE741)
+#define REG_PHY_CFG_E742        XDATA_REG8(0xE742)
+
+//=============================================================================
 // Timeouts (milliseconds)
 //=============================================================================
 #define TIMEOUT_NVME            5000

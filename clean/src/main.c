@@ -6,16 +6,6 @@
 #include "types.h"
 #include "registers.h"
 
-/* Override XDATA_REG macros to add volatile for proper MMIO access.
- * Without volatile, SDCC optimizes away reads whose value is discarded,
- * which breaks hardware handshake sequences that require register reads. */
-#undef XDATA_REG8
-#undef XDATA_REG16
-#undef XDATA_REG32
-#define XDATA_REG8(addr)   (*(volatile __xdata uint8_t *)(addr))
-#define XDATA_REG16(addr)  (*(volatile __xdata uint16_t *)(addr))
-#define XDATA_REG32(addr)  (*(volatile __xdata uint32_t *)(addr))
-
 /* 8051 SFRs */
 __sfr __at(0xA8) IE;
 __sfr __at(0x88) TCON;
@@ -57,7 +47,7 @@ static void reinit_timers_and_msc(void) {
     /* Timer4 config */
     val = REG_TIMER4_DIV; REG_TIMER4_DIV = val;
     REG_TIMER4_THRESHOLD_LO = 0x00; REG_TIMER4_THRESHOLD_HI = 0xC7;
-    /* MSC progressive init: 0→2→6→7→5→1→0 */
+    /* MSC progressive init: 0->2->6->7->5->1->0 */
     val = REG_USB_MSC_CFG; REG_USB_MSC_CFG = val | 0x02;
     val = REG_USB_MSC_CFG; REG_USB_MSC_CFG = val | 0x04;
     val = REG_USB_MSC_CFG; REG_USB_MSC_CFG = val | 0x01;
@@ -80,8 +70,8 @@ static void handle_set_address(uint8_t addr) {
     REG_USB_INT_MASK_9090 = addr;
     REG_USB_EP_CTRL_91D0 = 0x02;
     (void)REG_USB_LINK_STATUS;
-    (void)XDATA_REG8(0x92F8);
-    (void)XDATA_REG8(0x92F8);
+    (void)REG_USB_TRAINING_92F8;
+    (void)REG_USB_TRAINING_92F8;
     (void)REG_USB_CONFIG;
     while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STATUS)) { }
     REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
@@ -205,7 +195,7 @@ void int0_isr(void) __interrupt(0) {
         REG_USB_CONFIG = val;
 
         /* Read endpoint control (trace line 5099) */
-        (void)XDATA_REG8(0x9220);
+        (void)REG_USB_EP_CTRL_9220;
 
         /* Start setup phase (trace line 5100) */
         REG_USB_CTRL_PHASE = USB_CTRL_PHASE_SETUP;
@@ -252,8 +242,8 @@ void int0_isr(void) __interrupt(0) {
         } else if (val & 0x40) {
             /* trace lines 4997-4999: E716 read-writeback, read 92C2 */
             {
-                uint8_t e716 = XDATA_REG8(0xE716);
-                XDATA_REG8(0xE716) = e716;
+                uint8_t e716 = REG_LINK_STATUS_E716;
+                REG_LINK_STATUS_E716 = e716;
             }
             (void)REG_POWER_STATUS;
             reinit_timers_and_msc();
@@ -271,16 +261,16 @@ void int0_isr(void) __interrupt(0) {
         REG_BUF_CFG_9300 = val & ~0x02;
 
         /* E716 read-writeback */
-        val = XDATA_REG8(0xE716);
-        XDATA_REG8(0xE716) = val;
+        val = REG_LINK_STATUS_E716;
+        REG_LINK_STATUS_E716 = val;
 
         /* Link reinit: E716 clear/restore + force power event + timer/MSC reinit.
          * Rate-limited: only first 2 invocations do the full reinit to avoid
          * destabilizing during interrupt storms. */
         if (link_reinit_count < 2) {
             link_reinit_count++;
-            XDATA_REG8(0xE716) = 0x00;
-            XDATA_REG8(0xE716) = 0x03;
+            REG_LINK_STATUS_E716 = 0x00;
+            REG_LINK_STATUS_E716 = 0x03;
             val = REG_POWER_STATUS;
             REG_POWER_STATUS = val | 0x40;
             reinit_timers_and_msc();
@@ -329,15 +319,15 @@ void timer2_isr(void) __interrupt(5) { }
 static void hw_init(void) {
     /* PCIe/DMA init */
     REG_CPU_EXEC_STATUS = 0x01; REG_CPU_MODE = 0x01;
-    XDATA_REG8(0xE710) = 0x04; REG_CPU_EXEC_STATUS_2 = 0x04;
-    REG_TIMER_CTRL_CC3B = 0x0C; XDATA_REG8(0xE717) = 0x01;
+    REG_LINK_WIDTH_E710 = 0x04; REG_CPU_EXEC_STATUS_2 = 0x04;
+    REG_TIMER_CTRL_CC3B = 0x0C; REG_LINK_CTRL_E717 = 0x01;
     REG_CPU_CTRL_CC3E = 0x00; REG_TIMER_CTRL_CC3B = 0x0C;
-    REG_TIMER_CTRL_CC3B = 0x0C; XDATA_REG8(0xE716) = 0x03;
+    REG_TIMER_CTRL_CC3B = 0x0C; REG_LINK_STATUS_E716 = 0x03;
     REG_CPU_CTRL_CC3E = 0x00; REG_TIMER_CTRL_CC39 = 0x06;
     REG_TIMER_ENABLE_B = 0x14; REG_TIMER_ENABLE_A = 0x44;
-    REG_CPU_CTRL_CC37 = 0x2C; XDATA_REG8(0xE780) = 0x00;
-    XDATA_REG8(0xE716) = 0x00; XDATA_REG8(0xE716) = 0x03;
-    
+    REG_CPU_CTRL_CC37 = 0x2C; REG_SYS_CTRL_E780 = 0x00;
+    REG_LINK_STATUS_E716 = 0x00; REG_LINK_STATUS_E716 = 0x03;
+
     /* Timer init sequence */
     { uint8_t i; for(i = 0; i < 4; i++) {
         REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
@@ -347,14 +337,14 @@ static void hw_init(void) {
         REG_TIMER0_CSR = 0x01;
         if (i < 3) { REG_TIMER0_CSR = 0x02; }
     }}
-    
+
     /* PHY config */
-    XDATA_REG8(0xE7E3) = 0x00;
-    XDATA_REG8(0xE764) = 0x14; XDATA_REG8(0xE764) = 0x14;
-    XDATA_REG8(0xE764) = 0x14; XDATA_REG8(0xE764) = 0x14;
-    XDATA_REG8(0xE76C) = 0x04; XDATA_REG8(0xE774) = 0x04;
-    XDATA_REG8(0xE77C) = 0x04;
-    
+    REG_PHY_LINK_CTRL = 0x00;
+    REG_PHY_TIMER_CTRL_E764 = 0x14; REG_PHY_TIMER_CTRL_E764 = 0x14;
+    REG_PHY_TIMER_CTRL_E764 = 0x14; REG_PHY_TIMER_CTRL_E764 = 0x14;
+    REG_SYS_CTRL_E76C = 0x04; REG_SYS_CTRL_E774 = 0x04;
+    REG_SYS_CTRL_E77C = 0x04;
+
     /* More timer/clock setup */
     { uint8_t i; for(i = 0; i < 4; i++) {
         REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
@@ -362,10 +352,10 @@ static void hw_init(void) {
         REG_TIMER0_THRESHOLD_LO = 0xC7; REG_TIMER0_CSR = 0x01;
         REG_TIMER0_CSR = 0x02;
     }}
-    
+
     /* Flash/interrupt config */
     REG_INT_AUX_STATUS = 0x02; REG_FLASH_DIV = 0x04;
-    
+
     /* Flash status polling */
     { uint8_t i; for(i = 0; i < 20; i++) {
         REG_FLASH_MODE = 0x00; REG_FLASH_BUF_OFFSET_LO = 0x00;
@@ -375,7 +365,7 @@ static void hw_init(void) {
         REG_FLASH_DATA_LEN = 0x00; REG_FLASH_DATA_LEN_HI = (i == 0) ? 0x00 : 0x01;
         REG_FLASH_CSR = 0x01;
     }}
-    
+
     /* USB PHY and link init */
     REG_CPU_EXEC_STATUS_3 = 0x00; REG_INT_ENABLE = 0x10;
     REG_INT_STATUS_C800 = 0x04; REG_INT_STATUS_C800 = 0x05;
@@ -386,36 +376,36 @@ static void hw_init(void) {
     REG_USB_CTRL_920C = 0x60; REG_POWER_ENABLE = 0x87;
     REG_CLOCK_ENABLE = 0x83; REG_PHY_POWER = 0x2F;
     REG_USB_PHY_CONFIG_9241 = 0x10; REG_USB_PHY_CONFIG_9241 = 0xD0;
-    XDATA_REG8(0xE741) = 0x5B; XDATA_REG8(0xE741) = 0x6B;
-    XDATA_REG8(0xE742) = 0x1F; XDATA_REG8(0xE741) = 0xAB;
-    XDATA_REG8(0xE742) = 0x17; XDATA_REG8(0xCC43) = 0x88;
-    
+    REG_PHY_CFG_E741 = 0x5B; REG_PHY_CFG_E741 = 0x6B;
+    REG_PHY_CFG_E742 = 0x1F; REG_PHY_CFG_E741 = 0xAB;
+    REG_PHY_CFG_E742 = 0x17; REG_CPU_CTRL_CC43 = 0x88;
+
     /* Buffer config */
-    XDATA_REG8(0x9316) = 0x00; XDATA_REG8(0x9317) = 0x00;
-    XDATA_REG8(0x931A) = 0x00; XDATA_REG8(0x931B) = 0x00;
-    XDATA_REG8(0x9322) = 0x00; XDATA_REG8(0x9323) = 0x00;
-    XDATA_REG8(0x9310) = 0x01; XDATA_REG8(0x9311) = 0x60;
-    XDATA_REG8(0x9312) = 0x00; XDATA_REG8(0x9313) = 0xE3;
-    XDATA_REG8(0x9314) = 0x01; XDATA_REG8(0x9315) = 0x60;
-    XDATA_REG8(0x9318) = 0x01; XDATA_REG8(0x9319) = 0x60;
-    XDATA_REG8(0x931C) = 0x00; XDATA_REG8(0x931D) = 0x03;
-    XDATA_REG8(0x931E) = 0x00; XDATA_REG8(0x931F) = 0xE0;
-    XDATA_REG8(0x9320) = 0x00; XDATA_REG8(0x9321) = 0xE3;
-    
+    REG_BUF_CFG_9316 = 0x00; REG_BUF_CFG_9317 = 0x00;
+    REG_BUF_CFG_931A = 0x00; REG_BUF_CFG_931B = 0x00;
+    REG_BUF_CFG_9322 = 0x00; REG_BUF_CFG_9323 = 0x00;
+    REG_BUF_CFG_9310 = 0x01; REG_BUF_CFG_9311 = 0x60;
+    REG_BUF_CFG_9312 = 0x00; REG_BUF_CFG_9313 = 0xE3;
+    REG_BUF_CFG_9314 = 0x01; REG_BUF_CFG_9315 = 0x60;
+    REG_BUF_CFG_9318 = 0x01; REG_BUF_CFG_9319 = 0x60;
+    REG_BUF_CFG_931C = 0x00; REG_BUF_CFG_931D = 0x03;
+    REG_BUF_CFG_931E = 0x00; REG_BUF_CFG_931F = 0xE0;
+    REG_BUF_CFG_9320 = 0x00; REG_BUF_CFG_9321 = 0xE3;
+
     /* USB endpoint and interrupt config */
     REG_CPU_EXEC_STATUS_3 = 0x00; REG_USB_EP_CTRL_905F = 0x44;
-    XDATA_REG8(0xCC2A) = 0x04; XDATA_REG8(0xCC2C) = 0xC7;
-    XDATA_REG8(0xCC2D) = 0xC7; REG_INT_ENABLE = 0x50;
-    REG_CPU_EXEC_STATUS = 0x00; XDATA_REG8(0xC807) = 0x04;
+    REG_TIMER_CTRL_CC2A = 0x04; REG_TIMER_CFG_CC2C = 0xC7;
+    REG_TIMER_CFG_CC2D = 0xC7; REG_INT_ENABLE = 0x50;
+    REG_CPU_EXEC_STATUS = 0x00; REG_INT_AUX_C807 = 0x04;
     REG_POWER_CTRL_92C8 = 0x24; REG_POWER_CTRL_92C8 = 0x24;
-    
+
     /* Timer 2/4 config */
     REG_TIMER2_CSR = 0x04; REG_TIMER2_CSR = 0x02;
     REG_TIMER4_CSR = 0x04; REG_TIMER4_CSR = 0x02;
     REG_TIMER2_DIV = 0x16; REG_TIMER2_THRESHOLD_LO = 0x00;
     REG_TIMER2_THRESHOLD_HI = 0x8B; REG_TIMER4_DIV = 0x54;
     REG_TIMER4_THRESHOLD_LO = 0x00; REG_TIMER4_THRESHOLD_HI = 0xC7;
-    
+
     /* USB MSC/endpoint init */
     REG_USB_MSC_CFG = 0x07; REG_USB_MSC_CFG = 0x07;
     REG_USB_MSC_CFG = 0x07; REG_USB_MSC_CFG = 0x05;
@@ -428,20 +418,20 @@ static void hw_init(void) {
     REG_BUF_CFG_9304 = 0x3F; REG_BUF_CFG_9305 = 0x40;
     REG_USB_CONFIG = 0xE0; REG_USB_EP0_LEN_H = 0xF0;
     REG_USB_MODE = 0x01; REG_USB_EP_MGMT = 0x00;
-    
+
     /* Endpoint mask config */
     REG_USB_EP_READY = 0xFF; REG_USB_EP_CTRL_9097 = 0xFF;
-    REG_USB_EP_MODE_9098 = 0xFF; XDATA_REG8(0x9099) = 0xFF;
-    XDATA_REG8(0x909A) = 0xFF; XDATA_REG8(0x909B) = 0xFF;
-    XDATA_REG8(0x909C) = 0xFF; XDATA_REG8(0x909D) = 0xFF;
+    REG_USB_EP_MODE_9098 = 0xFF; REG_USB_EP_MASK_9099 = 0xFF;
+    REG_USB_EP_MASK_909A = 0xFF; REG_USB_EP_MASK_909B = 0xFF;
+    REG_USB_EP_MASK_909C = 0xFF; REG_USB_EP_MASK_909D = 0xFF;
     REG_USB_STATUS_909E = 0x03; REG_USB_DATA_H = 0xFF;
     REG_USB_FIFO_STATUS = 0xFF; REG_USB_FIFO_H = 0xFF;
-    XDATA_REG8(0x9014) = 0xFF; XDATA_REG8(0x9015) = 0xFF;
-    XDATA_REG8(0x9016) = 0xFF; XDATA_REG8(0x9017) = 0xFF;
+    REG_USB_DATA_9014 = 0xFF; REG_USB_DATA_9015 = 0xFF;
+    REG_USB_DATA_9016 = 0xFF; REG_USB_DATA_9017 = 0xFF;
     REG_USB_XCVR_MODE = 0x03; REG_USB_DATA_L = 0xFE;
     REG_USB_PHY_CTRL_91C3 = 0x00; REG_USB_PHY_CTRL_91C0 = 0x13;
     REG_USB_PHY_CTRL_91C0 = 0x12;
-    
+
     /* Final timer/DMA config */
     REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
     REG_TIMER0_DIV = 0x14; REG_TIMER0_THRESHOLD_HI = 0x01;
@@ -450,38 +440,38 @@ static void hw_init(void) {
     REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
     REG_TIMER0_DIV = 0x10; REG_TIMER0_THRESHOLD_HI = 0x00;
     REG_TIMER0_THRESHOLD_LO = 0x09; REG_TIMER0_CSR = 0x01;
-    REG_TIMER0_CSR = 0x02; XDATA_REG8(0xC807) = 0x04;
-    XDATA_REG8(0xC807) = 0x84; XDATA_REG8(0xE7FC) = 0xFF;
-    
+    REG_TIMER0_CSR = 0x02; REG_INT_AUX_C807 = 0x04;
+    REG_INT_AUX_C807 = 0x84; REG_LINK_MODE_CTRL = 0xFF;
+
     /* DMA channel config */
-    XDATA_REG8(0xCCD9) = 0x04; XDATA_REG8(0xCCD9) = 0x02;
-    XDATA_REG8(0xCCD8) = 0x00; REG_INT_ENABLE = 0x50;
-    XDATA_REG8(0xCCD8) = 0x04; XDATA_REG8(0xCCDA) = 0x00;
-    XDATA_REG8(0xCCDB) = 0xC8; REG_INT_CTRL = 0x08;
+    REG_XFER2_DMA_STATUS = 0x04; REG_XFER2_DMA_STATUS = 0x02;
+    REG_XFER2_DMA_CTRL = 0x00; REG_INT_ENABLE = 0x50;
+    REG_XFER2_DMA_CTRL = 0x04; REG_XFER2_DMA_ADDR_LO = 0x00;
+    REG_XFER2_DMA_ADDR_HI = 0xC8; REG_INT_CTRL = 0x08;
     REG_INT_CTRL = 0x0A; REG_INT_CTRL = 0x0A;
-    XDATA_REG8(0xCCF8) = 0x40; XDATA_REG8(0xCCF9) = 0x04;
-    XDATA_REG8(0xCCF9) = 0x02;
-    
+    REG_CPU_EXT_CTRL = 0x40; REG_CPU_EXT_STATUS = 0x04;
+    REG_CPU_EXT_STATUS = 0x02;
+
     /* Timer interrupt setup */
-    XDATA_REG8(0xCC88) = 0x10; XDATA_REG8(0xCC8A) = 0x00;
-    XDATA_REG8(0xCC8B) = 0x0A; XDATA_REG8(0xCC89) = 0x01;
-    XDATA_REG8(0xCC89) = 0x02; XDATA_REG8(0xCC88) = 0x10;
-    XDATA_REG8(0xCC8A) = 0x00; XDATA_REG8(0xCC8B) = 0x3C;
-    XDATA_REG8(0xCC89) = 0x01; XDATA_REG8(0xCC89) = 0x02;
+    REG_XFER_DMA_CTRL = 0x10; REG_XFER_DMA_ADDR_LO = 0x00;
+    REG_XFER_DMA_ADDR_HI = 0x0A; REG_XFER_DMA_CMD = 0x01;
+    REG_XFER_DMA_CMD = 0x02; REG_XFER_DMA_CTRL = 0x10;
+    REG_XFER_DMA_ADDR_LO = 0x00; REG_XFER_DMA_ADDR_HI = 0x3C;
+    REG_XFER_DMA_CMD = 0x01; REG_XFER_DMA_CMD = 0x02;
     REG_INT_CTRL = 0x2A; REG_INT_ENABLE = 0x50;
-    
+
     /* CPU control */
-    XDATA_REG8(0xCC80) = 0x00; XDATA_REG8(0xCC80) = 0x03;
-    XDATA_REG8(0xCC99) = 0x04; XDATA_REG8(0xCC99) = 0x02;
-    REG_INT_ENABLE = 0x50; XDATA_REG8(0xCC98) = 0x00;
-    XDATA_REG8(0xCC98) = 0x04;
-    
+    REG_CPU_CTRL_CC80 = 0x00; REG_CPU_CTRL_CC80 = 0x03;
+    REG_XFER_DMA_CFG = 0x04; REG_XFER_DMA_CFG = 0x02;
+    REG_INT_ENABLE = 0x50; REG_CPU_DMA_READY = 0x00;
+    REG_CPU_DMA_READY = 0x04;
+
     /* DMA control final */
-    XDATA_REG8(0xCC82) = 0x18; XDATA_REG8(0xCC83) = 0x9C;
-    XDATA_REG8(0xCC91) = 0x04; XDATA_REG8(0xCC91) = 0x02;
-    REG_INT_ENABLE = 0x50; XDATA_REG8(0xCC90) = 0x00;
-    XDATA_REG8(0xCC90) = 0x05; XDATA_REG8(0xCC92) = 0x00;
-    XDATA_REG8(0xCC93) = 0xC8; XDATA_REG8(0xCC91) = 0x01;
+    REG_CPU_CTRL_CC82 = 0x18; REG_CPU_CTRL_CC83 = 0x9C;
+    REG_CPU_DMA_INT = 0x04; REG_CPU_DMA_INT = 0x02;
+    REG_INT_ENABLE = 0x50; REG_CPU_DMA_CTRL_CC90 = 0x00;
+    REG_CPU_DMA_CTRL_CC90 = 0x05; REG_CPU_DMA_DATA_LO = 0x00;
+    REG_CPU_DMA_DATA_HI = 0xC8; REG_CPU_DMA_INT = 0x01;
 }
 
 /*==========================================================================
@@ -504,11 +494,11 @@ void main(void) {
 
     while (1) {
         /* Timer control: read, OR in bit 3 (trace: read 0x04, write 0x0C) */
-        val = XDATA_REG8(0xCC2A);
-        XDATA_REG8(0xCC2A) = val | 0x08;
+        val = REG_TIMER_CTRL_CC2A;
+        REG_TIMER_CTRL_CC2A = val | 0x08;
 
         /* USB DMA state (original main loop reads this) */
-        (void)XDATA_REG8(0xCE89);
+        (void)REG_USB_DMA_STATE;
 
         /* Check power status, handle power event (trace: 92C2) */
         val = REG_POWER_STATUS;
@@ -519,13 +509,13 @@ void main(void) {
         }
 
         /* CPU timer control (original main loop reads this) */
-        (void)XDATA_REG8(0xCD31);
+        (void)REG_CPU_TIMER_CTRL_CD31;
 
         /* PHY config: read-writeback (original main loop does this) */
-        val = XDATA_REG8(0xC655);
-        XDATA_REG8(0xC655) = val;
-        val = XDATA_REG8(0xC620);
-        XDATA_REG8(0xC620) = val;
+        val = REG_PHY_CFG_C655;
+        REG_PHY_CFG_C655 = val;
+        val = REG_PHY_LINK_CFG_C620;
+        REG_PHY_LINK_CFG_C620 = val;
 
         /* Read power status twice (trace: 92F7 x2) */
         (void)REG_POWER_STATUS_92F7;
@@ -536,9 +526,9 @@ void main(void) {
 
         /* High-frequency registers from reference (top accessed):
          * E716 (2020 accesses), C520 (710), CEF3 (350) */
-        (void)XDATA_REG8(0xE716);
-        (void)XDATA_REG8(0xC520);
-        (void)XDATA_REG8(0xCEF3);
+        (void)REG_LINK_STATUS_E716;
+        (void)REG_NVME_LINK_STATUS;
+        (void)REG_CPU_LINK_CEF3;
 
         /* Reset link reinit rate limiter so ISR can reinit again */
         link_reinit_count = 0;
