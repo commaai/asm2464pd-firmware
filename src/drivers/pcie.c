@@ -1994,7 +1994,7 @@ void pcie_tlp_handler_b28c(void)
                     }
                 } else {
                     /* Check 0x9101 bit 6 */
-                    if (REG_USB_PERIPH_STATUS & USB_PERIPH_SUSPENDED) {
+                    if (REG_USB_PERIPH_STATUS & USB_PERIPH_CBW_RECEIVED) {
                         usb_buffer_handler();
                         break;
                     }
