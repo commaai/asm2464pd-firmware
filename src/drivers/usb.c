@@ -4612,7 +4612,7 @@ void usb_parse_descriptor(uint8_t param1, uint8_t param2)
     REG_USB_EP_BUF_LEN_LO = 0;
     REG_DMA_STATUS = 0;
     REG_USB_EP_BUF_LEN_HI = 0;
-    REG_USB_EP_CTRL_0F = 0;
+    REG_USB_EP_DMA_LEN = 0;
 
     /* Setup based on param1 bit 4 */
     if ((param1 & 0x10) == 0) {
@@ -4710,7 +4710,7 @@ void usb_helper_51ef(void)
     }
 
     /* Check for "USBC" signature at 0x911b */
-    if (REG_USB_BUFFER_ALT != 'U') return;
+    if (REG_USB_CBW_SIG0 != 'U') return;
     if (REG_USB_CBW_SIG1 != 'S') return;
     if (REG_USB_CBW_SIG2 != 'B') return;
     if (REG_USB_CBW_SIG3 != 'C') return;
