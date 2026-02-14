@@ -122,6 +122,10 @@
 #define   USB_REQ_SET_DESCRIPTOR     0x07
 #define   USB_REQ_GET_CONFIGURATION  0x08
 #define   USB_REQ_SET_CONFIGURATION  0x09
+#define   USB_REQ_GET_INTERFACE      0x0A
+#define   USB_REQ_SET_INTERFACE      0x0B
+#define   USB_REQ_SET_SEL            0x30  // USB 3.0: Set System Exit Latency
+#define   USB_REQ_SET_ISOCH_DELAY    0x31  // USB 3.0: Set Isochronous Delay
 
 // Descriptor types (for wValue high byte in GET_DESCRIPTOR)
 #define   USB_DESC_TYPE_DEVICE       0x01
@@ -595,6 +599,8 @@
 
 // Buffer config registers (0x9300-0x93FF)
 #define REG_BUF_CFG_9300        XDATA_REG8(0x9300)
+#define   BUF_CFG_9300_SS_FAIL    0x04  // Bit 2: USB 3.0 link failed, fall back to 2.0
+#define   BUF_CFG_9300_SS_OK      0x08  // Bit 3: USB 3.0 link established
 #define REG_BUF_CFG_9301        XDATA_REG8(0x9301)
 #define   BUF_CFG_9301_BIT6      0x40  // Bit 6: Buffer config flag
 #define   BUF_CFG_9301_BIT7      0x80  // Bit 7: Buffer config flag
