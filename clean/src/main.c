@@ -23,8 +23,14 @@ __sfr __at(0x88) TCON;
 #define IE_ET0  0x02
 #define IE_EX0  0x01
 
-/* Write a byte to the descriptor response buffer at 0x9E00+offset */
-#define DESC_BUF(n) XDATA_REG8(USB_CTRL_BUF_BASE + (n))
+/* Descriptor response buffer at 0x9E00 */
+#define DESC_BUF ((__xdata uint8_t *)USB_CTRL_BUF_BASE)
+
+static void desc_copy(__code const uint8_t *src, uint8_t len) {
+    uint8_t i;
+    for (i = 0; i < len; i++)
+        DESC_BUF[i] = src[i];
+}
 
 void uart_putc(uint8_t ch) { REG_UART_THR = ch; }
 void uart_puts(__code const char *str) { while (*str) uart_putc(*str++); }
@@ -127,142 +133,85 @@ static void handle_set_address(void) {
     uart_puts("[A]\n");
 }
 
+/* Device descriptor (18 bytes) — bcdUSB/bMaxPacketSize patched per speed */
+static __code const uint8_t dev_desc[] = {
+    0x12, 0x01, 0x20, 0x03,     /* bLength, bDescType, bcdUSB=3.20 */
+    0x00, 0x00, 0x00, 0x09,     /* class=0, subclass=0, proto=0, maxpkt=9 */
+    0xD1, 0xAD, 0x01, 0x00,     /* idVendor=0xADD1, idProduct=0x0001 */
+    0x01, 0x00, 0x01, 0x02,     /* bcdDevice=0x0001, iMfr=1, iProd=2 */
+    0x03, 0x01,                 /* iSerial=3, bNumConfigurations=1 */
+};
+
+/* Config + Interface + 2 Bulk EPs (32 bytes) */
+static __code const uint8_t cfg_desc[] = {
+    /* Configuration */
+    0x09, 0x02, 0x20, 0x00,     /* wTotalLength=32, bNumInterfaces=1 */
+    0x01, 0x01, 0x00, 0xC0,     /* bConfigValue=1, iConfig=0, self-powered */
+    0x00,                       /* bMaxPower=0 */
+    /* Interface */
+    0x09, 0x04, 0x00, 0x00,     /* bInterfaceNumber=0, bAltSetting=0 */
+    0x02, 0xFF, 0xFF, 0xFF,     /* bNumEP=2, vendor class FF/FF/FF */
+    0x00,                       /* iInterface=0 */
+    /* Bulk IN EP1 */
+    0x07, 0x05, 0x81, 0x02,     /* EP1 IN, bulk */
+    0x00, 0x02, 0x00,           /* wMaxPacketSize=512, bInterval=0 */
+    /* Bulk OUT EP2 */
+    0x07, 0x05, 0x02, 0x02,     /* EP2 OUT, bulk */
+    0x00, 0x02, 0x00,           /* wMaxPacketSize=512, bInterval=0 */
+};
+
+/* BOS: USB 2.0 Extension + SuperSpeed capability (22 bytes) */
+static __code const uint8_t bos_desc[] = {
+    0x05, 0x0F, 0x16, 0x00, 0x02,   /* BOS header, wTotalLength=22, 2 caps */
+    /* USB 2.0 Extension (7 bytes) */
+    0x07, 0x10, 0x02, 0x02, 0x00, 0x00, 0x00,
+    /* SuperSpeed Device Capability (10 bytes) */
+    0x0A, 0x10, 0x03, 0x00, 0x0E, 0x00, 0x03, 0x00, 0x00, 0x00,
+};
+
+/* String descriptor 0: language ID */
+static __code const uint8_t str0_desc[] = { 0x04, 0x03, 0x09, 0x04 };
+/* String descriptor 1: "tiny" */
+static __code const uint8_t str1_desc[] = { 0x0A, 0x03, 't',0, 'i',0, 'n',0, 'y',0 };
+/* String descriptor 2: "usb" */
+static __code const uint8_t str2_desc[] = { 0x08, 0x03, 'u',0, 's',0, 'b',0 };
+/* String descriptor 3: "001" */
+static __code const uint8_t str3_desc[] = { 0x08, 0x03, '0',0, '0',0, '1',0 };
+/* Empty string */
+static __code const uint8_t str_empty[] = { 0x02, 0x03 };
+
 static void handle_get_descriptor(uint8_t desc_type, uint8_t desc_idx, uint8_t wlen) {
-    uint8_t actual_len;
+    __code const uint8_t *src;
+    uint8_t desc_len;
 
     while (!(REG_USB_CTRL_PHASE & 0x08)) { }
 
     if (desc_type == 0x01) {
-        /* Device descriptor */
-        DESC_BUF(0x00) = 0x12;
-        DESC_BUF(0x01) = 0x01;
-        if (is_usb3) {
-            DESC_BUF(0x02) = 0x20;      /* bcdUSB = 0x0320 */
-            DESC_BUF(0x03) = 0x03;
-        } else {
-            DESC_BUF(0x02) = 0x10;      /* bcdUSB = 0x0210 */
-            DESC_BUF(0x03) = 0x02;
+        /* Device descriptor — patch bcdUSB and bMaxPacketSize for speed */
+        desc_copy(dev_desc, 18);
+        if (!is_usb3) {
+            DESC_BUF[2] = 0x10; DESC_BUF[3] = 0x02;  /* bcdUSB = 0x0210 */
+            DESC_BUF[7] = 0x40;                        /* bMaxPacketSize0 = 64 */
         }
-        DESC_BUF(0x04) = 0x00;
-        DESC_BUF(0x05) = 0x00;
-        DESC_BUF(0x06) = 0x00;
-        DESC_BUF(0x07) = is_usb3 ? 0x09 : 0x40;  /* 512 or 64 */
-        DESC_BUF(0x08) = 0xD1;          /* idVendor = 0xADD1 */
-        DESC_BUF(0x09) = 0xAD;
-        DESC_BUF(0x0A) = 0x01;          /* idProduct = 0x0001 */
-        DESC_BUF(0x0B) = 0x00;
-        DESC_BUF(0x0C) = 0x01;          /* bcdDevice = 0x0001 */
-        DESC_BUF(0x0D) = 0x00;
-        DESC_BUF(0x0E) = 0x01;
-        DESC_BUF(0x0F) = 0x02;
-        DESC_BUF(0x10) = 0x03;
-        DESC_BUF(0x11) = 0x01;
-        actual_len = (wlen < 18) ? wlen : 18;
-        send_descriptor_data(actual_len);
-
+        desc_len = 18;
     } else if (desc_type == 0x02) {
-        /* Config + Interface + 2 Bulk EPs = 32 bytes */
-        DESC_BUF(0x00) = 0x09;
-        DESC_BUF(0x01) = 0x02;
-        DESC_BUF(0x02) = 0x20;          /* wTotalLength = 32 */
-        DESC_BUF(0x03) = 0x00;
-        DESC_BUF(0x04) = 0x01;          /* bNumInterfaces */
-        DESC_BUF(0x05) = 0x01;
-        DESC_BUF(0x06) = 0x00;
-        DESC_BUF(0x07) = 0xC0;          /* Self-powered */
-        DESC_BUF(0x08) = 0x00;
-        /* Interface */
-        DESC_BUF(0x09) = 0x09;
-        DESC_BUF(0x0A) = 0x04;
-        DESC_BUF(0x0B) = 0x00;
-        DESC_BUF(0x0C) = 0x00;
-        DESC_BUF(0x0D) = 0x02;          /* 2 endpoints */
-        DESC_BUF(0x0E) = 0xFF;          /* Vendor class */
-        DESC_BUF(0x0F) = 0xFF;
-        DESC_BUF(0x10) = 0xFF;
-        DESC_BUF(0x11) = 0x00;
-        /* Bulk IN EP1 */
-        DESC_BUF(0x12) = 0x07;
-        DESC_BUF(0x13) = 0x05;
-        DESC_BUF(0x14) = 0x81;
-        DESC_BUF(0x15) = 0x02;
-        DESC_BUF(0x16) = 0x00;          /* wMaxPacketSize = 512 */
-        DESC_BUF(0x17) = 0x02;
-        DESC_BUF(0x18) = 0x00;
-        /* Bulk OUT EP2 */
-        DESC_BUF(0x19) = 0x07;
-        DESC_BUF(0x1A) = 0x05;
-        DESC_BUF(0x1B) = 0x02;
-        DESC_BUF(0x1C) = 0x02;
-        DESC_BUF(0x1D) = 0x00;          /* wMaxPacketSize = 512 */
-        DESC_BUF(0x1E) = 0x02;
-        DESC_BUF(0x1F) = 0x00;
-        actual_len = (wlen < 32) ? wlen : 32;
-        send_descriptor_data(actual_len);
-
+        src = cfg_desc; desc_len = sizeof(cfg_desc);
+        desc_copy(src, desc_len);
     } else if (desc_type == 0x0F) {
-        /* BOS: 5 + 7 (USB 2.0 ext) + 10 (SS cap) = 22 bytes */
-        DESC_BUF(0x00) = 0x05;
-        DESC_BUF(0x01) = 0x0F;
-        DESC_BUF(0x02) = 0x16;          /* wTotalLength = 22 */
-        DESC_BUF(0x03) = 0x00;
-        DESC_BUF(0x04) = 0x02;          /* 2 capabilities */
-        /* USB 2.0 Extension (7 bytes) */
-        DESC_BUF(0x05) = 0x07;
-        DESC_BUF(0x06) = 0x10;
-        DESC_BUF(0x07) = 0x02;
-        DESC_BUF(0x08) = 0x02;          /* LPM */
-        DESC_BUF(0x09) = 0x00;
-        DESC_BUF(0x0A) = 0x00;
-        DESC_BUF(0x0B) = 0x00;
-        /* SuperSpeed Device Capability (10 bytes) */
-        DESC_BUF(0x0C) = 0x0A;
-        DESC_BUF(0x0D) = 0x10;
-        DESC_BUF(0x0E) = 0x03;          /* SUPERSPEED_USB */
-        DESC_BUF(0x0F) = 0x00;
-        DESC_BUF(0x10) = 0x0E;          /* SS|HS|FS */
-        DESC_BUF(0x11) = 0x00;
-        DESC_BUF(0x12) = 0x03;
-        DESC_BUF(0x13) = 0x00;
-        DESC_BUF(0x14) = 0x00;
-        DESC_BUF(0x15) = 0x00;
-        actual_len = (wlen < 22) ? wlen : 22;
-        send_descriptor_data(actual_len);
-
+        src = bos_desc; desc_len = sizeof(bos_desc);
+        desc_copy(src, desc_len);
     } else if (desc_type == 0x03) {
-        /* String descriptors */
-        if (desc_idx == 0) {
-            DESC_BUF(0) = 0x04; DESC_BUF(1) = 0x03;
-            DESC_BUF(2) = 0x09; DESC_BUF(3) = 0x04;
-            actual_len = (wlen < 4) ? wlen : 4;
-        } else if (desc_idx == 1) {
-            DESC_BUF(0) = 0x0A; DESC_BUF(1) = 0x03;
-            DESC_BUF(2) = 't'; DESC_BUF(3) = 0;
-            DESC_BUF(4) = 'i'; DESC_BUF(5) = 0;
-            DESC_BUF(6) = 'n'; DESC_BUF(7) = 0;
-            DESC_BUF(8) = 'y'; DESC_BUF(9) = 0;
-            actual_len = (wlen < 10) ? wlen : 10;
-        } else if (desc_idx == 2) {
-            DESC_BUF(0) = 0x08; DESC_BUF(1) = 0x03;
-            DESC_BUF(2) = 'u'; DESC_BUF(3) = 0;
-            DESC_BUF(4) = 's'; DESC_BUF(5) = 0;
-            DESC_BUF(6) = 'b'; DESC_BUF(7) = 0;
-            actual_len = (wlen < 8) ? wlen : 8;
-        } else if (desc_idx == 3) {
-            DESC_BUF(0) = 0x08; DESC_BUF(1) = 0x03;
-            DESC_BUF(2) = '0'; DESC_BUF(3) = 0;
-            DESC_BUF(4) = '0'; DESC_BUF(5) = 0;
-            DESC_BUF(6) = '1'; DESC_BUF(7) = 0;
-            actual_len = (wlen < 8) ? wlen : 8;
-        } else {
-            DESC_BUF(0) = 0x02; DESC_BUF(1) = 0x03;
-            actual_len = 2;
-        }
-        send_descriptor_data(actual_len);
+        if (desc_idx == 0)      { src = str0_desc; desc_len = sizeof(str0_desc); }
+        else if (desc_idx == 1) { src = str1_desc; desc_len = sizeof(str1_desc); }
+        else if (desc_idx == 2) { src = str2_desc; desc_len = sizeof(str2_desc); }
+        else if (desc_idx == 3) { src = str3_desc; desc_len = sizeof(str3_desc); }
+        else                    { src = str_empty; desc_len = sizeof(str_empty); }
+        desc_copy(src, desc_len);
     } else {
         return;
     }
 
+    send_descriptor_data(wlen < desc_len ? wlen : desc_len);
     uart_puthex(desc_type);
     uart_putc('\n');
 }
