@@ -2004,9 +2004,9 @@ void nvme_state_handler(void)
 
         /* Mode 5 initialization */
         /* Set up NVMe doorbell register */
-        REG_NVME_DOORBELL = (REG_NVME_DOORBELL & ~NVME_DOORBELL_MODE) | NVME_DOORBELL_MODE;  /* Set bit 3 */
-        REG_NVME_DOORBELL &= ~NVME_DOORBELL_TRIGGER;  /* Clear bit 0 */
-        REG_NVME_DOORBELL &= ~NVME_DOORBELL_MODE;  /* Clear bit 3 */
+        REG_NVME_DOORBELL = (REG_NVME_DOORBELL & ~NVME_DOORBELL_BIT3) | NVME_DOORBELL_BIT3;  /* Set bit 3 */
+        REG_NVME_DOORBELL &= ~NVME_DOORBELL_BIT0;  /* Clear bit 0 */
+        REG_NVME_DOORBELL &= ~NVME_DOORBELL_BIT3;  /* Clear bit 3 */
 
         /* Jump to common exit */
         goto common_exit;

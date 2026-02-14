@@ -603,7 +603,7 @@ void dma_buffer_write(void)
 void usb_ep_ctrl_clear(void)
 {
     /* Clear the register at 0xD810 */
-    REG_USB_EP_CTRL_10 = 0;
+    REG_USB_EP_DATA_BASE = 0;
 }
 
 /*
@@ -793,7 +793,7 @@ void dma_buffer_config(uint8_t r5, uint8_t r7)
     USB_CSW->tag1 = 0;
     USB_CSW->tag2 = 0;
     USB_CSW->tag3 = 0;
-    REG_USB_EP_CTRL_0F = 0;
+    REG_USB_EP_DMA_LEN = 0;
 
     /* Check r5 bit 4 for extended mode */
     if (r5 & 0x10) {
@@ -859,7 +859,7 @@ void dma_buffer_config_direct(uint8_t r5, uint8_t r7)
     USB_CSW->tag1 = 0;
     USB_CSW->tag2 = 0;
     USB_CSW->tag3 = 0;
-    REG_USB_EP_CTRL_0F = 0;
+    REG_USB_EP_DMA_LEN = 0;
 
     /* 0x0256: Check r5 bit 4 for extended mode */
     if (r5 & 0x10) {

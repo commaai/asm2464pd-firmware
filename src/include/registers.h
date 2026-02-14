@@ -122,6 +122,10 @@
 #define   USB_REQ_SET_DESCRIPTOR     0x07
 #define   USB_REQ_GET_CONFIGURATION  0x08
 #define   USB_REQ_SET_CONFIGURATION  0x09
+#define   USB_REQ_GET_INTERFACE      0x0A
+#define   USB_REQ_SET_INTERFACE      0x0B
+#define   USB_REQ_SET_SEL            0x30  // USB 3.0: Set System Exit Latency
+#define   USB_REQ_SET_ISOCH_DELAY    0x31  // USB 3.0: Set Isochronous Delay
 
 // Descriptor types (for wValue high byte in GET_DESCRIPTOR)
 #define   USB_DESC_TYPE_DEVICE       0x01
@@ -540,6 +544,23 @@
 #define   USB_CTRL_9200_BIT6     0x40  // Bit 6: USB control enable flag
 #define REG_USB_CTRL_9201       XDATA_REG8(0x9201)
 #define   USB_CTRL_9201_BIT4      0x10  // Bit 4: USB control flag
+/*
+ * USB Address Control (0x9202)
+ * Read-modify-writeback during SET_ADDRESS on USB 3.0.
+ * Part of the address programming register dance.
+ */
+#define REG_USB_ADDR_CTRL       XDATA_REG8(0x9202)
+/*
+ * USB Address Config Registers (0x9206-0x920B)
+ * Written during USB 3.0 SET_ADDRESS to program device address.
+ * Sequence: 9206/9207 = 0x03 → 0x07 → readback, then 9208-920B params.
+ */
+#define REG_USB_ADDR_CFG_A      XDATA_REG8(0x9206)  /* Address config A (0x03→0x07→readback) */
+#define REG_USB_ADDR_CFG_B      XDATA_REG8(0x9207)  /* Address config B (0x03→0x07→readback) */
+#define REG_USB_ADDR_PARAM_0    XDATA_REG8(0x9208)  /* Address param 0 (written 0x00) */
+#define REG_USB_ADDR_PARAM_1    XDATA_REG8(0x9209)  /* Address param 1 (written 0x0A) */
+#define REG_USB_ADDR_PARAM_2    XDATA_REG8(0x920A)  /* Address param 2 (written 0x00) */
+#define REG_USB_ADDR_PARAM_3    XDATA_REG8(0x920B)  /* Address param 3 (written 0x0A) */
 #define REG_USB_CTRL_920C       XDATA_REG8(0x920C)
 #define REG_USB_PHY_CONFIG_9241 XDATA_REG8(0x9241)
 #define REG_USB_CTRL_924C       XDATA_REG8(0x924C)  // USB control (bit 0: endpoint ready)
@@ -578,6 +599,8 @@
 
 // Buffer config registers (0x9300-0x93FF)
 #define REG_BUF_CFG_9300        XDATA_REG8(0x9300)
+#define   BUF_CFG_9300_SS_FAIL    0x04  // Bit 2: USB 3.0 link failed, fall back to 2.0
+#define   BUF_CFG_9300_SS_OK      0x08  // Bit 3: USB 3.0 link established
 #define REG_BUF_CFG_9301        XDATA_REG8(0x9301)
 #define   BUF_CFG_9301_BIT6      0x40  // Bit 6: Buffer config flag
 #define   BUF_CFG_9301_BIT7      0x80  // Bit 7: Buffer config flag
@@ -586,6 +609,32 @@
 #define REG_BUF_CFG_9303        XDATA_REG8(0x9303)
 #define REG_BUF_CFG_9304        XDATA_REG8(0x9304)
 #define REG_BUF_CFG_9305        XDATA_REG8(0x9305)
+
+/*
+ * Buffer Descriptor Table (0x9310-0x9323)
+ * Configures DMA buffer regions for USB/NVMe data transfers.
+ * Written during hw_init to set up buffer base addresses and sizes.
+ */
+#define REG_BUF_DESC_BASE0_HI   XDATA_REG8(0x9310)  /* Buffer 0 base address high */
+#define REG_BUF_DESC_BASE0_LO   XDATA_REG8(0x9311)  /* Buffer 0 base address low */
+#define REG_BUF_DESC_SIZE0_HI   XDATA_REG8(0x9312)  /* Buffer 0 size high */
+#define REG_BUF_DESC_SIZE0_LO   XDATA_REG8(0x9313)  /* Buffer 0 size low */
+#define REG_BUF_DESC_BASE1_HI   XDATA_REG8(0x9314)  /* Buffer 1 base address high */
+#define REG_BUF_DESC_BASE1_LO   XDATA_REG8(0x9315)  /* Buffer 1 base address low */
+#define REG_BUF_DESC_STAT0_HI   XDATA_REG8(0x9316)  /* Buffer status 0 high */
+#define REG_BUF_DESC_STAT0_LO   XDATA_REG8(0x9317)  /* Buffer status 0 low */
+#define REG_BUF_DESC_BASE2_HI   XDATA_REG8(0x9318)  /* Buffer 2 base address high */
+#define REG_BUF_DESC_BASE2_LO   XDATA_REG8(0x9319)  /* Buffer 2 base address low */
+#define REG_BUF_DESC_STAT1_HI   XDATA_REG8(0x931A)  /* Buffer status 1 high */
+#define REG_BUF_DESC_STAT1_LO   XDATA_REG8(0x931B)  /* Buffer status 1 low */
+#define REG_BUF_DESC_CFG0_HI    XDATA_REG8(0x931C)  /* Buffer config 0 high */
+#define REG_BUF_DESC_CFG0_LO    XDATA_REG8(0x931D)  /* Buffer config 0 low */
+#define REG_BUF_DESC_CFG1_HI    XDATA_REG8(0x931E)  /* Buffer config 1 high */
+#define REG_BUF_DESC_CFG1_LO    XDATA_REG8(0x931F)  /* Buffer config 1 low */
+#define REG_BUF_DESC_CFG2_HI    XDATA_REG8(0x9320)  /* Buffer config 2 high */
+#define REG_BUF_DESC_CFG2_LO    XDATA_REG8(0x9321)  /* Buffer config 2 low */
+#define REG_BUF_DESC_STAT2_HI   XDATA_REG8(0x9322)  /* Buffer status 2 high */
+#define REG_BUF_DESC_STAT2_LO   XDATA_REG8(0x9323)  /* Buffer status 2 low */
 
 //=============================================================================
 // PCIe Passthrough Registers (0xB210-0xB8FF)
@@ -977,6 +1026,7 @@
 #define   INT_SYSTEM_EVENT        0x01  // Bit 0: System event interrupt
 #define   INT_SYSTEM_TIMER        0x10  // Bit 4: System timer event
 #define   INT_SYSTEM_LINK         0x20  // Bit 5: Link state change
+#define REG_INT_DMA_CTRL        XDATA_REG8(0xC807)  /* Interrupt/DMA control */
 #define REG_INT_CTRL            XDATA_REG8(0xC809)  /* Interrupt control register */
 #define REG_INT_PCIE_NVME       XDATA_REG8(0xC80A)  /* PCIe/NVMe interrupt status */
 #define   INT_PCIE_NVME_EVENTS    0x0F  // Bits 0-3: PCIe event flags
@@ -1138,6 +1188,7 @@
 #define REG_CPU_CTRL_CC3D       XDATA_REG8(0xCC3D)
 #define REG_CPU_CTRL_CC3E       XDATA_REG8(0xCC3E)
 #define REG_CPU_CTRL_CC3F       XDATA_REG8(0xCC3F)
+#define REG_CPU_CLK_CFG         XDATA_REG8(0xCC43)  /* CPU clock config */
 
 // Timer 4 Registers (0xCC5C-0xCC5F)
 #define REG_TIMER4_DIV          XDATA_REG8(0xCC5C)  /* Timer 4 divisor */
@@ -1419,6 +1470,8 @@
 #define REG_LINK_STATUS_E716    XDATA_REG8(0xE716)
 #define   LINK_STATUS_E716_MASK  0x03  // Bits 0-1: Link status
 #define REG_LINK_CTRL_E717      XDATA_REG8(0xE717)  /* Link control (bit 0 = enable) */
+#define REG_PHY_PLL_CTRL        XDATA_REG8(0xE741)  /* PHY PLL control */
+#define REG_PHY_PLL_CFG         XDATA_REG8(0xE742)  /* PHY PLL config */
 #define REG_PHY_POLL_E750       XDATA_REG8(0xE750)  /* PHY poll (read during reset 91D1 wait) */
 #define REG_SYS_CTRL_E760       XDATA_REG8(0xE760)
 #define REG_SYS_CTRL_E761       XDATA_REG8(0xE761)
