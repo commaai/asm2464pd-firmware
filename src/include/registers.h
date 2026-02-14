@@ -313,17 +313,21 @@
  * Write to trigger operations, reads back 0 when complete.
  *
  * Values:
+ *   0x01 = Stall/reset endpoint
+ *   0x02 = Receive from host (OUT) / USB 2.0 status phase ACK
+ *          Used in complete_usb20_status() for IN transfer status phase.
  *   0x04 = Start DMA send (IN transfer - device to host)
  *          Used for GET_DESCRIPTOR data phase.
  *          Set 0x9003=0, 0x9004=length first, then write 0x04.
  *          Poll until reads 0 for completion.
- *
  *   0x08 = Complete status phase
  *          Write after status phase ready (0x9091 & 0x10).
  *          For IN transfers: host sends ZLP, we ACK.
  *          For OUT transfers: we send ZLP.
  */
 #define REG_USB_DMA_TRIGGER     XDATA_REG8(0x9092)
+#define   USB_DMA_STALL           0x01  // Stall/reset endpoint
+#define   USB_DMA_RECV            0x02  // Receive from host (OUT) / status ACK
 #define   USB_DMA_SEND            0x04  // Trigger DMA send (IN data phase)
 #define   USB_DMA_STATUS_COMPLETE 0x08  // Complete status phase
 
@@ -1039,7 +1043,14 @@
 #define REG_DMA_CHAN_STATUS2    XDATA_REG8(0xC8B7)
 #define REG_DMA_TRIGGER         XDATA_REG8(0xC8B8)
 #define   DMA_TRIGGER_START       0x01  // Bit 0: Trigger transfer
+/*
+ * DMA Config (0xC8D4)
+ * Write 0x80 to enable DMA before 90A1 trigger.
+ * Write 0x00 to disable DMA after trigger completes.
+ */
 #define REG_DMA_CONFIG          XDATA_REG8(0xC8D4)
+#define   DMA_CONFIG_ENABLE       0x80  // Enable DMA engine
+#define   DMA_CONFIG_DISABLE      0x00  // Disable DMA engine
 #define REG_DMA_QUEUE_IDX       XDATA_REG8(0xC8D5)
 #define REG_DMA_STATUS          XDATA_REG8(0xC8D6)
 #define   DMA_STATUS_TRIGGER      0x01  // Bit 0: Status trigger
@@ -1086,9 +1097,14 @@
 //=============================================================================
 // CPU Control Extended (0xCC30-0xCCFF)
 //=============================================================================
-#define REG_CPU_MODE            XDATA_REG8(0xCC30)  /* CPU mode control */
-#define   CPU_MODE_NORMAL         0x00  // Normal operation
-#define   CPU_MODE_RESET          0x01  // Reset mode
+/*
+ * CPU Mode / USB Speed Control (0xCC30)
+ * Controls USB speed capability. Written 0x01 at boot (hw_init).
+ * Write 0x00 to force USB 2.0 High Speed fallback (handle_link_event).
+ */
+#define REG_CPU_MODE            XDATA_REG8(0xCC30)
+#define   CPU_MODE_USB2           0x00  // Force USB 2.0 High Speed (fallback)
+#define   CPU_MODE_USB3           0x01  // USB 3.0 SuperSpeed capable (boot default)
 #define REG_CPU_EXEC_CTRL       XDATA_REG8(0xCC31)  /* CPU execution control */
 #define   CPU_EXEC_ENABLE         0x01  // Bit 0: Execution enable
 #define REG_CPU_EXEC_STATUS     XDATA_REG8(0xCC32)  /* CPU execution status */
