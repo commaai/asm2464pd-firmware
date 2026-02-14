@@ -40,14 +40,6 @@ static volatile uint8_t is_usb3;
 
 /*==========================================================================
  * USB Control Transfer Helpers (USB 2.0 and USB 3.0)
- *
- * USB 2.0 (9100=0x01):
- *   - No-data: 9091 0x01→0x08, send ZLP (9092=0x04), ack 0x08
- *   - Data IN status: 9002 toggle bit 1, 9092=0x02, 9091=0x02
- *
- * USB 3.0 (9100=0x02):
- *   - No-data: 9091 0x11→0x10, complete (9092=0x08), ack 0x10
- *   - Data IN status: 9092=0x08, 9091=0x10
  *==========================================================================*/
 
 /* Complete USB 3.0 status phase */
@@ -64,13 +56,10 @@ static void complete_usb20_status(void) {
     REG_USB_CONFIG = c | 0x02;
     REG_USB_DMA_TRIGGER = 0x02;
     REG_USB_CTRL_PHASE = 0x02;
-    (void)REG_USB_CTRL_PHASE;
     REG_USB_CTRL_PHASE = 0x02;
     c = REG_USB_CONFIG;
     REG_USB_CONFIG = c & ~0x02;
     REG_USB_CTRL_PHASE = 0x04;
-    (void)REG_USB_CTRL_PHASE;
-    (void)REG_USB_CTRL_PHASE;
 }
 
 /* Complete status for no-data OUT requests */
@@ -78,10 +67,6 @@ static void send_zlp_ack(void) {
     if (is_usb3) {
         complete_usb3_status();
     } else {
-        (void)REG_USB_CONFIG;
-        (void)REG_USB_CTRL_PHASE;
-        (void)REG_USB_CTRL_PHASE;
-        (void)REG_USB_CTRL_PHASE;
         REG_USB_EP0_STATUS = 0x00;
         REG_USB_EP0_LEN_L = 0x00;
         REG_USB_DMA_TRIGGER = USB_DMA_SEND;
@@ -91,21 +76,11 @@ static void send_zlp_ack(void) {
 
 /* Send descriptor data via DMA, ack data phase, complete status */
 static void send_descriptor_data(uint8_t len) {
-    (void)REG_USB_LINK_STATUS;
-    (void)REG_USB_CONFIG;
-    (void)REG_USB_CTRL_PHASE;
-    (void)REG_USB_CTRL_PHASE;
-    (void)REG_USB_CTRL_PHASE;
     REG_USB_EP0_STATUS = 0x00;
     REG_USB_EP0_LEN_L = len;
     REG_USB_DMA_TRIGGER = USB_DMA_SEND;
     while (REG_USB_DMA_TRIGGER) { }
-    (void)REG_USB_EP0_STATUS;
-    (void)REG_USB_EP0_LEN_L;
-    (void)REG_USB_EP0_STATUS;
-    (void)REG_USB_EP0_LEN_L;
     REG_USB_CTRL_PHASE = 0x08;
-    (void)REG_USB_CTRL_PHASE;
     if (is_usb3) {
         complete_usb3_status();
     }
@@ -118,44 +93,31 @@ static void send_descriptor_data(uint8_t len) {
 
 static void handle_set_address(void) {
     uint8_t tmp;
-    { uint8_t t = REG_USB_INT_MASK_9090; REG_USB_INT_MASK_9090 = 0x01; }
+    REG_USB_INT_MASK_9090 = 0x01;
     REG_USB_EP_CTRL_91D0 = 0x02;
-    (void)REG_USB_LINK_STATUS;
-    (void)REG_POWER_STATUS_92F8;
 
     if (is_usb3) {
         /* USB 3.0 SET_ADDRESS (from trace/flash_usb3 lines 3242-3279) */
-        (void)REG_POWER_STATUS_92F8;
-        (void)XDATA_REG8(0xC6DB);
-        tmp = XDATA_REG8(0xE716);
-        XDATA_REG8(0xE716) = 0x01;
+        REG_LINK_STATUS_E716 = 0x01;
 
-        (void)REG_USB_CONFIG;
         while (!(REG_USB_CTRL_PHASE & 0x10)) { }
 
         /* Address programming registers */
-        tmp = XDATA_REG8(0x9206);
-        XDATA_REG8(0x9206) = 0x03;
-        tmp = XDATA_REG8(0x9207);
-        XDATA_REG8(0x9207) = 0x03;
-        tmp = XDATA_REG8(0x9206);
-        XDATA_REG8(0x9206) = 0x07;
-        tmp = XDATA_REG8(0x9207);
-        XDATA_REG8(0x9207) = 0x07;
-        (void)REG_POWER_STATUS_92F8;
-        tmp = XDATA_REG8(0x9206);
-        XDATA_REG8(0x9206) = tmp;
-        tmp = XDATA_REG8(0x9207);
-        XDATA_REG8(0x9207) = tmp;
-        (void)REG_POWER_STATUS_92F8;
-        XDATA_REG8(0x9208) = 0x00;
-        XDATA_REG8(0x9209) = 0x0A;
-        XDATA_REG8(0x920A) = 0x00;
-        XDATA_REG8(0x920B) = 0x0A;
-        tmp = XDATA_REG8(0x9202);
-        XDATA_REG8(0x9202) = tmp;
-        (void)REG_USB_EP_CTRL_9220;
-        XDATA_REG8(0x9220) = 0x04;
+        REG_USB_ADDR_CFG_A = 0x03;
+        REG_USB_ADDR_CFG_B = 0x03;
+        REG_USB_ADDR_CFG_A = 0x07;
+        REG_USB_ADDR_CFG_B = 0x07;
+        tmp = REG_USB_ADDR_CFG_A;
+        REG_USB_ADDR_CFG_A = tmp;
+        tmp = REG_USB_ADDR_CFG_B;
+        REG_USB_ADDR_CFG_B = tmp;
+        REG_USB_ADDR_PARAM_0 = 0x00;
+        REG_USB_ADDR_PARAM_1 = 0x0A;
+        REG_USB_ADDR_PARAM_2 = 0x00;
+        REG_USB_ADDR_PARAM_3 = 0x0A;
+        tmp = REG_USB_ADDR_CTRL;
+        REG_USB_ADDR_CTRL = tmp;
+        REG_USB_EP_CTRL_9220 = 0x04;
 
         REG_USB_DMA_TRIGGER = 0x08;
         REG_USB_CTRL_PHASE = 0x10;
@@ -169,7 +131,6 @@ static void handle_get_descriptor(uint8_t desc_type, uint8_t desc_idx, uint8_t w
     uint8_t actual_len;
 
     while (!(REG_USB_CTRL_PHASE & 0x08)) { }
-    (void)REG_USB_LINK_STATUS;
 
     if (desc_type == 0x01) {
         /* Device descriptor */
@@ -310,21 +271,14 @@ static void handle_get_descriptor(uint8_t desc_type, uint8_t desc_idx, uint8_t w
  * Link Event Handler
  *==========================================================================*/
 static void handle_link_event(void) {
-    uint8_t r9300;
-
-    (void)REG_BUF_CFG_9302; (void)REG_BUF_CFG_9302;
-    (void)REG_BUF_CFG_9302; (void)REG_BUF_CFG_9302;
-    (void)REG_BUF_CFG_9302; (void)REG_BUF_CFG_9302;
-    r9300 = REG_BUF_CFG_9300;
+    uint8_t r9300 = REG_BUF_CFG_9300;
 
     if (r9300 & 0x04) {
         /* USB 3.0 failed — fall back to USB 2.0 */
-        { uint8_t t = REG_LINK_STATUS_E716; REG_LINK_STATUS_E716 = t; }
-        { uint8_t t = REG_POWER_STATUS; REG_POWER_STATUS = t | 0x40; }
+        REG_POWER_STATUS = REG_POWER_STATUS | 0x40;
         REG_POWER_EVENT_92E1 = 0x10;
-        { uint8_t t = REG_USB_INT_MASK_9090; REG_USB_INT_MASK_9090 = t; }
-        { uint8_t t = REG_USB_STATUS; REG_USB_STATUS = t | 0x04; }
-        { uint8_t t = REG_USB_STATUS; REG_USB_STATUS = t & ~0x04; }
+        REG_USB_STATUS = REG_USB_STATUS | 0x04;
+        REG_USB_STATUS = REG_USB_STATUS & ~0x04;
         REG_PHY_LINK_CTRL = 0x00;
         REG_CPU_MODE = 0x00;
         REG_LINK_WIDTH_E710 = 0x1F;
@@ -351,65 +305,52 @@ static void handle_usb_reset(void) {
     r91d1 = REG_USB_PHY_CTRL_91D1;
     REG_USB_PHY_CTRL_91D1 = r91d1;
 
-    { uint8_t t = REG_TIMER_CTRL_CC3B; REG_TIMER_CTRL_CC3B = t & ~0x02; }
-    (void)REG_POWER_STATUS;
-    (void)REG_POWER_STATUS_92F8;
+    REG_TIMER_CTRL_CC3B = REG_TIMER_CTRL_CC3B & ~0x02;
     REG_CLOCK_CTRL_92CF = 0x00;
-    (void)REG_CLOCK_CTRL_92CF;
     REG_CLOCK_CTRL_92CF = 0x04;
-    { uint8_t t = REG_CLOCK_ENABLE; REG_CLOCK_ENABLE = t | 0x10; }
+    REG_CLOCK_ENABLE = REG_CLOCK_ENABLE | 0x10;
     REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
     REG_TIMER0_DIV = 0x10;
     REG_TIMER0_THRESHOLD_HI = 0x00; REG_TIMER0_THRESHOLD_LO = 0x0A;
     REG_TIMER0_CSR = 0x01;
-    (void)REG_TIMER0_CSR; REG_TIMER0_CSR = 0x02;
-    (void)REG_USB_EP0_COMPLETE; (void)REG_USB_EP0_COMPLETE;
-    { uint8_t t = REG_CLOCK_ENABLE; REG_CLOCK_ENABLE = t & ~0x10; }
+    REG_TIMER0_CSR = 0x02;
+    REG_CLOCK_ENABLE = REG_CLOCK_ENABLE & ~0x10;
     REG_CLOCK_CTRL_92CF = 0x07;
-    (void)REG_CLOCK_CTRL_92CF;
     REG_CLOCK_CTRL_92CF = 0x03;
     REG_PHY_LINK_CTRL = 0x00;
-    (void)REG_POWER_STATUS_92F8;
     REG_POWER_EVENT_92E1 = 0x40;
-    { uint8_t t = REG_POWER_STATUS; REG_POWER_STATUS = t & ~0x40; }
+    REG_POWER_STATUS = REG_POWER_STATUS & ~0x40;
 
     for (timeout = 10000; timeout; timeout--) {
-        (void)REG_POWER_POLL_92FB;
         r91d1 = REG_USB_PHY_CTRL_91D1;
-        (void)REG_PHY_POLL_E750;
         if (r91d1 & 0x01) break;
     }
     if (r91d1 & 0x01)
         REG_USB_PHY_CTRL_91D1 = r91d1;
 
-    { uint8_t t = REG_PHY_CFG_C6A8; REG_PHY_CFG_C6A8 = t; }
-    { uint8_t t = REG_POWER_CTRL_92C8; REG_POWER_CTRL_92C8 = t; }
-    { uint8_t t = REG_POWER_CTRL_92C8; REG_POWER_CTRL_92C8 = t; }
     REG_CPU_TIMER_CTRL_CD31 = 0x04; REG_CPU_TIMER_CTRL_CD31 = 0x02;
     REG_TIMER2_CSR = 0x04; REG_TIMER2_CSR = 0x02;
     REG_TIMER4_CSR = 0x04; REG_TIMER4_CSR = 0x02;
-    { uint8_t t = REG_TIMER2_DIV; REG_TIMER2_DIV = t; }
     REG_TIMER2_THRESHOLD_LO = 0x00; REG_TIMER2_THRESHOLD_HI = 0x8B;
-    { uint8_t t = REG_TIMER4_DIV; REG_TIMER4_DIV = t; }
     REG_TIMER4_THRESHOLD_LO = 0x00; REG_TIMER4_THRESHOLD_HI = 0xC7;
 
     /* MSC + NVMe doorbell dance */
-    { uint8_t t = REG_USB_MSC_CFG; REG_USB_MSC_CFG = t | 0x02; }
-    { uint8_t t = REG_USB_MSC_CFG; REG_USB_MSC_CFG = t | 0x04; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t | 0x01; }
-    { uint8_t t = REG_USB_MSC_CFG; REG_USB_MSC_CFG = t | 0x01; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t | 0x02; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t | 0x04; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t | 0x08; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t | 0x10; }
-    { uint8_t t = REG_USB_MSC_CFG; REG_USB_MSC_CFG = t & ~0x02; }
-    { uint8_t t = REG_USB_MSC_CFG; REG_USB_MSC_CFG = t & ~0x04; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t & ~0x01; }
-    { uint8_t t = REG_USB_MSC_CFG; REG_USB_MSC_CFG = t & ~0x01; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t & ~0x02; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t & ~0x04; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t & ~0x08; }
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t & ~0x10; }
+    REG_USB_MSC_CFG = REG_USB_MSC_CFG | 0x02;
+    REG_USB_MSC_CFG = REG_USB_MSC_CFG | 0x04;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x01;
+    REG_USB_MSC_CFG = REG_USB_MSC_CFG | 0x01;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x02;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x04;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x08;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x10;
+    REG_USB_MSC_CFG = REG_USB_MSC_CFG & ~0x02;
+    REG_USB_MSC_CFG = REG_USB_MSC_CFG & ~0x04;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x01;
+    REG_USB_MSC_CFG = REG_USB_MSC_CFG & ~0x01;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x02;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x04;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x08;
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x10;
 
     REG_USB_EP_BUF_CTRL = 0x55;
     REG_USB_EP_BUF_SEL  = 0x53;
@@ -417,35 +358,24 @@ static void handle_usb_reset(void) {
     REG_USB_EP_BUF_PTR_LO = 0x53;
     REG_USB_MSC_LENGTH = 0x0D;
     REG_USB_MSC_CTRL = 0x01;
-    { uint8_t t = REG_USB_MSC_STATUS; REG_USB_MSC_STATUS = t; }
+    REG_USB_MSC_STATUS = REG_USB_MSC_STATUS;
 
     /* NVMe init under doorbell bit 5 */
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t | 0x20; }
-    { uint8_t t = REG_NVME_QUEUE_CFG; REG_NVME_QUEUE_CFG = t; }
-    { uint8_t t = REG_NVME_LINK_PARAM; REG_NVME_LINK_PARAM = t; }
-    { uint8_t t = REG_NVME_LINK_PARAM; REG_NVME_LINK_PARAM = t; }
-    { uint8_t t = REG_NVME_LINK_PARAM; REG_NVME_LINK_PARAM = t; }
-    { uint8_t t = REG_NVME_LINK_CTRL; REG_NVME_LINK_CTRL = t; }
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x20;
     REG_NVME_INIT_CTRL2 = 0xFF;
-    XDATA_REG8(0xC449) = 0xFF;
-    XDATA_REG8(0xC44A) = 0xFF;
-    XDATA_REG8(0xC44B) = 0xFF;
-    { uint8_t t = REG_NVME_LINK_PARAM; REG_NVME_LINK_PARAM = t; }
-    { uint8_t t = REG_NVME_LINK_PARAM; REG_NVME_LINK_PARAM = t; }
-    { uint8_t t = REG_NVME_LINK_PARAM; REG_NVME_LINK_PARAM = t; }
-    { uint8_t t = REG_NVME_LINK_CTRL; REG_NVME_LINK_CTRL = t; }
+    REG_NVME_INIT_CTRL2_1 = 0xFF;
+    REG_NVME_INIT_CTRL2_2 = 0xFF;
+    REG_NVME_INIT_CTRL2_3 = 0xFF;
     REG_NVME_INIT_CTRL = 0xFF;
     REG_NVME_CMD_CDW11 = 0xFF;
     REG_NVME_INT_MASK_A = 0xFF;
     REG_NVME_INT_MASK_B = 0xFF;
-    { uint8_t t = REG_NVME_DOORBELL; REG_NVME_DOORBELL = t & ~0x20; }
+    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x20;
 
-    (void)REG_USB_PHY_CTRL_91C0;
-    (void)REG_POWER_POLL_92FB;
     REG_BUF_CFG_9300 = 0x04;
-    { uint8_t t = REG_POWER_STATUS; REG_POWER_STATUS = t | 0x40; }
+    REG_POWER_STATUS = REG_POWER_STATUS | 0x40;
     REG_POWER_EVENT_92E1 = 0x10;
-    { uint8_t t = REG_TIMER_CTRL_CC3B; REG_TIMER_CTRL_CC3B = t | 0x02; }
+    REG_TIMER_CTRL_CC3B = REG_TIMER_CTRL_CC3B | 0x02;
 
     /* Detect USB speed after reset */
     {
@@ -464,17 +394,10 @@ static void handle_usb_reset(void) {
 void int0_isr(void) __interrupt(0) {
     uint8_t periph_status, phase;
 
-    (void)REG_INT_USB_STATUS;
-
     periph_status = REG_USB_PERIPH_STATUS;
-    (void)REG_USB_PERIPH_STATUS;
-    (void)REG_USB_PERIPH_STATUS;
-    (void)REG_USB_PERIPH_STATUS;
 
     if (periph_status & 0x10) {
         handle_link_event();
-        (void)REG_INT_SYSTEM;
-        (void)REG_INT_USB_STATUS;
         return;
     }
 
@@ -483,26 +406,18 @@ void int0_isr(void) __interrupt(0) {
         return;
     }
 
-    if (!(periph_status & 0x02)) {
-        (void)REG_INT_SYSTEM;
-        (void)REG_INT_USB_STATUS;
+    if (!(periph_status & 0x02))
         return;
-    }
 
     phase = REG_USB_CTRL_PHASE;
-    (void)REG_USB_CTRL_PHASE;
 
     if (phase == 0x04 || phase == 0x00) {
         REG_USB_CTRL_PHASE = 0x04;
-        (void)REG_INT_SYSTEM;
-        (void)REG_INT_USB_STATUS;
         return;
     }
 
     if ((phase & 0x02) && !(phase & 0x01)) {
         /* USB 2.0: status phase after data IN */
-        (void)REG_USB_CONFIG;
-        (void)REG_USB_CTRL_PHASE;
         complete_usb20_status();
     } else if ((phase & 0x10) && !(phase & 0x01)) {
         /* USB 3.0: stale status phase */
@@ -511,20 +426,14 @@ void int0_isr(void) __interrupt(0) {
     } else if (phase & 0x01) {
         uint8_t bmReq, bReq, wValL, wValH, wLenL;
 
-        { uint8_t t = REG_USB_CONFIG; REG_USB_CONFIG = t; }
-        (void)REG_USB_EP_CTRL_9220;
+        REG_USB_CONFIG = REG_USB_CONFIG;
         REG_USB_CTRL_PHASE = 0x01;
 
         bmReq = REG_USB_SETUP_BMREQ;
         bReq  = REG_USB_SETUP_BREQ;
         wValL = REG_USB_SETUP_WVAL_L;
         wValH = REG_USB_SETUP_WVAL_H;
-        (void)REG_USB_SETUP_WIDX_L;
-        (void)REG_USB_SETUP_WIDX_H;
         wLenL = REG_USB_SETUP_WLEN_L;
-        (void)REG_USB_SETUP_WLEN_H;
-
-        (void)REG_USB_CTRL_PHASE;
 
         if (bmReq == 0x00 && bReq == USB_REQ_SET_ADDRESS) {
             handle_set_address();
@@ -544,9 +453,6 @@ void int0_isr(void) __interrupt(0) {
             send_zlp_ack();
         }
     }
-
-    (void)REG_INT_SYSTEM;
-    (void)REG_INT_USB_STATUS;
 }
 
 void timer0_isr(void) __interrupt(1) { }
@@ -554,22 +460,13 @@ void timer0_isr(void) __interrupt(1) { }
 void int1_isr(void) __interrupt(2) {
     uint8_t tmp;
 
-    (void)REG_INT_SYSTEM;
-    { uint8_t t = REG_CPU_DMA_INT; REG_CPU_DMA_INT = t; }
-    (void)REG_XFER_DMA_CFG;
-    (void)REG_XFER2_DMA_STATUS;
-    (void)REG_CPU_EXT_STATUS;
-    (void)REG_CPU_EXEC_STATUS_2;
-    (void)REG_INT_PCIE_NVME; (void)REG_INT_PCIE_NVME;
-    (void)REG_INT_PCIE_NVME; (void)REG_INT_PCIE_NVME;
+    REG_CPU_DMA_INT = REG_CPU_DMA_INT;
 
     tmp = REG_POWER_EVENT_92E1;
     if (tmp) {
         REG_POWER_EVENT_92E1 = tmp;
-        { uint8_t t = REG_POWER_STATUS; REG_POWER_STATUS = t & 0x3F; }
+        REG_POWER_STATUS = REG_POWER_STATUS & 0x3F;
     }
-
-    (void)REG_INT_SYSTEM;
 }
 
 void timer1_isr(void) __interrupt(3) { }
@@ -582,131 +479,131 @@ void timer2_isr(void) __interrupt(5) { }
 static void hw_init(void) {
     uint8_t i;
 
-    XDATA_REG8(0xCC32) = 0x01; XDATA_REG8(0xCC30) = 0x01;
-    XDATA_REG8(0xE710) = 0x04; XDATA_REG8(0xCC33) = 0x04;
-    XDATA_REG8(0xCC3B) = 0x0C; XDATA_REG8(0xE717) = 0x01;
-    XDATA_REG8(0xCC3E) = 0x00; XDATA_REG8(0xCC3B) = 0x0C;
-    XDATA_REG8(0xCC3B) = 0x0C; XDATA_REG8(0xE716) = 0x03;
-    XDATA_REG8(0xCC3E) = 0x00; XDATA_REG8(0xCC39) = 0x06;
-    XDATA_REG8(0xCC3A) = 0x14; XDATA_REG8(0xCC38) = 0x44;
-    XDATA_REG8(0xCC37) = 0x2C; XDATA_REG8(0xE780) = 0x00;
-    XDATA_REG8(0xE716) = 0x00; XDATA_REG8(0xE716) = 0x03;
+    REG_CPU_EXEC_STATUS = 0x01; REG_CPU_MODE = 0x01;
+    REG_LINK_WIDTH_E710 = 0x04; REG_CPU_EXEC_STATUS_2 = 0x04;
+    REG_TIMER_CTRL_CC3B = 0x0C; REG_LINK_CTRL_E717 = 0x01;
+    REG_CPU_CTRL_CC3E = 0x00; REG_TIMER_CTRL_CC3B = 0x0C;
+    REG_TIMER_CTRL_CC3B = 0x0C; REG_LINK_STATUS_E716 = 0x03;
+    REG_CPU_CTRL_CC3E = 0x00; REG_TIMER_CTRL_CC39 = 0x06;
+    REG_TIMER_ENABLE_B = 0x14; REG_TIMER_ENABLE_A = 0x44;
+    REG_CPU_CTRL_CC37 = 0x2C; REG_SYS_CTRL_E780 = 0x00;
+    REG_LINK_STATUS_E716 = 0x00; REG_LINK_STATUS_E716 = 0x03;
     /* Timer0 init */
-    XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xCC10) = 0x12; XDATA_REG8(0xCC12) = 0x00;
-    XDATA_REG8(0xCC13) = 0xC8; XDATA_REG8(0xCC11) = 0x01;
-    XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xCC37) = 0x28;
-    XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xCC10) = 0x12; XDATA_REG8(0xCC12) = 0x00;
-    XDATA_REG8(0xCC13) = 0x14; XDATA_REG8(0xCC11) = 0x01;
-    XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xCC10) = 0x13; XDATA_REG8(0xCC12) = 0x00;
-    XDATA_REG8(0xCC13) = 0x0A; XDATA_REG8(0xCC11) = 0x01;
-    XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
+    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
+    REG_TIMER0_DIV = 0x12; REG_TIMER0_THRESHOLD_HI = 0x00;
+    REG_TIMER0_THRESHOLD_LO = 0xC8; REG_TIMER0_CSR = 0x01;
+    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
+    REG_CPU_CTRL_CC37 = 0x28;
+    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
+    REG_TIMER0_DIV = 0x12; REG_TIMER0_THRESHOLD_HI = 0x00;
+    REG_TIMER0_THRESHOLD_LO = 0x14; REG_TIMER0_CSR = 0x01;
+    REG_TIMER0_CSR = 0x02;
+    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
+    REG_TIMER0_DIV = 0x13; REG_TIMER0_THRESHOLD_HI = 0x00;
+    REG_TIMER0_THRESHOLD_LO = 0x0A; REG_TIMER0_CSR = 0x01;
+    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
     /* PHY init */
-    XDATA_REG8(0xE7E3) = 0x00;
-    XDATA_REG8(0xE764) = 0x14; XDATA_REG8(0xE764) = 0x14;
-    XDATA_REG8(0xE764) = 0x14; XDATA_REG8(0xE764) = 0x14;
-    XDATA_REG8(0xE76C) = 0x04; XDATA_REG8(0xE774) = 0x04;
-    XDATA_REG8(0xE77C) = 0x04;
+    REG_PHY_LINK_CTRL = 0x00;
+    REG_PHY_TIMER_CTRL_E764 = 0x14; REG_PHY_TIMER_CTRL_E764 = 0x14;
+    REG_PHY_TIMER_CTRL_E764 = 0x14; REG_PHY_TIMER_CTRL_E764 = 0x14;
+    REG_SYS_CTRL_E76C = 0x04; REG_SYS_CTRL_E774 = 0x04;
+    REG_SYS_CTRL_E77C = 0x04;
     /* Timer0 threshold x4 */
     for (i = 0; i < 4; i++) {
-        XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
-        XDATA_REG8(0xCC10) = 0x12; XDATA_REG8(0xCC12) = 0x00;
-        XDATA_REG8(0xCC13) = 0xC7; XDATA_REG8(0xCC11) = 0x01;
-        XDATA_REG8(0xCC11) = 0x02;
+        REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
+        REG_TIMER0_DIV = 0x12; REG_TIMER0_THRESHOLD_HI = 0x00;
+        REG_TIMER0_THRESHOLD_LO = 0xC7; REG_TIMER0_CSR = 0x01;
+        REG_TIMER0_CSR = 0x02;
     }
     /* Flash controller init */
-    XDATA_REG8(0xC805) = 0x02; XDATA_REG8(0xC8A6) = 0x04;
-    XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AE) = 0x00;
-    XDATA_REG8(0xC8AF) = 0x00; XDATA_REG8(0xC8AA) = 0x06;
-    XDATA_REG8(0xC8AC) = 0x04; XDATA_REG8(0xC8A1) = 0x00;
-    XDATA_REG8(0xC8A2) = 0x00; XDATA_REG8(0xC8AB) = 0x00;
-    XDATA_REG8(0xC8A3) = 0x00; XDATA_REG8(0xC8A4) = 0x00;
-    XDATA_REG8(0xC8A9) = 0x01;
-    for (i = 0; i < 5; i++) XDATA_REG8(0xC8AD) = 0x00;
-    XDATA_REG8(0xC8AE) = 0x00; XDATA_REG8(0xC8AF) = 0x00;
-    XDATA_REG8(0xC8AA) = 0x05; XDATA_REG8(0xC8AC) = 0x04;
-    XDATA_REG8(0xC8A1) = 0x00; XDATA_REG8(0xC8A2) = 0x00;
-    XDATA_REG8(0xC8AB) = 0x00; XDATA_REG8(0xC8A3) = 0x00;
-    XDATA_REG8(0xC8A4) = 0x01; XDATA_REG8(0xC8A9) = 0x01;
-    for (i = 0; i < 4; i++) XDATA_REG8(0xC8AD) = 0x00;
-    XDATA_REG8(0xC8AD) = 0x01;
-    XDATA_REG8(0xC8AE) = 0x00; XDATA_REG8(0xC8AF) = 0x00;
-    XDATA_REG8(0xC8AA) = 0x01; XDATA_REG8(0xC8AC) = 0x04;
-    XDATA_REG8(0xC8A3) = 0x00; XDATA_REG8(0xC8A4) = 0x01;
-    XDATA_REG8(0xC8A9) = 0x01;
-    XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xCC10) = 0x15; XDATA_REG8(0xCC12) = 0x00;
-    XDATA_REG8(0xCC13) = 0x59; XDATA_REG8(0xCC11) = 0x01;
+    REG_INT_AUX_STATUS = 0x02; REG_FLASH_DIV = 0x04;
+    REG_FLASH_MODE = 0x00; REG_FLASH_BUF_OFFSET_LO = 0x00;
+    REG_FLASH_BUF_OFFSET_HI = 0x00; REG_FLASH_CMD = 0x06;
+    REG_FLASH_ADDR_LEN = 0x04; REG_FLASH_ADDR_LO = 0x00;
+    REG_FLASH_ADDR_MD = 0x00; REG_FLASH_ADDR_HI = 0x00;
+    REG_FLASH_DATA_LEN = 0x00; REG_FLASH_DATA_LEN_HI = 0x00;
+    REG_FLASH_CSR = 0x01;
+    for (i = 0; i < 5; i++) REG_FLASH_MODE = 0x00;
+    REG_FLASH_BUF_OFFSET_LO = 0x00; REG_FLASH_BUF_OFFSET_HI = 0x00;
+    REG_FLASH_CMD = 0x05; REG_FLASH_ADDR_LEN = 0x04;
+    REG_FLASH_ADDR_LO = 0x00; REG_FLASH_ADDR_MD = 0x00;
+    REG_FLASH_ADDR_HI = 0x00; REG_FLASH_DATA_LEN = 0x00;
+    REG_FLASH_DATA_LEN_HI = 0x01; REG_FLASH_CSR = 0x01;
+    for (i = 0; i < 4; i++) REG_FLASH_MODE = 0x00;
+    REG_FLASH_MODE = 0x01;
+    REG_FLASH_BUF_OFFSET_LO = 0x00; REG_FLASH_BUF_OFFSET_HI = 0x00;
+    REG_FLASH_CMD = 0x01; REG_FLASH_ADDR_LEN = 0x04;
+    REG_FLASH_DATA_LEN = 0x00; REG_FLASH_DATA_LEN_HI = 0x01;
+    REG_FLASH_CSR = 0x01;
+    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
+    REG_TIMER0_DIV = 0x15; REG_TIMER0_THRESHOLD_HI = 0x00;
+    REG_TIMER0_THRESHOLD_LO = 0x59; REG_TIMER0_CSR = 0x01;
     /* Flash status polling x19 */
     for (i = 0; i < 19; i++) {
-        XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AE) = 0x00;
-        XDATA_REG8(0xC8AF) = 0x00; XDATA_REG8(0xC8AA) = 0x05;
-        XDATA_REG8(0xC8AC) = 0x04; XDATA_REG8(0xC8A1) = 0x00;
-        XDATA_REG8(0xC8A2) = 0x00; XDATA_REG8(0xC8AB) = 0x00;
-        XDATA_REG8(0xC8A3) = 0x00; XDATA_REG8(0xC8A4) = 0x01;
-        XDATA_REG8(0xC8A9) = 0x01;
-        XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AD) = 0x00;
-        XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AD) = 0x00;
+        REG_FLASH_MODE = 0x00; REG_FLASH_BUF_OFFSET_LO = 0x00;
+        REG_FLASH_BUF_OFFSET_HI = 0x00; REG_FLASH_CMD = 0x05;
+        REG_FLASH_ADDR_LEN = 0x04; REG_FLASH_ADDR_LO = 0x00;
+        REG_FLASH_ADDR_MD = 0x00; REG_FLASH_ADDR_HI = 0x00;
+        REG_FLASH_DATA_LEN = 0x00; REG_FLASH_DATA_LEN_HI = 0x01;
+        REG_FLASH_CSR = 0x01;
+        REG_FLASH_MODE = 0x00; REG_FLASH_MODE = 0x00;
+        REG_FLASH_MODE = 0x00; REG_FLASH_MODE = 0x00;
     }
-    XDATA_REG8(0xCC35) = 0x00;
-    XDATA_REG8(0xC801) = 0x10;
-    XDATA_REG8(0xC800) = 0x04; XDATA_REG8(0xC800) = 0x05;
-    XDATA_REG8(0xCC3B) = 0x0D; XDATA_REG8(0xCC3B) = 0x0F;
+    REG_CPU_EXEC_STATUS_3 = 0x00;
+    REG_INT_ENABLE = 0x10;
+    REG_INT_STATUS_C800 = 0x04; REG_INT_STATUS_C800 = 0x05;
+    REG_TIMER_CTRL_CC3B = 0x0D; REG_TIMER_CTRL_CC3B = 0x0F;
     /* Power/clock init */
-    XDATA_REG8(0x92C6) = 0x05; XDATA_REG8(0x92C7) = 0x00;
-    XDATA_REG8(0x9201) = 0x0E; XDATA_REG8(0x9201) = 0x0C;
-    XDATA_REG8(0x92C1) = 0x82; XDATA_REG8(0x920C) = 0x61;
-    XDATA_REG8(0x920C) = 0x60; XDATA_REG8(0x92C0) = 0x87;
-    XDATA_REG8(0x92C1) = 0x83; XDATA_REG8(0x92C5) = 0x2F;
-    XDATA_REG8(0x9241) = 0x10; XDATA_REG8(0x9241) = 0xD0;
-    XDATA_REG8(0xE741) = 0x5B; XDATA_REG8(0xE741) = 0x6B;
-    XDATA_REG8(0xE742) = 0x1F; XDATA_REG8(0xE741) = 0xAB;
-    XDATA_REG8(0xE742) = 0x17; XDATA_REG8(0xCC43) = 0x88;
+    REG_POWER_CTRL_92C6 = 0x05; REG_POWER_CTRL_92C7 = 0x00;
+    REG_USB_CTRL_9201 = 0x0E; REG_USB_CTRL_9201 = 0x0C;
+    REG_CLOCK_ENABLE = 0x82; REG_USB_CTRL_920C = 0x61;
+    REG_USB_CTRL_920C = 0x60; REG_POWER_ENABLE = 0x87;
+    REG_CLOCK_ENABLE = 0x83; REG_PHY_POWER = 0x2F;
+    REG_USB_PHY_CONFIG_9241 = 0x10; REG_USB_PHY_CONFIG_9241 = 0xD0;
+    REG_PHY_PLL_CTRL = 0x5B; REG_PHY_PLL_CTRL = 0x6B;
+    REG_PHY_PLL_CFG = 0x1F; REG_PHY_PLL_CTRL = 0xAB;
+    REG_PHY_PLL_CFG = 0x17; REG_CPU_CLK_CFG = 0x88;
     /* Buffer config */
-    XDATA_REG8(0x9316) = 0x00; XDATA_REG8(0x9317) = 0x00;
-    XDATA_REG8(0x931A) = 0x00; XDATA_REG8(0x931B) = 0x00;
-    XDATA_REG8(0x9322) = 0x00; XDATA_REG8(0x9323) = 0x00;
-    XDATA_REG8(0x9310) = 0x01; XDATA_REG8(0x9311) = 0x60;
-    XDATA_REG8(0x9312) = 0x00; XDATA_REG8(0x9313) = 0xE3;
-    XDATA_REG8(0x9314) = 0x01; XDATA_REG8(0x9315) = 0x60;
-    XDATA_REG8(0x9318) = 0x01; XDATA_REG8(0x9319) = 0x60;
-    XDATA_REG8(0x931C) = 0x00; XDATA_REG8(0x931D) = 0x03;
-    XDATA_REG8(0x931E) = 0x00; XDATA_REG8(0x931F) = 0xE0;
-    XDATA_REG8(0x9320) = 0x00; XDATA_REG8(0x9321) = 0xE3;
+    REG_BUF_DESC_STAT0_HI = 0x00; REG_BUF_DESC_STAT0_LO = 0x00;
+    REG_BUF_DESC_STAT1_HI = 0x00; REG_BUF_DESC_STAT1_LO = 0x00;
+    REG_BUF_DESC_STAT2_HI = 0x00; REG_BUF_DESC_STAT2_LO = 0x00;
+    REG_BUF_DESC_BASE0_HI = 0x01; REG_BUF_DESC_BASE0_LO = 0x60;
+    REG_BUF_DESC_SIZE0_HI = 0x00; REG_BUF_DESC_SIZE0_LO = 0xE3;
+    REG_BUF_DESC_BASE1_HI = 0x01; REG_BUF_DESC_BASE1_LO = 0x60;
+    REG_BUF_DESC_BASE2_HI = 0x01; REG_BUF_DESC_BASE2_LO = 0x60;
+    REG_BUF_DESC_CFG0_HI = 0x00; REG_BUF_DESC_CFG0_LO = 0x03;
+    REG_BUF_DESC_CFG1_HI = 0x00; REG_BUF_DESC_CFG1_LO = 0xE0;
+    REG_BUF_DESC_CFG2_HI = 0x00; REG_BUF_DESC_CFG2_LO = 0xE3;
     /* Flash reads (bank0 x3, bank2 x3, bank0+0x80 x3, bank2+0x80 x3) */
     for (i = 0; i < 12; i++) {
         uint8_t bank = (i / 3) & 1 ? 0x02 : 0x00;
         uint8_t addr = (i / 6) ? 0x80 : 0x00;
-        XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AE) = 0x00;
-        XDATA_REG8(0xC8AF) = 0x00; XDATA_REG8(0xC8AA) = 0x03;
-        XDATA_REG8(0xC8AC) = 0x07; XDATA_REG8(0xC8A1) = addr;
-        XDATA_REG8(0xC8A2) = 0x00; XDATA_REG8(0xC8AB) = bank;
-        XDATA_REG8(0xC8A3) = 0x00; XDATA_REG8(0xC8A4) = 0x80;
-        XDATA_REG8(0xC8A9) = 0x01;
-        XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AD) = 0x00;
-        XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AD) = 0x00;
+        REG_FLASH_MODE = 0x00; REG_FLASH_BUF_OFFSET_LO = 0x00;
+        REG_FLASH_BUF_OFFSET_HI = 0x00; REG_FLASH_CMD = 0x03;
+        REG_FLASH_ADDR_LEN = 0x07; REG_FLASH_ADDR_LO = addr;
+        REG_FLASH_ADDR_MD = 0x00; REG_FLASH_ADDR_HI = bank;
+        REG_FLASH_DATA_LEN = 0x00; REG_FLASH_DATA_LEN_HI = 0x80;
+        REG_FLASH_CSR = 0x01;
+        REG_FLASH_MODE = 0x00; REG_FLASH_MODE = 0x00;
+        REG_FLASH_MODE = 0x00; REG_FLASH_MODE = 0x00;
     }
-    XDATA_REG8(0xCC35) = 0x00; XDATA_REG8(0x905F) = 0x44;
-    XDATA_REG8(0xCC2A) = 0x04;
-    XDATA_REG8(0xCC2C) = 0xC7; XDATA_REG8(0xCC2D) = 0xC7;
-    XDATA_REG8(0xC801) = 0x50; XDATA_REG8(0xCC32) = 0x00;
-    XDATA_REG8(0xC807) = 0x04;
-    XDATA_REG8(0x92C8) = 0x24; XDATA_REG8(0x92C8) = 0x24;
+    REG_CPU_EXEC_STATUS_3 = 0x00; REG_USB_EP_CTRL_905F = 0x44;
+    REG_CPU_KEEPALIVE = 0x04;
+    REG_CPU_KEEPALIVE_CC2C = 0xC7; REG_CPU_KEEPALIVE_CC2D = 0xC7;
+    REG_INT_ENABLE = 0x50; REG_CPU_EXEC_STATUS = 0x00;
+    REG_INT_DMA_CTRL = 0x04;
+    REG_POWER_CTRL_92C8 = 0x24; REG_POWER_CTRL_92C8 = 0x24;
     /* Timer2/4 init */
-    XDATA_REG8(0xCC1D) = 0x04; XDATA_REG8(0xCC1D) = 0x02;
-    XDATA_REG8(0xCC5D) = 0x04; XDATA_REG8(0xCC5D) = 0x02;
-    XDATA_REG8(0xCC1C) = 0x16; XDATA_REG8(0xCC1E) = 0x00;
-    XDATA_REG8(0xCC1F) = 0x8B; XDATA_REG8(0xCC5C) = 0x54;
-    XDATA_REG8(0xCC5E) = 0x00; XDATA_REG8(0xCC5F) = 0xC7;
+    REG_TIMER2_CSR = 0x04; REG_TIMER2_CSR = 0x02;
+    REG_TIMER4_CSR = 0x04; REG_TIMER4_CSR = 0x02;
+    REG_TIMER2_DIV = 0x16; REG_TIMER2_THRESHOLD_LO = 0x00;
+    REG_TIMER2_THRESHOLD_HI = 0x8B; REG_TIMER4_DIV = 0x54;
+    REG_TIMER4_THRESHOLD_LO = 0x00; REG_TIMER4_THRESHOLD_HI = 0xC7;
     /* DMA init */
-    XDATA_REG8(0xC8D8) = 0x00; XDATA_REG8(0xC8D8) = 0x00;
-    XDATA_REG8(0xC8D8) = 0x00; XDATA_REG8(0xC8D7) = 0x00;
-    XDATA_REG8(0xC8D6) = 0x00; XDATA_REG8(0xC8D6) = 0x00;
-    XDATA_REG8(0xC8D6) = 0x00; XDATA_REG8(0xC8D5) = 0x00;
+    REG_DMA_STATUS2 = 0x00; REG_DMA_STATUS2 = 0x00;
+    REG_DMA_STATUS2 = 0x00; REG_DMA_CTRL = 0x00;
+    REG_DMA_STATUS = 0x00; REG_DMA_STATUS = 0x00;
+    REG_DMA_STATUS = 0x00; REG_DMA_QUEUE_IDX = 0x00;
     /* DMA channel config x8 */
     { static __code const uint8_t dma_cfg[][4] = {
         {0x02, 0xA0, 0x0F, 0xFF}, {0x02, 0xB0, 0x01, 0xFF},
@@ -715,92 +612,92 @@ static void hw_init(void) {
         {0x00, 0xB8, 0x03, 0xFF}, {0x00, 0xBC, 0x00, 0x7F},
     };
     for (i = 0; i < 8; i++) {
-        if (i < 4) XDATA_REG8(0xC8D8) = dma_cfg[i][0];
-        else       XDATA_REG8(0xC8D6) = dma_cfg[i][0];
-        XDATA_REG8(0xC8B7) = 0x00;
-        XDATA_REG8(0xC8B6) = 0x14; XDATA_REG8(0xC8B6) = 0x14;
-        XDATA_REG8(0xC8B6) = 0x14; XDATA_REG8(0xC8B6) = 0x94;
-        XDATA_REG8(0xC8B2) = dma_cfg[i][1];
-        XDATA_REG8(0xC8B3) = 0x00;
-        XDATA_REG8(0xC8B4) = dma_cfg[i][2];
-        XDATA_REG8(0xC8B5) = dma_cfg[i][3];
-        XDATA_REG8(0xC8B8) = 0x01;
-        XDATA_REG8(0xC8B6) = 0x14;
+        if (i < 4) REG_DMA_STATUS2 = dma_cfg[i][0];
+        else       REG_DMA_STATUS = dma_cfg[i][0];
+        REG_DMA_CHAN_STATUS2 = 0x00;
+        REG_DMA_CHAN_CTRL2 = 0x14; REG_DMA_CHAN_CTRL2 = 0x14;
+        REG_DMA_CHAN_CTRL2 = 0x14; REG_DMA_CHAN_CTRL2 = 0x94;
+        REG_DMA_CHAN_AUX = dma_cfg[i][1];
+        REG_DMA_CHAN_AUX1 = 0x00;
+        REG_DMA_XFER_CNT_HI = dma_cfg[i][2];
+        REG_DMA_XFER_CNT_LO = dma_cfg[i][3];
+        REG_DMA_TRIGGER = 0x01;
+        REG_DMA_CHAN_CTRL2 = 0x14;
     }}
     /* MSC init */
-    XDATA_REG8(0x900B) = 0x07; XDATA_REG8(0x900B) = 0x07;
-    XDATA_REG8(0x900B) = 0x07; XDATA_REG8(0x900B) = 0x05;
-    XDATA_REG8(0x900B) = 0x01; XDATA_REG8(0x900B) = 0x00;
-    XDATA_REG8(0x901A) = 0x0D;
+    REG_USB_MSC_CFG = 0x07; REG_USB_MSC_CFG = 0x07;
+    REG_USB_MSC_CFG = 0x07; REG_USB_MSC_CFG = 0x05;
+    REG_USB_MSC_CFG = 0x01; REG_USB_MSC_CFG = 0x00;
+    REG_USB_MSC_LENGTH = 0x0D;
     /* USB controller init */
-    XDATA_REG8(0x92C0) = 0x87; XDATA_REG8(0x91D1) = 0x0F;
-    XDATA_REG8(0x9300) = 0x0C; XDATA_REG8(0x9301) = 0xC0;
-    XDATA_REG8(0x9302) = 0xBF; XDATA_REG8(0x9091) = 0x1F;
-    XDATA_REG8(0x9093) = 0x0F; XDATA_REG8(0x91C1) = 0xF0;
-    XDATA_REG8(0x9303) = 0x33; XDATA_REG8(0x9304) = 0x3F;
-    XDATA_REG8(0x9305) = 0x40; XDATA_REG8(0x9002) = 0xE0;
-    XDATA_REG8(0x9005) = 0xF0; XDATA_REG8(0x90E2) = 0x01;
-    XDATA_REG8(0x905E) = 0x00;
+    REG_POWER_ENABLE = 0x87; REG_USB_PHY_CTRL_91D1 = 0x0F;
+    REG_BUF_CFG_9300 = 0x0C; REG_BUF_CFG_9301 = 0xC0;
+    REG_BUF_CFG_9302 = 0xBF; REG_USB_CTRL_PHASE = 0x1F;
+    REG_USB_EP_CFG1 = 0x0F; REG_USB_PHY_CTRL_91C1 = 0xF0;
+    REG_BUF_CFG_9303 = 0x33; REG_BUF_CFG_9304 = 0x3F;
+    REG_BUF_CFG_9305 = 0x40; REG_USB_CONFIG = 0xE0;
+    REG_USB_EP0_LEN_H = 0xF0; REG_USB_MODE = 0x01;
+    REG_USB_EP_MGMT = 0x00;
     /* Endpoint ready masks */
-    XDATA_REG8(0x9096) = 0xFF; XDATA_REG8(0x9097) = 0xFF;
-    XDATA_REG8(0x9098) = 0xFF; XDATA_REG8(0x9099) = 0xFF;
-    XDATA_REG8(0x909A) = 0xFF; XDATA_REG8(0x909B) = 0xFF;
-    XDATA_REG8(0x909C) = 0xFF; XDATA_REG8(0x909D) = 0xFF;
-    XDATA_REG8(0x909E) = 0x03;
-    XDATA_REG8(0x9011) = 0xFF; XDATA_REG8(0x9012) = 0xFF;
-    XDATA_REG8(0x9013) = 0xFF; XDATA_REG8(0x9014) = 0xFF;
-    XDATA_REG8(0x9015) = 0xFF; XDATA_REG8(0x9016) = 0xFF;
-    XDATA_REG8(0x9017) = 0xFF; XDATA_REG8(0x9018) = 0x03;
-    XDATA_REG8(0x9010) = 0xFE;
+    REG_USB_EP_READY = 0xFF; REG_USB_EP_CTRL_9097 = 0xFF;
+    REG_USB_EP_MODE_9098 = 0xFF; REG_USB_EP_MODE_9099 = 0xFF;
+    REG_USB_EP_MODE_909A = 0xFF; REG_USB_EP_MODE_909B = 0xFF;
+    REG_USB_EP_MODE_909C = 0xFF; REG_USB_EP_MODE_909D = 0xFF;
+    REG_USB_STATUS_909E = 0x03;
+    REG_USB_DATA_H = 0xFF; REG_USB_FIFO_STATUS = 0xFF;
+    REG_USB_FIFO_H = 0xFF; REG_USB_FIFO_4 = 0xFF;
+    REG_USB_FIFO_5 = 0xFF; REG_USB_FIFO_6 = 0xFF;
+    REG_USB_FIFO_7 = 0xFF; REG_USB_XCVR_MODE = 0x03;
+    REG_USB_DATA_L = 0xFE;
     /* USB PHY init */
-    XDATA_REG8(0x91C3) = 0x00;
-    XDATA_REG8(0x91C0) = 0x13; XDATA_REG8(0x91C0) = 0x12;
+    REG_USB_PHY_CTRL_91C3 = 0x00;
+    REG_USB_PHY_CTRL_91C0 = 0x13; REG_USB_PHY_CTRL_91C0 = 0x12;
     /* Timer/DMA final init */
-    XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xCC10) = 0x14; XDATA_REG8(0xCC12) = 0x01;
-    XDATA_REG8(0xCC13) = 0x8F; XDATA_REG8(0xCC11) = 0x01;
-    XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xCC11) = 0x04; XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xCC10) = 0x10; XDATA_REG8(0xCC12) = 0x00;
-    XDATA_REG8(0xCC13) = 0x09; XDATA_REG8(0xCC11) = 0x01;
-    XDATA_REG8(0xCC11) = 0x02;
-    XDATA_REG8(0xC807) = 0x04; XDATA_REG8(0xC807) = 0x84;
-    XDATA_REG8(0xE7FC) = 0xFF;
-    XDATA_REG8(0xCCD9) = 0x04; XDATA_REG8(0xCCD9) = 0x02;
-    XDATA_REG8(0xCCD8) = 0x00; XDATA_REG8(0xC801) = 0x50;
-    XDATA_REG8(0xCCD8) = 0x04;
-    XDATA_REG8(0xCCDA) = 0x00; XDATA_REG8(0xCCDB) = 0xC8;
-    XDATA_REG8(0xC809) = 0x08; XDATA_REG8(0xC809) = 0x0A;
-    XDATA_REG8(0xC809) = 0x0A;
-    XDATA_REG8(0xCCF8) = 0x40;
-    XDATA_REG8(0xCCF9) = 0x04; XDATA_REG8(0xCCF9) = 0x02;
-    XDATA_REG8(0xCC88) = 0x10; XDATA_REG8(0xCC8A) = 0x00;
-    XDATA_REG8(0xCC8B) = 0x0A; XDATA_REG8(0xCC89) = 0x01;
-    XDATA_REG8(0xCC89) = 0x02;
-    XDATA_REG8(0xCC88) = 0x10; XDATA_REG8(0xCC8A) = 0x00;
-    XDATA_REG8(0xCC8B) = 0x3C; XDATA_REG8(0xCC89) = 0x01;
-    XDATA_REG8(0xCC89) = 0x02;
+    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
+    REG_TIMER0_DIV = 0x14; REG_TIMER0_THRESHOLD_HI = 0x01;
+    REG_TIMER0_THRESHOLD_LO = 0x8F; REG_TIMER0_CSR = 0x01;
+    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
+    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
+    REG_TIMER0_DIV = 0x10; REG_TIMER0_THRESHOLD_HI = 0x00;
+    REG_TIMER0_THRESHOLD_LO = 0x09; REG_TIMER0_CSR = 0x01;
+    REG_TIMER0_CSR = 0x02;
+    REG_INT_DMA_CTRL = 0x04; REG_INT_DMA_CTRL = 0x84;
+    REG_LINK_MODE_CTRL = 0xFF;
+    REG_XFER2_DMA_STATUS = 0x04; REG_XFER2_DMA_STATUS = 0x02;
+    REG_XFER2_DMA_CTRL = 0x00; REG_INT_ENABLE = 0x50;
+    REG_XFER2_DMA_CTRL = 0x04;
+    REG_XFER2_DMA_ADDR_LO = 0x00; REG_XFER2_DMA_ADDR_HI = 0xC8;
+    REG_INT_CTRL = 0x08; REG_INT_CTRL = 0x0A;
+    REG_INT_CTRL = 0x0A;
+    REG_CPU_EXT_CTRL = 0x40;
+    REG_CPU_EXT_STATUS = 0x04; REG_CPU_EXT_STATUS = 0x02;
+    REG_XFER_DMA_CTRL = 0x10; REG_XFER_DMA_ADDR_LO = 0x00;
+    REG_XFER_DMA_ADDR_HI = 0x0A; REG_XFER_DMA_CMD = 0x01;
+    REG_XFER_DMA_CMD = 0x02;
+    REG_XFER_DMA_CTRL = 0x10; REG_XFER_DMA_ADDR_LO = 0x00;
+    REG_XFER_DMA_ADDR_HI = 0x3C; REG_XFER_DMA_CMD = 0x01;
+    REG_XFER_DMA_CMD = 0x02;
     /* Interrupt controller */
-    XDATA_REG8(0xC809) = 0x2A; XDATA_REG8(0xC801) = 0x50;
-    XDATA_REG8(0xCC80) = 0x00; XDATA_REG8(0xCC80) = 0x03;
-    XDATA_REG8(0xCC99) = 0x04; XDATA_REG8(0xCC99) = 0x02;
-    XDATA_REG8(0xC801) = 0x50;
-    XDATA_REG8(0xCC98) = 0x00; XDATA_REG8(0xCC98) = 0x04;
+    REG_INT_CTRL = 0x2A; REG_INT_ENABLE = 0x50;
+    REG_CPU_CTRL_CC80 = 0x00; REG_CPU_CTRL_CC80 = 0x03;
+    REG_XFER_DMA_CFG = 0x04; REG_XFER_DMA_CFG = 0x02;
+    REG_INT_ENABLE = 0x50;
+    REG_CPU_DMA_READY = 0x00; REG_CPU_DMA_READY = 0x04;
     /* Final flash read */
-    XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AE) = 0x00;
-    XDATA_REG8(0xC8AF) = 0x00; XDATA_REG8(0xC8AA) = 0x03;
-    XDATA_REG8(0xC8AC) = 0x07; XDATA_REG8(0xC8A1) = 0x00;
-    XDATA_REG8(0xC8A2) = 0x80; XDATA_REG8(0xC8AB) = 0x01;
-    XDATA_REG8(0xC8A3) = 0x00; XDATA_REG8(0xC8A4) = 0x04;
-    XDATA_REG8(0xC8A9) = 0x01;
-    XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AD) = 0x00;
-    XDATA_REG8(0xC8AD) = 0x00; XDATA_REG8(0xC8AD) = 0x00;
-    XDATA_REG8(0xCC82) = 0x18; XDATA_REG8(0xCC83) = 0x9C;
-    XDATA_REG8(0xCC91) = 0x04; XDATA_REG8(0xCC91) = 0x02;
-    XDATA_REG8(0xC801) = 0x50;
-    XDATA_REG8(0xCC90) = 0x00; XDATA_REG8(0xCC90) = 0x05;
-    XDATA_REG8(0xCC92) = 0x00; XDATA_REG8(0xCC93) = 0xC8;
-    XDATA_REG8(0xCC91) = 0x01;
+    REG_FLASH_MODE = 0x00; REG_FLASH_BUF_OFFSET_LO = 0x00;
+    REG_FLASH_BUF_OFFSET_HI = 0x00; REG_FLASH_CMD = 0x03;
+    REG_FLASH_ADDR_LEN = 0x07; REG_FLASH_ADDR_LO = 0x00;
+    REG_FLASH_ADDR_MD = 0x80; REG_FLASH_ADDR_HI = 0x01;
+    REG_FLASH_DATA_LEN = 0x00; REG_FLASH_DATA_LEN_HI = 0x04;
+    REG_FLASH_CSR = 0x01;
+    REG_FLASH_MODE = 0x00; REG_FLASH_MODE = 0x00;
+    REG_FLASH_MODE = 0x00; REG_FLASH_MODE = 0x00;
+    REG_CPU_CTRL_CC82 = 0x18; REG_CPU_CTRL_CC83 = 0x9C;
+    REG_CPU_DMA_INT = 0x04; REG_CPU_DMA_INT = 0x02;
+    REG_INT_ENABLE = 0x50;
+    REG_CPU_DMA_CTRL_CC90 = 0x00; REG_CPU_DMA_CTRL_CC90 = 0x05;
+    REG_CPU_DMA_DATA_LO = 0x00; REG_CPU_DMA_DATA_HI = 0xC8;
+    REG_CPU_DMA_INT = 0x01;
 }
 
 void main(void)
@@ -828,6 +725,5 @@ void main(void)
 
     while (1) {
         REG_CPU_KEEPALIVE = 0x0C;
-        (void)REG_POWER_STATUS_92F7;
     }
 }
