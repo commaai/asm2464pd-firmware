@@ -15,16 +15,16 @@
  *   0x9000-0x93FF  USB Interface
  *   0xA000-0xAFFF  NVMe I/O Queue
  *   0xB000-0xB1FF  NVMe Admin Queues
- *   0xB200-0xB4FF  PCIe Passthrough
+ *   0xB200-0xB4FF  PCIe Passthrough / Tunnel
  *   0xC000-0xC0FF  UART Controller
  *   0xC200-0xC2FF  Link/PHY Control
- *   0xC400-0xC5FF  NVMe Interface
+ *   0xC400-0xC5FF  NVMe / MSC Interface
  *   0xC600-0xC6FF  PHY Extended
  *   0xC800-0xC8FF  Interrupt / I2C / Flash / DMA
  *   0xCA00-0xCAFF  CPU Mode
  *   0xCC00-0xCCFF  Timer / CPU Control
  *   0xCE00-0xCEFF  SCSI DMA / Transfer Control
- *   0xD800-0xDFFF  USB Endpoint Buffer (see structs.h)
+ *   0xD800-0xDFFF  USB Endpoint Buffer (MSC data/CSW)
  *   0xE300-0xE3FF  PHY Completion / Debug
  *   0xE400-0xE4FF  Command Engine
  *   0xE600-0xE6FF  Debug/Interrupt
@@ -32,6 +32,12 @@
  *   0xEC00-0xECFF  NVMe Event
  *   0xEF00-0xEFFF  System Control
  *   0xF000-0xFFFF  NVMe Data Buffer
+ *
+ * DMA Paths for USB Data:
+ *   EP0 Control (0x9092): descriptor/control transfers via 0x9E00 buffer
+ *   Bulk IN (0xC42C): MSC engine, data at 0xD800+, works on USB 3.0
+ *   Bulk IN (0x90A1): NVMe DMA bridge, needs C471=0x01 (NVMe device)
+ *   Both bulk paths need PCIe link (B480=0x01) for USB 2.0
  */
 
 //=============================================================================
@@ -168,9 +174,21 @@
  *   0xCE89: USB/DMA status (state machine control)
  */
 
-// Core USB registers (0x9000-0x901F)
+/*
+ * Core USB Status (0x9000)
+ * Controls USB endpoint direction and bulk transfer readiness.
+ *
+ * 9000 = 0x00: Accept bulk OUT (CBW reception). DEFAULT after Phase 11.
+ *              MSC engine only accepts incoming CBWs when 9000 = 0x00.
+ *
+ * 9000 = 0x01: USB active for bulk IN. SET before sending data/CSW.
+ *              Required for 90A1 DMA trigger and C42C MSC engine.
+ *              MUST be restored to 0x00 after sending, or CBWs stop.
+ *
+ * Pattern in CBW handler: 9000=0x01 → send data → send CSW → 9000=0x00.
+ */
 #define REG_USB_STATUS          XDATA_REG8(0x9000)
-#define   USB_STATUS_ACTIVE       0x01  // Bit 0: USB active - SET for enumeration at ISR 0x0E68
+#define   USB_STATUS_ACTIVE       0x01  // Bit 0: USB active / bulk IN mode
 #define   USB_STATUS_BIT2         0x04  // Bit 2: USB status flag
 #define   USB_STATUS_INDICATOR    0x10  // Bit 4: USB status indicator
 #define   USB_STATUS_CONNECTED    0x80  // Bit 7: USB cable connected
@@ -181,20 +199,52 @@
 #define REG_USB_EP0_STATUS      XDATA_REG8(0x9003)
 #define REG_USB_EP0_LEN_L       XDATA_REG8(0x9004)  /* EP0 transfer length low byte */
 #define REG_USB_EP0_LEN_H       XDATA_REG8(0x9005)  /* EP0 transfer length high byte */
+/*
+ * USB EP0 Config / Bulk Ready (0x9006)
+ * Dual purpose: EP0 config during enumeration, bulk ready during transfers.
+ * In CBW handler: set bit 0 (0x01) and bit 7 (0x80) after receiving CBW
+ * to indicate endpoint is ready for data transfer.
+ */
 #define REG_USB_EP0_CONFIG      XDATA_REG8(0x9006)
-#define   USB_EP0_CONFIG_ENABLE   0x01  // Bit 0: EP0 config enable
-#define   USB_EP0_CONFIG_READY    0x80  // Bit 7: EP0 ready/valid
+#define   USB_EP0_CONFIG_ENABLE   0x01  // Bit 0: EP0 config / bulk endpoint ready
+#define   USB_EP0_CONFIG_READY    0x80  // Bit 7: EP0 ready / data transfer ready
 #define REG_USB_SCSI_BUF_LEN    XDATA_REG16(0x9007)
 #define REG_USB_SCSI_BUF_LEN_L  XDATA_REG8(0x9007)
 #define REG_USB_SCSI_BUF_LEN_H  XDATA_REG8(0x9008)
+/*
+ * USB MSC Config (0x900B)
+ * Controls MSC (Mass Storage Class) engine state.
+ * Used in 900B/C42A doorbell dance for bulk IN transfers.
+ *
+ * Doorbell dance sequence (before C42C trigger):
+ *   Ramp up:  900B |= 0x02, |= 0x04, then C42A |= 0x01, 900B |= 0x01, C42A ramp
+ *   Teardown: 900B &= ~0x02, &= ~0x04, C42A &= ~0x01, 900B &= ~0x01, C42A teardown
+ *
+ * Also toggled during SET_INTERFACE and bus reset:
+ *   Phase 5: |= 0x02, |= 0x04, &= ~0x02, &= ~0x04 (MSC toggle)
+ *   Phase 9: |= 0x01, &= ~0x01 (MSC bit 0 toggle)
+ *   Phase 11: full ramp up + teardown (re-arm MSC engine)
+ */
 #define REG_USB_MSC_CFG         XDATA_REG8(0x900B)
 #define REG_USB_DATA_L          XDATA_REG8(0x9010)
 #define REG_USB_DATA_H          XDATA_REG8(0x9011)
 #define REG_USB_FIFO_STATUS     XDATA_REG8(0x9012)  /* USB FIFO/status register */
 #define   USB_FIFO_STATUS_READY   0x01  // Bit 0: USB ready/active
 #define REG_USB_FIFO_H          XDATA_REG8(0x9013)
+/* 0x9014-0x9017: FIFO/status registers, cleared to 0x00 in Phase 2 */
+#define REG_USB_FIFO_4          XDATA_REG8(0x9014)  /* USB FIFO reg 4 */
+#define REG_USB_FIFO_5          XDATA_REG8(0x9015)  /* USB FIFO reg 5 */
+#define REG_USB_FIFO_6          XDATA_REG8(0x9016)  /* USB FIFO reg 6 */
+#define REG_USB_FIFO_7          XDATA_REG8(0x9017)  /* USB FIFO reg 7 */
 #define REG_USB_XCVR_MODE       XDATA_REG8(0x9018)
 #define REG_USB_MODE_VAL_9019   XDATA_REG8(0x9019)
+/*
+ * USB MSC Transfer Length (0x901A)
+ * Set before C42C or 90A1 trigger to specify transfer size.
+ *
+ * For C42C path: set to data_len (e.g. 0x0D for 13-byte CSW).
+ * For 90A1 path: set to 0x10 + data_len (16-byte header + payload).
+ */
 #define REG_USB_MSC_LENGTH      XDATA_REG8(0x901A)
 
 // USB endpoint registers (0x905A-0x90FF)
@@ -211,27 +261,71 @@
 
 /*
  * USB Control Transfer Phase Register (0x9091)
- * Two-phase control transfer handling at ISR 0xCDE7:
- *   Bit 0 (SETUP): Setup packet received - triggers 0xA5A6 (setup handler)
- *   Bit 1 (DATA):  Data phase - triggers 0xD088 (DMA descriptor response)
- * Firmware loops writing 0x01, hardware clears bit 0 when ready for data phase.
- * Bit 1 is then SET to indicate data phase, firmware calls DMA trigger.
+ * 
+ * Controls USB control transfer state machine. Read to check current phase,
+ * write to acknowledge/advance phase.
+ *
+ * Control Transfer Sequence (verified working):
+ * 
+ * 1. SETUP Phase:
+ *    - Hardware sets bit 0 when SETUP packet received
+ *    - Read 0x9002, write back; read 0x9220
+ *    - Write 0x01 to acknowledge setup phase
+ *    - Read setup packet from 0x9104-0x910B
+ *
+ * 2. DATA Phase (GET_DESCRIPTOR):
+ *    - Poll until bit 3 (0x08) is set = data phase ready
+ *    - Write descriptor to 0x9E00+ buffer
+ *    - Set length: 0x9003=0, 0x9004=len
+ *    - Write 0x9092=0x04 to trigger DMA send
+ *    - Poll 0x9092 until 0 (DMA complete)
+ *    - Write 0x08 to acknowledge data phase
+ *
+ * 3. STATUS Phase:
+ *    - Poll until bit 4 (0x10) is set = status phase ready
+ *    - Write 0x9092=0x08 to complete status
+ *    - Write 0x10 to acknowledge status phase
+ *
+ * For no-data requests (SET_ADDRESS, SET_CONFIG):
+ *    - Skip data phase, go directly to status phase
+ */
+/*
+ * Original firmware dispatcher (fw.bin:0xCDE7):
+ *   bit0 set → LCALL 0xA5A6 (setup init),     ACK: write 0x01
+ *   bit1 set → LCALL 0xD088 (status OUT),      ACK: write 0x02
+ *   bit2 set → LCALL 0xDCD5 (OUT data recv),   ACK: write 0x04
+ *   bit3 set → LCALL 0xB286 (IN data/GET_DESC),ACK: write 0x08
+ *   bit4 set → LCALL 0xB612 (STATUS/SET_ADDR), ACK: write 0x10
+ *
+ * Init: hw_init writes 0x1F (all bits set = clear all pending).
  */
 #define REG_USB_CTRL_PHASE      XDATA_REG8(0x9091)
-#define   USB_CTRL_PHASE_SETUP    0x01  // Bit 0: Setup phase active (triggers 0xA5A6)
-#define   USB_CTRL_PHASE_DATA     0x02  // Bit 1: Data phase active (triggers 0xD088)
-#define   USB_CTRL_PHASE_STATUS   0x04  // Bit 2: Status phase active
-#define   USB_CTRL_PHASE_STALL    0x08  // Bit 3: Endpoint stalled
-#define   USB_CTRL_PHASE_NAK      0x10  // Bit 4: NAK status
+#define   USB_CTRL_PHASE_SETUP    0x01  // Bit 0: Setup packet received
+#define   USB_CTRL_PHASE_STAT_OUT 0x02  // Bit 1: Status phase (OUT/host-to-device)
+#define   USB_CTRL_PHASE_DATA_OUT 0x04  // Bit 2: OUT data received from host
+#define   USB_CTRL_PHASE_DATA_IN  0x08  // Bit 3: IN data phase ready (poll for GET_DESC)
+#define   USB_CTRL_PHASE_STAT_IN  0x10  // Bit 4: Status phase (IN/device-to-host, SET_ADDR)
 
 /*
- * USB DMA Trigger Register (0x9092)
- * Write 0x01 to trigger DMA transfer of descriptor from ROM to USB buffer.
- * The source address is set via REG_USB_EP_BUF_HI/LO (0x905B/0x905C).
- * The length is set via REG_USB_EP0_LEN_L (0x9004).
+ * USB EP0 DMA Control Register (0x9092)
+ * 
+ * Controls DMA transfers for EP0 control transfers.
+ * Write to trigger operations, reads back 0 when complete.
+ *
+ * Values:
+ *   0x04 = Start DMA send (IN transfer - device to host)
+ *          Used for GET_DESCRIPTOR data phase.
+ *          Set 0x9003=0, 0x9004=length first, then write 0x04.
+ *          Poll until reads 0 for completion.
+ *
+ *   0x08 = Complete status phase
+ *          Write after status phase ready (0x9091 & 0x10).
+ *          For IN transfers: host sends ZLP, we ACK.
+ *          For OUT transfers: we send ZLP.
  */
 #define REG_USB_DMA_TRIGGER     XDATA_REG8(0x9092)
-#define   USB_DMA_TRIGGER_START   0x01  // Bit 0: Start DMA transfer
+#define   USB_DMA_SEND            0x04  // Trigger DMA send (IN data phase)
+#define   USB_DMA_STATUS_COMPLETE 0x08  // Complete status phase
 
 /*
  * USB Endpoint Config 1 (0x9093)
@@ -259,14 +353,50 @@
 #define REG_USB_EP_CFG2         XDATA_REG8(0x9094)
 #define   USB_EP_CFG2_BULK_MODE   0x02  // Write with CFG1=0x08 for bulk mode
 #define   USB_EP_CFG2_INT_MODE    0x10  // Write with CFG1=0x02 for int mode
-#define REG_USB_EP_READY        XDATA_REG8(0x9096)
-#define REG_USB_EP_CTRL_9097    XDATA_REG8(0x9097)  /* USB endpoint control */
-#define REG_USB_EP_MODE_9098    XDATA_REG8(0x9098)  /* USB endpoint mode */
-#define REG_USB_STATUS_909E     XDATA_REG8(0x909E)
-#define REG_USB_CTRL_90A0       XDATA_REG8(0x90A0)  /* USB control 0x90A0 */
-#define REG_USB_SIGNAL_90A1     XDATA_REG8(0x90A1)
+/*
+ * USB Endpoint Ready/Status Masks (0x9096-0x909E)
+ * These 9 registers (0x9096-0x909E) control endpoint ready state.
+ * All set to 0xFF during Phase 2 clears and hw_init.
+ * 0x909E set to 0x03 after clears.
+ *
+ * In EP completion handler (9101 & 0x20):
+ *   Read 9118 (EP status), loop while non-zero:
+ *     Read 9096 (EP ready), write back to acknowledge.
+ */
+#define REG_USB_EP_READY        XDATA_REG8(0x9096)  /* EP ready (read/writeback to ack) */
+#define REG_USB_EP_CTRL_9097    XDATA_REG8(0x9097)  /* EP control (init: 0xFF) */
+#define REG_USB_EP_MODE_9098    XDATA_REG8(0x9098)  /* EP mode (init: 0xFF) */
+#define REG_USB_EP_MODE_9099    XDATA_REG8(0x9099)  /* EP mode 2 (init: 0xFF) */
+#define REG_USB_EP_MODE_909A    XDATA_REG8(0x909A)  /* EP mode 3 (init: 0xFF) */
+#define REG_USB_EP_MODE_909B    XDATA_REG8(0x909B)  /* EP mode 4 (init: 0xFF) */
+#define REG_USB_EP_MODE_909C    XDATA_REG8(0x909C)  /* EP mode 5 (init: 0xFF) */
+#define REG_USB_EP_MODE_909D    XDATA_REG8(0x909D)  /* EP mode 6 (init: 0xFF) */
+#define REG_USB_STATUS_909E     XDATA_REG8(0x909E)  /* EP status (init: 0x03) */
+#define REG_USB_CTRL_90A0       XDATA_REG8(0x90A0)  /* Bulk strobe (auto-clears after write) */
+/*
+ * Bulk DMA Trigger (0x90A1)
+ * Write 0x01 to send bulk IN data via NVMe-USB DMA bridge.
+ * Data at D800+ (header at D800-D80F, payload at D810+).
+ * Length in 0x901A = 0x10 + data_len.
+ *
+ * REQUIRES: C471=0x01 (NVMe queue busy), B480=0x01 (PCIe link up).
+ * Without NVMe device, C471 writes don't stick → 90A1 not consumed.
+ * Without PCIe device, B480=0x00 → trigger consumed but no USB packet.
+ *
+ * On success: reads back 0x00 (consumed). On failure: stays 0x01.
+ * EP completion fires 9101 bit 5 (0x20) when USB packet sent.
+ *
+ * Used by stock firmware on USB 2.0 with NVMe. Not usable with GPU only.
+ */
+#define REG_USB_BULK_DMA_TRIGGER XDATA_REG8(0x90A1)
+#define REG_USB_SIGNAL_90A1     XDATA_REG8(0x90A1)  /* Alias for bulk DMA trigger */
 #define REG_USB_SPEED           XDATA_REG8(0x90E0)
 #define   USB_SPEED_MASK         0x03  // Bits 0-1: USB speed mode
+/*
+ * USB Mode / EP Control (0x90E2)
+ * Read-modify-writeback in CBW handler. Controls endpoint mode.
+ * Set to 0x01 during hw_init. Written back unchanged in ISR.
+ */
 #define REG_USB_MODE            XDATA_REG8(0x90E2)
 #define REG_USB_EP_STATUS_90E3  XDATA_REG8(0x90E3)
 
@@ -285,42 +415,109 @@
  * USB Interrupt/Event Status (0x9101)
  * Controls which USB handler path is taken in ISR.
  * Different bits trigger different code paths in the interrupt handler.
+ * Read in ISR to determine event type, then dispatch accordingly.
+ *
+ * Verified bit meanings from firmware and trace analysis:
+ *   0x01 = Bus reset (when NOT combined with 0x02)
+ *   0x02 = Setup/control packet received (EP0)
+ *   0x08 = Unknown (seen in USB 3.0 flash_usb3 trace)
+ *   0x10 = Link event (USB 3.0→2.0 transition, cable state)
+ *   0x20 = Bulk EP completion (IN transfer done, time to send CSW)
+ *   0x40 = CBW received (bulk OUT, SCSI command ready at 0x912A+)
  */
 #define REG_USB_PERIPH_STATUS   XDATA_REG8(0x9101)
-#define   USB_PERIPH_EP0_ACTIVE   0x01  // Bit 0: EP0 control transfer active
-#define   USB_PERIPH_DESC_REQ     0x02  // Bit 1: Descriptor request pending (triggers 0x033B)
-#define   USB_PERIPH_BULK_REQ     0x08  // Bit 3: Bulk transfer request (vendor cmd path)
-#define   USB_PERIPH_VENDOR_CMD   0x20  // Bit 5: Vendor command handler path
-#define   USB_PERIPH_SUSPENDED    0x40  // Bit 6: Peripheral suspended / USB init
-#define REG_USB_PHY_STATUS_9105 XDATA_REG8(0x9105)  /* USB PHY status check (0xFF = active) */
+#define   USB_PERIPH_BUS_RESET    0x01  // Bit 0: Bus reset (without bit 1)
+#define   USB_PERIPH_CONTROL      0x02  // Bit 1: Setup/control packet (EP0)
+#define   USB_PERIPH_BULK_REQ     0x08  // Bit 3: Bulk transfer request (USB 3.0)
+#define   USB_PERIPH_LINK_EVENT   0x10  // Bit 4: Link event (speed change, cable)
+#define   USB_PERIPH_EP_COMPLETE  0x20  // Bit 5: Bulk EP completion (IN done)
+#define   USB_PERIPH_CBW_RECEIVED 0x40  // Bit 6: CBW received (bulk OUT ready)
+
+/*
+ * USB Setup Packet Registers (0x9104-0x910B)
+ * Hardware writes the 8-byte USB setup packet here when received.
+ * Read at PC=0xA5F5 in ISR during control transfer setup phase.
+ * Different from 0x9E00-0x9E07 which is the response buffer.
+ *
+ * Standard USB Setup Packet Format:
+ *   Byte 0 (bmRequestType): Direction(1) | Type(2) | Recipient(5)
+ *   Byte 1 (bRequest): Request code (GET_DESCRIPTOR=0x06, SET_ADDRESS=0x05, etc.)
+ *   Bytes 2-3 (wValue): Request-specific (descriptor type/index for GET_DESCRIPTOR)
+ *   Bytes 4-5 (wIndex): Request-specific (language ID for string descriptors)
+ *   Bytes 6-7 (wLength): Number of bytes to transfer
+ */
+#define REG_USB_SETUP_BMREQ     XDATA_REG8(0x9104)  /* bmRequestType */
+#define REG_USB_SETUP_BREQ      XDATA_REG8(0x9105)  /* bRequest */
+#define REG_USB_SETUP_WVAL_L    XDATA_REG8(0x9106)  /* wValue low (descriptor index) */
+#define REG_USB_SETUP_WVAL_H    XDATA_REG8(0x9107)  /* wValue high (descriptor type) */
+#define REG_USB_SETUP_WIDX_L    XDATA_REG8(0x9108)  /* wIndex low */
+#define REG_USB_SETUP_WIDX_H    XDATA_REG8(0x9109)  /* wIndex high */
+#define REG_USB_SETUP_WLEN_L    XDATA_REG8(0x910A)  /* wLength low */
+#define REG_USB_SETUP_WLEN_H    XDATA_REG8(0x910B)  /* wLength high */
+
+#define REG_USB_PHY_STATUS_9105 XDATA_REG8(0x9105)  /* USB PHY status check (0xFF = active) - alias for SETUP_BREQ */
 #define REG_USB_STAT_EXT_L      XDATA_REG8(0x910D)
 #define REG_USB_STAT_EXT_H      XDATA_REG8(0x910E)
-/* USB CDB (Command Descriptor Block) registers for vendor commands */
-#define REG_USB_CDB_CMD         XDATA_REG8(0x910D)  /* CDB byte 0: Command type (alias for STAT_EXT_L) */
-#define REG_USB_CDB_LEN         XDATA_REG8(0x910E)  /* CDB byte 1: Size/value (alias for STAT_EXT_H) */
-#define REG_USB_CDB_ADDR_HI     XDATA_REG8(0x910F)  /* CDB byte 2: Address high byte */
-#define REG_USB_CDB_ADDR_MID    XDATA_REG8(0x9110)  /* CDB byte 3: Address mid byte */
-#define REG_USB_CDB_ADDR_LO     XDATA_REG8(0x9111)  /* CDB byte 4: Address low byte */
-#define REG_USB_CDB_5           XDATA_REG8(0x9112)  /* CDB byte 5: Reserved */
+/*
+ * USB Endpoint Status / CBW Registers (0x9118-0x912E)
+ *
+ * When a CBW is received (9101 & 0x40), hardware populates these registers
+ * with the parsed CBW fields. The firmware reads them to dispatch SCSI commands.
+ *
+ * CBW Register Layout (verified by firmware testing):
+ *   0x9118     EP status (non-zero = endpoints active, read in EP completion)
+ *   0x9119     CBW data transfer length high byte (read in CBW handler)
+ *   0x911A     CBW data transfer length low byte
+ *   0x911B-911E  dCBWSignature "USBC" (0x55,0x53,0x42,0x43)
+ *   0x911F-9122  dCBWTag (4 bytes, echoed back in CSW)
+ *   0x9123-9126  dCBWDataTransferLength (4 bytes, LE)
+ *   0x9127       bmCBWFlags (bit 7 = data direction: 1=IN, 0=OUT)
+ *   0x9128       bCBWLUN (bits 0-3)
+ *   0x9129       bCBWCBLength (not typically read)
+ *   0x912A       CBWCB[0] = SCSI opcode
+ *   0x912B       CBWCB[1] = param (size for E4, value for E5)
+ *   0x912C       CBWCB[2] = addr>>16 (E4/E5 vendor cmds)
+ *   0x912D       CBWCB[3] = addr high byte
+ *   0x912E       CBWCB[4] = addr low byte
+ *
+ * Vendor SCSI commands (tinygrad):
+ *   0xE4 (read reg):  CDB=[0xE4, size, addr>>16, addr_hi, addr_lo, 0] → bulk IN
+ *   0xE5 (write reg): CDB=[0xE5, value, addr>>16, addr_hi, addr_lo, 0] → no data
+ *
+ * Standard SCSI commands handled:
+ *   0x00 TEST UNIT READY, 0x03 REQUEST SENSE, 0x12 INQUIRY,
+ *   0x1A MODE SENSE(6), 0x1E PREVENT ALLOW, 0x25 READ CAPACITY(10),
+ *   0x28 READ(10)
+ */
 #define REG_USB_EP_STATUS       XDATA_REG8(0x9118)
-#define REG_USB_CBW_LEN_HI      XDATA_REG8(0x9119)  /* CBW length high byte */
-#define REG_USB_CBW_LEN_LO      XDATA_REG8(0x911A)  /* CBW length low byte */
-#define REG_USB_BUFFER_ALT      XDATA_REG8(0x911B)  /* CBW sig byte 0 / 'U' */
-#define REG_USB_CBW_SIG1        XDATA_REG8(0x911C)  /* CBW sig byte 1 / 'S' */
-#define REG_USB_CBW_SIG2        XDATA_REG8(0x911D)  /* CBW sig byte 2 / 'B' */
-#define REG_USB_CBW_SIG3        XDATA_REG8(0x911E)  /* CBW sig byte 3 / 'C' */
-#define REG_CBW_TAG_0           XDATA_REG8(0x911F)
-#define REG_CBW_TAG_1           XDATA_REG8(0x9120)
-#define REG_CBW_TAG_2           XDATA_REG8(0x9121)
-#define REG_CBW_TAG_3           XDATA_REG8(0x9122)
-#define REG_USB_CBW_XFER_LEN_0  XDATA_REG8(0x9123)  /* CBW transfer length byte 0 (LSB) */
-#define REG_USB_CBW_XFER_LEN_1  XDATA_REG8(0x9124)  /* CBW transfer length byte 1 */
-#define REG_USB_CBW_XFER_LEN_2  XDATA_REG8(0x9125)  /* CBW transfer length byte 2 */
-#define REG_USB_CBW_XFER_LEN_3  XDATA_REG8(0x9126)  /* CBW transfer length byte 3 (MSB) */
-#define REG_USB_CBW_FLAGS       XDATA_REG8(0x9127)  /* CBW flags (bit 7 = direction) */
+#define REG_USB_CBW_LEN_HI      XDATA_REG8(0x9119)  /* CBW data xfer length high (read in handler) */
+#define REG_USB_CBW_LEN_LO      XDATA_REG8(0x911A)  /* CBW data xfer length low */
+#define REG_USB_CBW_SIG0        XDATA_REG8(0x911B)  /* dCBWSignature[0] = 'U' (0x55) */
+#define REG_USB_CBW_SIG1        XDATA_REG8(0x911C)  /* dCBWSignature[1] = 'S' (0x53) */
+#define REG_USB_CBW_SIG2        XDATA_REG8(0x911D)  /* dCBWSignature[2] = 'B' (0x42) */
+#define REG_USB_CBW_SIG3        XDATA_REG8(0x911E)  /* dCBWSignature[3] = 'C' (0x43) */
+#define REG_CBW_TAG_0           XDATA_REG8(0x911F)  /* dCBWTag byte 0 (echo in CSW) */
+#define REG_CBW_TAG_1           XDATA_REG8(0x9120)  /* dCBWTag byte 1 */
+#define REG_CBW_TAG_2           XDATA_REG8(0x9121)  /* dCBWTag byte 2 */
+#define REG_CBW_TAG_3           XDATA_REG8(0x9122)  /* dCBWTag byte 3 */
+#define REG_USB_CBW_XFER_LEN_0  XDATA_REG8(0x9123)  /* dCBWDataTransferLength byte 0 (LSB) */
+#define REG_USB_CBW_XFER_LEN_1  XDATA_REG8(0x9124)  /* dCBWDataTransferLength byte 1 */
+#define REG_USB_CBW_XFER_LEN_2  XDATA_REG8(0x9125)  /* dCBWDataTransferLength byte 2 */
+#define REG_USB_CBW_XFER_LEN_3  XDATA_REG8(0x9126)  /* dCBWDataTransferLength byte 3 (MSB) */
+#define REG_USB_CBW_FLAGS       XDATA_REG8(0x9127)  /* bmCBWFlags (bit 7 = direction) */
 #define   CBW_FLAGS_DIRECTION     0x80  // Bit 7: Data direction (1=IN, 0=OUT)
-#define REG_USB_CBW_LUN         XDATA_REG8(0x9128)  /* CBW LUN (bits 0-3) */
+#define REG_USB_CBW_LUN         XDATA_REG8(0x9128)  /* bCBWLUN (bits 0-3) */
 #define   CBW_LUN_MASK            0x0F  // Bits 0-3: Logical Unit Number
+#define REG_USB_CBW_CB_LEN      XDATA_REG8(0x9129)  /* bCBWCBLength */
+#define REG_USB_CBWCB_0         XDATA_REG8(0x912A)  /* CBWCB[0] = SCSI opcode */
+#define REG_USB_CBWCB_1         XDATA_REG8(0x912B)  /* CBWCB[1] = param/size/value */
+#define REG_USB_CBWCB_2         XDATA_REG8(0x912C)  /* CBWCB[2] = addr>>16 */
+#define REG_USB_CBWCB_3         XDATA_REG8(0x912D)  /* CBWCB[3] = addr high */
+#define REG_USB_CBWCB_4         XDATA_REG8(0x912E)  /* CBWCB[4] = addr low */
+#define REG_USB_CBWCB_5         XDATA_REG8(0x912F)  /* CBWCB[5] = reserved */
+
+// USB Endpoint Control (0x9220)
+#define REG_USB_EP_CTRL_9220    XDATA_REG8(0x9220)  /* EP control (read in setup phase) */
 
 // USB PHY registers (0x91C0-0x91FF)
 #define REG_USB_PHY_CTRL_91C0   XDATA_REG8(0x91C0)
@@ -370,7 +567,10 @@
 #define REG_POWER_DOMAIN        XDATA_REG8(0x92E0)
 #define   POWER_DOMAIN_BIT1       0x02  // Bit 1: Power domain control
 #define REG_POWER_EVENT_92E1    XDATA_REG8(0x92E1)  // Power event register
+#define REG_CLOCK_CTRL_92CF     XDATA_REG8(0x92CF)  /* Clock control (0x00→0x04→0x07→0x03 in reset) */
 #define REG_POWER_STATUS_92F7   XDATA_REG8(0x92F7)  // Power status (high nibble = state)
+#define REG_POWER_STATUS_92F8   XDATA_REG8(0x92F8)  /* Power status (read in reset/SET_ADDRESS) */
+#define REG_POWER_POLL_92FB     XDATA_REG8(0x92FB)  /* Power poll (read during reset 91D1 polling) */
 
 // Buffer config registers (0x9300-0x93FF)
 #define REG_BUF_CFG_9300        XDATA_REG8(0x9300)
@@ -489,14 +689,23 @@
 #define   PCIE_LANE_CFG_HI_MASK   0xF0  // Bits 4-7: High config
 
 /*
- * PCIe Tunnel Link Control (0xB480-0xB482)
- * Controls USB4/Thunderbolt PCIe tunnel state.
+ * PCIe Tunnel Link Status (0xB480-0xB482)
+ * Indicates whether PCIe tunnel is up to downstream device.
  *
- * REG_TUNNEL_LINK_CTRL (0xB480) is critical for USB descriptor DMA:
- *   Bit 0 must be SET to prevent firmware at 0x20DA from clearing
- *   XDATA[0x0AF7] which would disable the descriptor DMA path.
+ * B480 = 0x01: PCIe device connected and link trained.
+ *              Required for 90A1 DMA trigger to generate USB packets.
+ *              Without PCIe device: B480 = 0x00, bulk IN fails.
+ *
+ * B480 = 0x00: No PCIe device, or link not trained.
+ *              90A1 trigger consumed but no USB packet sent.
+ *              C42C also won't work on USB 2.0 without this.
+ *
+ * Written to 0x01 during hw_init() tunnel setup (B401 toggle + B480=0x01).
+ * Reflects actual hardware state — if PCIe link drops, reads back 0x00.
+ *
+ * Stock firmware pre-trigger check: reads B480, expects 0x01.
  */
-#define REG_TUNNEL_LINK_CTRL    XDATA_REG8(0xB480)  /* PCIe link state - must be SET for USB DMA */
+#define REG_TUNNEL_LINK_CTRL    XDATA_REG8(0xB480)  /* PCIe tunnel link status */
 #define   TUNNEL_LINK_UP          0x01  // Bit 0: PCIe tunnel link is up
 #define   TUNNEL_LINK_ACTIVE      0x02  // Bit 1: Tunnel active
 #define REG_TUNNEL_ADAPTER_MODE XDATA_REG8(0xB482)  /* Tunnel adapter mode */
@@ -516,19 +725,26 @@
 
 //=============================================================================
 // UART Controller (0xC000-0xC00F)
+// Based on ASM1142 UART at 0xF100-0xF10A, adapted for ASM2464PD
+// Default config: 921600 baud, 8O1 (set LCR=0x03 for 8N1)
 //=============================================================================
-/* NOTE: REG_UART_BASE removed - use REG_UART_THR_RBR */
-#define REG_UART_THR_RBR        XDATA_REG8(0xC000)  // Data register (THR write, RBR read)
-#define REG_UART_THR            XDATA_REG8(0xC001)  // TX (WO)
-#define REG_UART_RBR            XDATA_REG8(0xC001)  // RX (RO)
-#define REG_UART_IER            XDATA_REG8(0xC002)
-#define REG_UART_FCR            XDATA_REG8(0xC004)  // WO
-#define REG_UART_IIR            XDATA_REG8(0xC004)  // RO
-#define REG_UART_TFBF           XDATA_REG8(0xC006)
-#define REG_UART_LCR            XDATA_REG8(0xC007)
-#define REG_UART_MCR            XDATA_REG8(0xC008)
-#define REG_UART_LSR            XDATA_REG8(0xC009)
-#define REG_UART_MSR            XDATA_REG8(0xC00A)
+#define REG_UART_RBR            XDATA_REG8(0xC000)  // Receive Buffer Register (RO)
+#define REG_UART_THR            XDATA_REG8(0xC001)  // Transmit Holding Register (WO)
+#define REG_UART_IER            XDATA_REG8(0xC002)  // Interrupt Enable Register
+#define REG_UART_IIR            XDATA_REG8(0xC004)  // Interrupt Identification Register (RO)
+#define REG_UART_FCR            XDATA_REG8(0xC004)  // FIFO Control Register (WO)
+#define REG_UART_RFBR           XDATA_REG8(0xC005)  // RX FIFO Bytes Received (RO) - count of bytes in RX FIFO
+#define REG_UART_TFBF           XDATA_REG8(0xC006)  // TX FIFO Bytes Free (RO)
+#define REG_UART_LCR            XDATA_REG8(0xC007)  // Line Control Register
+#define   LCR_DATA_BITS_MASK      0x03  // Bits 0-1: 0=5, 1=6, 2=7, 3=8 data bits
+#define   LCR_STOP_BITS           0x04  // Bit 2: 0=1 stop, 1=2 stop bits
+#define   LCR_PARITY_MASK         0x38  // Bits 3-5: Parity (XX0=None, 001=Odd, 011=Even)
+#define   LCR_LOOPBACK            0x80  // Bit 7: Enable loopback mode
+#define REG_UART_MCR            XDATA_REG8(0xC008)  // Modem Control Register
+#define REG_UART_LSR            XDATA_REG8(0xC009)  // Line Status Register
+#define   LSR_RX_FIFO_OVERFLOW    0x01  // Bit 0: RX FIFO overflow (RW1C)
+#define   LSR_TX_EMPTY            0x20  // Bit 5: TX empty
+#define REG_UART_MSR            XDATA_REG8(0xC00A)  // Modem Status Register
 #define REG_UART_STATUS         XDATA_REG8(0xC00E)  // UART status (bits 0-2 = busy flags)
 
 //=============================================================================
@@ -600,16 +816,61 @@
 #define   NVME_QUEUE_CFG_BIT3     0x08  // Bit 3: Queue config flag
 #define REG_NVME_CMD_PARAM      XDATA_REG8(0xC429)
 #define   NVME_CMD_PARAM_TYPE    0xE0  // Bits 5-7: Command parameter type
+/*
+ * NVMe/MSC Doorbell (0xC42A)
+ * Part of 900B/C42A "doorbell dance" for bulk IN transfers.
+ *
+ * Pre-trigger ramp up (before C42C write):
+ *   C42A |= 0x01, |= 0x02, |= 0x04, |= 0x08, |= 0x10
+ * Post-trigger teardown:
+ *   C42A &= ~0x01, &= ~0x02, &= ~0x04, &= ~0x08, &= ~0x10
+ *
+ * Bit 5 (0x20): NVMe link init gate.
+ *   Set before NVMe link param writes (C473/C472), clear after.
+ *   Used in hw_init Phase 1, SET_INTERFACE, and post-trigger cleanup.
+ *
+ * In hw_init, initial state has various bits set from prior ROM config;
+ * the MSC init dance reads and modifies bits in specific order.
+ */
 #define REG_NVME_DOORBELL       XDATA_REG8(0xC42A)
-#define   NVME_DOORBELL_TRIGGER   0x01  // Bit 0: Doorbell trigger
-#define   NVME_DOORBELL_MODE      0x08  // Bit 3: Doorbell mode
+#define   NVME_DOORBELL_BIT0      0x01  // Bit 0: MSC/queue doorbell
+#define   NVME_DOORBELL_BIT1      0x02  // Bit 1: Queue config
+#define   NVME_DOORBELL_BIT2      0x04  // Bit 2: Queue config
+#define   NVME_DOORBELL_BIT3      0x08  // Bit 3: Queue config
+#define   NVME_DOORBELL_BIT4      0x10  // Bit 4: Queue config
+#define   NVME_DOORBELL_LINK_GATE 0x20  // Bit 5: NVMe link init gate
 #define REG_NVME_CMD_FLAGS      XDATA_REG8(0xC42B)
-// Note: 0xC42C-0xC42D are USB MSC registers, not NVMe
-#define REG_USB_MSC_CTRL        XDATA_REG8(0xC42C)
-#define REG_USB_MSC_STATUS      XDATA_REG8(0xC42D)
-#define REG_NVME_CMD_PRP1       XDATA_REG8(0xC430)  // NVMe command PRP1
-#define REG_NVME_CMD_PRP2       XDATA_REG8(0xC431)
+/*
+ * USB MSC Engine (0xC42C-0xC42D)
+ * Alternative bulk IN trigger for MSC (Mass Storage Class) transfers.
+ * Same underlying NVMe-USB bridge as 90A1 but different interface.
+ *
+ * Usage: data at D800+, set 901A=data_len, write C42C=0x01, clear C42D bit 0.
+ * Preceded by 900B/C42A doorbell dance (ramp up bits, then tear down).
+ *
+ * USB 3.0: Works for both data and CSW (stock firmware uses this exclusively).
+ * USB 2.0: C42D reads 0x00 (trigger consumed but no USB packet generated).
+ *          Only works on USB 2.0 when C471=0x01 (NVMe queue busy), i.e. with
+ *          an actual NVMe device connected, not with GPU only.
+ *
+ * Post-trigger cleanup: C42A |= 0x20, then NVMe link init (C428/C473/C472),
+ * then C42A &= ~0x20.
+ */
+#define REG_USB_MSC_CTRL        XDATA_REG8(0xC42C)  /* Write 0x01 to trigger bulk IN */
+#define REG_USB_MSC_STATUS      XDATA_REG8(0xC42D)  /* Read status; clear bit 0 after trigger */
+#define REG_NVME_CMD_PRP1       XDATA_REG8(0xC430)  // NVMe command PRP1 (init: 0xFF)
+#define REG_NVME_CMD_PRP2       XDATA_REG8(0xC431)  // NVMe command PRP2 (init: 0xFF)
+#define REG_NVME_CMD_PRP3       XDATA_REG8(0xC432)  // NVMe PRP byte 2 (init: 0xFF)
+#define REG_NVME_CMD_PRP4       XDATA_REG8(0xC433)  // NVMe PRP byte 3 (init: 0xFF)
 #define REG_NVME_CMD_CDW10      XDATA_REG8(0xC435)
+/*
+ * NVMe Init Control / Interrupt Masks (0xC438-0xC44B)
+ * Two groups of 4 bytes each, written to 0xFF during NVMe link init,
+ * cleared to 0x00 during Phase 2 PRP/Queue clears.
+ *
+ * Group 1 (0xC438-C43B): Under C42A bit 5, after C473 bit 5+2, C472 clear bit 2
+ * Group 2 (0xC448-C44B): Under C42A bit 5, after C473 bit 6+1, C472 clear bit 1
+ */
 #define REG_NVME_INIT_CTRL      XDATA_REG8(0xC438)  // NVMe init control (set to 0xFF)
 #define REG_NVME_CMD_CDW11      XDATA_REG8(0xC439)
 #define REG_NVME_INT_MASK_A     XDATA_REG8(0xC43A)  /* NVMe/Interrupt mask A (init: 0xFF) */
@@ -624,13 +885,27 @@
 #define REG_NVME_CQ_TAIL        XDATA_REG8(0xC444)
 #define REG_NVME_CQ_STATUS      XDATA_REG8(0xC445)
 #define REG_NVME_LBA_3          XDATA_REG8(0xC446)
-#define REG_NVME_INIT_CTRL2     XDATA_REG8(0xC448)  // NVMe init control 2 (set to 0xFF)
+#define REG_NVME_INIT_CTRL2     XDATA_REG8(0xC448)  // NVMe init ctrl2 byte 0 (0xFF)
+#define REG_NVME_INIT_CTRL2_1   XDATA_REG8(0xC449)  // NVMe init ctrl2 byte 1 (0xFF)
+#define REG_NVME_INIT_CTRL2_2   XDATA_REG8(0xC44A)  // NVMe init ctrl2 byte 2 (0xFF)
+#define REG_NVME_INIT_CTRL2_3   XDATA_REG8(0xC44B)  // NVMe init ctrl2 byte 3 (0xFF)
 #define REG_NVME_CMD_STATUS_50  XDATA_REG8(0xC450)  // NVMe command status
 #define REG_NVME_QUEUE_STATUS_51 XDATA_REG8(0xC451) // NVMe queue status
 #define   NVME_QUEUE_STATUS_51_MASK 0x1F  // Bits 0-4: Queue status index
 #define REG_DMA_ENTRY           XDATA_REG16(0xC462)
 #define REG_CMDQ_DIR_END        XDATA_REG16(0xC470)
-#define REG_NVME_QUEUE_BUSY     XDATA_REG8(0xC471)  /* Queue busy status */
+/*
+ * NVMe Queue Busy (0xC471)
+ * Indicates NVMe command queue is active. CRITICAL for bulk IN on USB 2.0.
+ *
+ * With NVMe device: write 0x01 sticks, enables 90A1/C42C bulk IN paths.
+ * With GPU only:    write 0x01 does NOT stick (reads back 0x00).
+ *                   This is why bulk IN fails on USB 2.0 without NVMe.
+ *
+ * Stock firmware writes 0x01 during SET_INTERFACE (Phase 4, doorbell dance).
+ * Read-only without NVMe queues configured by hardware.
+ */
+#define REG_NVME_QUEUE_BUSY     XDATA_REG8(0xC471)  /* Queue busy (R/O without NVMe) */
 #define   NVME_QUEUE_BUSY_BIT     0x01              /* Bit 0: Queue busy */
 #define REG_NVME_LINK_CTRL      XDATA_REG8(0xC472)  // NVMe link control
 #define REG_NVME_LINK_PARAM     XDATA_REG8(0xC473)  // NVMe link parameter (bit 4)
@@ -638,6 +913,12 @@
 #define REG_NVME_DMA_CTRL_C4E9  XDATA_REG8(0xC4E9)  // NVMe DMA control extended
 #define REG_NVME_PARAM_C4EA     XDATA_REG8(0xC4EA)  // NVMe parameter storage
 #define REG_NVME_PARAM_C4EB     XDATA_REG8(0xC4EB)  // NVMe parameter storage high
+/*
+ * NVMe Transfer Control (0xC509)
+ * Set/clear bit 0 around 90A1 DMA trigger.
+ * Pre-trigger: C509 |= 0x01. Post-trigger: C509 &= ~0x01.
+ */
+#define REG_NVME_XFER_CTRL_C509 XDATA_REG8(0xC509) /* Set bit 0 before 90A1 trigger */
 #define REG_NVME_BUF_CFG        XDATA_REG8(0xC508)  // NVMe buffer configuration
 #define   NVME_BUF_CFG_MASK_LO   0x3F  // Bits 0-5: Buffer index
 #define   NVME_BUF_CFG_MASK_HI   0xC0  // Bits 6-7: Buffer mode
@@ -739,6 +1020,8 @@
 #define REG_FLASH_MODE          XDATA_REG8(0xC8AD)
 #define   FLASH_MODE_ENABLE       0x01  // Bit 0: Flash mode enable
 #define REG_FLASH_BUF_OFFSET    XDATA_REG16(0xC8AE)
+#define REG_FLASH_BUF_OFFSET_LO XDATA_REG8(0xC8AE)  /* Flash buffer offset low byte */
+#define REG_FLASH_BUF_OFFSET_HI XDATA_REG8(0xC8AF)  /* Flash buffer offset high byte */
 
 //=============================================================================
 // DMA Engine Registers (0xC8B0-0xC8D9)
@@ -772,7 +1055,9 @@
 // CPU Mode/Control (0xCA00-0xCAFF)
 //=============================================================================
 #define REG_CPU_MODE_NEXT       XDATA_REG8(0xCA06)
+#define REG_CPU_CTRL_CA2E       XDATA_REG8(0xCA2E)  /* CPU control */
 #define REG_CPU_CTRL_CA60       XDATA_REG8(0xCA60)  /* CPU control CA60 */
+#define REG_CPU_CTRL_CA70       XDATA_REG8(0xCA70)  /* CPU control */
 #define REG_CPU_CTRL_CA81       XDATA_REG8(0xCA81)  /* CPU control CA81 - PCIe init */
 
 //=============================================================================
@@ -814,15 +1099,26 @@
 #define REG_CPU_EXEC_STATUS_3   XDATA_REG8(0xCC35)  /* CPU execution status 3 */
 #define   CPU_EXEC_STATUS_3_BIT0  0x01  // Bit 0: Exec active flag
 #define   CPU_EXEC_STATUS_3_BIT2  0x04  // Bit 2: Exec status flag
+#define REG_CPU_CTRL_CC36       XDATA_REG8(0xCC36)  /* CPU control */
+#define REG_CPU_CTRL_CC37       XDATA_REG8(0xCC37)  /* CPU control */
 // Timer enable/disable control registers
 #define REG_TIMER_ENABLE_A      XDATA_REG8(0xCC38)  /* Timer enable control A */
 #define   TIMER_ENABLE_A_BIT      0x02              /* Bit 1: Timer enable */
+#define REG_TIMER_CTRL_CC39     XDATA_REG8(0xCC39)  /* Timer control */
 #define REG_TIMER_ENABLE_B      XDATA_REG8(0xCC3A)  /* Timer enable control B */
 #define   TIMER_ENABLE_B_BIT      0x02              /* Bit 1: Timer enable */
 #define   TIMER_ENABLE_B_BITS56   0x60              /* Bits 5-6: Timer extended mode */
 #define REG_TIMER_CTRL_CC3B     XDATA_REG8(0xCC3B)  /* Timer control */
 #define   TIMER_CTRL_ENABLE       0x01              /* Bit 0: Timer active */
 #define   TIMER_CTRL_START        0x02              /* Bit 1: Timer start */
+/*
+ * CPU Keepalive (0xCC2A)
+ * Written in main loop to prevent watchdog reset.
+ * Main loop writes 0x0C every iteration.
+ */
+#define REG_CPU_KEEPALIVE       XDATA_REG8(0xCC2A)  /* Write 0x0C in main loop */
+#define REG_CPU_KEEPALIVE_CC2C  XDATA_REG8(0xCC2C)  /* Keepalive param (init: 0xC7) */
+#define REG_CPU_KEEPALIVE_CC2D  XDATA_REG8(0xCC2D)  /* Keepalive param (init: 0xC7) */
 #define REG_CPU_CTRL_CC3D       XDATA_REG8(0xCC3D)
 #define REG_CPU_CTRL_CC3E       XDATA_REG8(0xCC3E)
 #define REG_CPU_CTRL_CC3F       XDATA_REG8(0xCC3F)
@@ -931,18 +1227,24 @@
 #define REG_SCSI_DMA_STATUS_H   XDATA_REG8(0xCE6F)   /* SCSI DMA status high byte */
 /*
  * USB/DMA State Machine Control (0xCE86-0xCE89)
- * These registers control USB enumeration and command state transitions.
  *
- * REG_USB_DMA_STATE (0xCE89) is the key state machine control register:
- *   Bit 0: Must be SET to exit initial wait loop (0x348C)
- *   Bit 1: Checked at 0x3493 for successful enumeration path
- *   Bit 2: Controls state 3→4→5 transitions (0x3588)
+ * REG_XFER_CTRL_CE88 (0xCE88): Transfer control trigger.
+ *   Write 0x00 to init/reset the DMA state machine.
+ *   After writing 0x00, CE89 transitions to 0x03 (ready).
+ *   Written at end of handle_set_interface_inner() to arm bulk transfers.
+ *
+ * REG_USB_DMA_STATE (0xCE89): DMA state machine status.
+ *   Must read 0x03 for bulk DMA to work.
+ *   Checked by stock firmware pre-trigger: if CE89 != 0x03, skip trigger.
+ *   Value 0x03 = bits 0+1 set = ready + success = DMA path available.
+ *
+ * Sequence: write CE88=0x00 → CE89 becomes 0x03 → bulk IN enabled.
  */
 #define REG_XFER_STATUS_CE86    XDATA_REG8(0xCE86)  /* Transfer status (bit 4 checked at 0x349D) */
-#define REG_XFER_CTRL_CE88      XDATA_REG8(0xCE88)  /* DMA trigger - write resets state for new transfer */
-#define REG_USB_DMA_STATE       XDATA_REG8(0xCE89)  /* USB/DMA state machine control */
-#define   USB_DMA_STATE_READY     0x01  // Bit 0: Exit wait loop, ready for next phase
-#define   USB_DMA_STATE_SUCCESS   0x02  // Bit 1: Enumeration/transfer successful
+#define REG_XFER_CTRL_CE88      XDATA_REG8(0xCE88)  /* Write 0x00 to init DMA state machine */
+#define REG_USB_DMA_STATE       XDATA_REG8(0xCE89)  /* Must be 0x03 for bulk DMA (CE89) */
+#define   USB_DMA_STATE_READY     0x01  // Bit 0: Ready
+#define   USB_DMA_STATE_SUCCESS   0x02  // Bit 1: Success / enumeration ok
 #define   USB_DMA_STATE_COMPLETE  0x04  // Bit 2: State machine complete
 #define REG_XFER_CTRL_CE8A      XDATA_REG8(0xCE8A)   /* Transfer control CE8A */
 #define REG_XFER_MODE_CE95      XDATA_REG8(0xCE95)
@@ -963,28 +1265,51 @@
 #define REG_CPU_LINK_CEF3       XDATA_REG8(0xCEF3)
 #define   CPU_LINK_CEF3_ACTIVE    0x08  // Bit 3: Link active
 
-// USB Endpoint Buffer (0xD800-0xD80F)
-// These can be accessed as CSW or as control registers depending on context
-#define REG_USB_EP_BUF_CTRL     XDATA_REG8(0xD800)  // Buffer control/mode/sig0
-#define REG_USB_EP_BUF_SEL      XDATA_REG8(0xD801)  // Buffer select/sig1
-#define REG_USB_EP_BUF_DATA     XDATA_REG8(0xD802)  // Buffer data/sig2
-#define REG_USB_EP_BUF_PTR_LO   XDATA_REG8(0xD803)  // Pointer low/sig3
-#define REG_USB_EP_BUF_PTR_HI   XDATA_REG8(0xD804)  // Pointer high/tag0
-#define REG_USB_EP_BUF_LEN_LO   XDATA_REG8(0xD805)  // Length low/tag1
-#define REG_USB_EP_BUF_STATUS   XDATA_REG8(0xD806)  // Status/tag2
-#define REG_USB_EP_BUF_LEN_HI   XDATA_REG8(0xD807)  // Length high/tag3
-#define REG_USB_EP_RESIDUE0     XDATA_REG8(0xD808)  // Residue byte 0
-#define REG_USB_EP_RESIDUE1     XDATA_REG8(0xD809)  // Residue byte 1
-#define REG_USB_EP_RESIDUE2     XDATA_REG8(0xD80A)  // Residue byte 2
-#define REG_USB_EP_RESIDUE3     XDATA_REG8(0xD80B)  // Residue byte 3
-#define REG_USB_EP_CSW_STATUS   XDATA_REG8(0xD80C)  // CSW status
+/*
+ * USB Endpoint Buffer (0xD800-0xDE5F)
+ * Dual-purpose: used for both C42C MSC data and 90A1 DMA transfers.
+ *
+ * C42C path (current firmware):
+ *   Data written directly at D800+. No header needed.
+ *   CSW: D800-D80C = "USBS" + tag + residue + status (13 bytes)
+ *   SCSI data: D800+ = response data (inquiry, sense, etc.)
+ *   Length in 0x901A = payload bytes.
+ *
+ * 90A1 DMA path (alternative, needs NVMe/C471):
+ *   Header at D800-D80F:
+ *     D800 = 0x03 (buffer control, written LAST)
+ *     D801 = 0x00 (must be 0x00 at trigger)
+ *     D802-D803 = DMA base addr (0x00, 0x01)
+ *     D804-D807 = DMA params (zeroed)
+ *     D806 = 0x02 (data ready, written after data fill)
+ *     D808-D80B = DMA source descriptor
+ *     D80F = data length
+ *   Payload at D810+.
+ *   Length in 0x901A = 0x10 + data_len.
+ *
+ * Init: SET_CONFIG writes "USBS" to D800-D803 for CSW template.
+ *       Phase 7 clears D800-DE5F. Phase 8 writes DE30=0x03, DE36=0x00.
+ */
+#define REG_USB_EP_BUF_CTRL     XDATA_REG8(0xD800)  // Buffer control / CSW sig 'U'
+#define REG_USB_EP_BUF_SEL      XDATA_REG8(0xD801)  // Buffer select / CSW sig 'S'
+#define REG_USB_EP_BUF_DATA     XDATA_REG8(0xD802)  // Buffer data / CSW sig 'B'
+#define REG_USB_EP_BUF_PTR_LO   XDATA_REG8(0xD803)  // Pointer low / CSW sig 'S'
+#define REG_USB_EP_BUF_PTR_HI   XDATA_REG8(0xD804)  // CSW tag byte 0
+#define REG_USB_EP_BUF_LEN_LO   XDATA_REG8(0xD805)  // CSW tag byte 1
+#define REG_USB_EP_BUF_STATUS   XDATA_REG8(0xD806)  // DMA status (0x02=data ready) / CSW tag 2
+#define REG_USB_EP_BUF_LEN_HI   XDATA_REG8(0xD807)  // CSW tag byte 3
+#define REG_USB_EP_RESIDUE0     XDATA_REG8(0xD808)  // CSW residue byte 0 / DMA desc 0
+#define REG_USB_EP_RESIDUE1     XDATA_REG8(0xD809)  // CSW residue byte 1 / DMA desc 1
+#define REG_USB_EP_RESIDUE2     XDATA_REG8(0xD80A)  // CSW residue byte 2 / DMA desc 2
+#define REG_USB_EP_RESIDUE3     XDATA_REG8(0xD80B)  // CSW residue byte 3 / DMA desc 3
+#define REG_USB_EP_CSW_STATUS   XDATA_REG8(0xD80C)  // CSW status byte
 #define REG_USB_EP_CTRL_0D      XDATA_REG8(0xD80D)  // Control 0D
 #define REG_USB_EP_CTRL_0E      XDATA_REG8(0xD80E)  // Control 0E
-#define REG_USB_EP_CTRL_0F      XDATA_REG8(0xD80F)  // Control 0F
-#define REG_USB_EP_CTRL_10      XDATA_REG8(0xD810)  // Control 10
+#define REG_USB_EP_DMA_LEN      XDATA_REG8(0xD80F)  // DMA data length (90A1 path)
+#define REG_USB_EP_DATA_BASE    XDATA_REG8(0xD810)  // Start of payload (90A1 path)
 // USB Endpoint buffers at 0xDE30, 0xDE36 (extended region)
-#define REG_USB_EP_BUF_DE30     XDATA_REG8(0xDE30)  // Endpoint buffer extended control
-#define REG_USB_EP_BUF_DE36     XDATA_REG8(0xDE36)  // Endpoint buffer extended config
+#define REG_USB_EP_BUF_DE30     XDATA_REG8(0xDE30)  // EP buf extended ctrl (init: 0x03)
+#define REG_USB_EP_BUF_DE36     XDATA_REG8(0xDE36)  // EP buf extended cfg (init: 0x00)
 
 // Note: Full struct access at 0xD800 - see structs.h
 
@@ -1078,11 +1403,16 @@
 #define REG_LINK_STATUS_E716    XDATA_REG8(0xE716)
 #define   LINK_STATUS_E716_MASK  0x03  // Bits 0-1: Link status
 #define REG_LINK_CTRL_E717      XDATA_REG8(0xE717)  /* Link control (bit 0 = enable) */
+#define REG_PHY_POLL_E750       XDATA_REG8(0xE750)  /* PHY poll (read during reset 91D1 wait) */
 #define REG_SYS_CTRL_E760       XDATA_REG8(0xE760)
 #define REG_SYS_CTRL_E761       XDATA_REG8(0xE761)
 #define REG_SYS_CTRL_E763       XDATA_REG8(0xE763)
 #define REG_PHY_TIMER_CTRL_E764 XDATA_REG8(0xE764)  /* PHY timer control */
 #define REG_SYS_CTRL_E765       XDATA_REG8(0xE765)  /* System control E765 */
+#define REG_SYS_CTRL_E76C       XDATA_REG8(0xE76C)  /* System control */
+#define REG_SYS_CTRL_E774       XDATA_REG8(0xE774)  /* System control */
+#define REG_SYS_CTRL_E77C       XDATA_REG8(0xE77C)  /* System control */
+#define REG_SYS_CTRL_E780       XDATA_REG8(0xE780)  /* System control */
 #define REG_FLASH_READY_STATUS  XDATA_REG8(0xE795)
 #define REG_PHY_LINK_CTRL       XDATA_REG8(0xE7E3)
 #define   PHY_LINK_CTRL_BIT6      0x40  // Bit 6: PHY link control flag
