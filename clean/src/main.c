@@ -355,6 +355,21 @@ void int0_isr(void) __interrupt(0) {
         return;
     }
 
+    if (periph_status & 0x08) {
+        /* Bulk request — acknowledge pending bits in 9301/9302 (stock firmware 0x0f0e-0x0f47) */
+        uint8_t r9301 = REG_BUF_CFG_9301;
+        if (r9301 & 0x40)
+            REG_BUF_CFG_9301 = 0x40;
+        else if (r9301 & 0x80) {
+            REG_BUF_CFG_9301 = 0x80;
+            REG_POWER_DOMAIN = (REG_POWER_DOMAIN & 0xFD) | 0x02;
+        } else {
+            uint8_t r9302 = REG_BUF_CFG_9302;
+            if (r9302 & 0x80)
+                REG_BUF_CFG_9302 = 0x80;
+        }
+    }
+
     if (!(periph_status & 0x02))
         return;
 
