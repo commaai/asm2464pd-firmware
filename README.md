@@ -107,6 +107,139 @@ src/
     └── dispatch.c   # Bank switching stubs
 ```
 
+## Emulator
+
+The `emulate/` directory contains a full 8051 CPU emulator that can run `fw.bin`
+with hardware emulation or proxy MMIO to real hardware over UART.
+
+### Architecture
+
+```
+emulate/
+├── emu.py          # Main Emulator class, CLI entry point
+├── cpu.py          # 8051 CPU: instructions, interrupts, bank switching
+├── memory.py       # Memory: code banks, XDATA, IDATA, SFR, bit addressing
+├── hardware.py     # MMIO register emulation, USB/PCIe/DMA state machines
+├── uart_proxy.py   # Binary protocol to proxy MMIO reads/writes over FTDI UART
+├── usb_host.py     # USB host interface for injecting control/vendor commands
+├── usb_device.py   # raw-gadget USB device (makes emulator appear in lsusb)
+├── raw_gadget.py   # Linux raw_gadget kernel interface
+└── disasm8051.py   # 8051 instruction table for trace/disassembly
+```
+
+### Modes of Operation
+
+**Pure emulation** (no hardware):
+```bash
+python3 emulate/emu.py fw.bin
+```
+Runs firmware in software with emulated MMIO. Good for tracing code paths,
+testing ISR handling, and analyzing firmware behavior. USB state machine is
+driven by callbacks in `hardware.py`.
+
+**UART proxy** (real hardware):
+```bash
+cd clean && make flash-proxy   # Flash proxy firmware to device
+python3 emulate/emu.py --proxy fw.bin
+```
+CPU executes in the emulator, but every XDATA/SFR read/write is forwarded
+to real hardware over UART (921600 baud via FTDI). The real USB PHY handles
+link training, so the device appears in `lsusb` with real enumeration.
+Interrupts from hardware (INT0, timers) are forwarded back to the emulator.
+
+**Proxy with MMIO trace** (for reverse engineering):
+```bash
+python3 emulate/emu.py --proxy --proxy-debug 2 fw.bin
+```
+Same as proxy mode but logs every MMIO read/write with PC address and
+register name. Debug levels: 1=interrupts only, 2=+XDATA, 3=+SFR.
+
+### Proxy Firmware Protocol
+
+The proxy firmware (`clean/src/proxy.c`) runs on the real 8051 and speaks a
+binary protocol over UART:
+
+| Command | Bytes Sent | Response |
+|---------|-----------|----------|
+| `0x00 <val>` Echo | 1 | `<val> <~val>` |
+| `0x01 <hi> <lo>` XDATA Read | 2 | `<val> <~val>` |
+| `0x02 <hi> <lo> <val>` XDATA Write | 3 | `0x00 0xFF` |
+| `0x03 <addr>` SFR Read | 1 | `<val> <~val>` |
+| `0x04 <addr> <val>` SFR Write | 2 | `0x00 0xFF` |
+| `0x05 <mask>` INT ACK | 1 | `0x00 0xFF` |
+
+Interrupt signals are sent asynchronously as `0x7E <mask>` where mask bits
+correspond to 8051 interrupts (bit 0=INT0, 1=Timer0, etc).
+
+### Key Emulator Options
+
+```bash
+# Trace specific PC addresses (e.g. ISR entry, function calls)
+python3 emulate/emu.py --trace-pc 0x0E33 --trace-pc 0x3458 fw.bin
+
+# Watch XDATA addresses for reads/writes
+python3 emulate/emu.py --watch 0x0AF1 --watch 0x0B00 fw.bin
+
+# Set breakpoints
+python3 emulate/emu.py --break 0x494D fw.bin
+
+# Full instruction trace (very verbose)
+python3 emulate/emu.py --trace fw.bin
+
+# Limit execution
+python3 emulate/emu.py --max-cycles 5000000 fw.bin
+
+# Inject USB vendor command after boot
+python3 emulate/emu.py --usb-cmd E4:0x9000:1 fw.bin
+
+# Proxy with emulated MMIO range (e.g. emulate UART locally)
+python3 emulate/emu.py --proxy --proxy-mask 0xC000-0xC010 fw.bin
+
+# USB device mode (appears in lsusb via raw-gadget/dummy_hcd)
+sudo python3 emulate/emu.py --usb-device fw.bin
+```
+
+### Observed Bulk Transfer Sequence (Stock Firmware)
+
+From proxy MMIO traces, the stock firmware's CBW-to-CSW flow for a TUR
+(Test Unit Ready) command:
+
+```
+ISR triggered by INT0, reads 0x9101:
+  bit 6 set (0x40) → CBW received path
+
+CBW reception:
+  Read  0x90E2 bit 0 → must be set (bulk data ready)
+  Write 0x90E2 = 0x01      (ack/re-arm)
+  Write 0xCE88 = 0x00      (init DMA state machine)
+  Read  0xCE89 → 0x03      (DMA ready + error bits)
+  Read  0x9119/911A         (CBW length = 0x001F = 31 bytes)
+  Read  0x911B-911E         (CBW signature "USBC")
+  Read  0x911F-9122         (CBW tag → written to D804-D807)
+  Read  0x9123-9126         (transfer length)
+  Read  0x9127              (flags/direction)
+  Read  0x9128              (LUN)
+  Write 0xD80C = 0x00       (clear CSW status)
+  Read  0x912A              (SCSI opcode, 0x00 = TUR)
+
+SCSI dispatch + state machine processing...
+
+CSW send:
+  Doorbell ramp up (C42A bit toggling: 0x01→0x03→0x07→0x0F→0x1F)
+  Doorbell ramp down (0x1F→0x1E→0x1C→0x18→0x10→0x00)
+  Write 0xD800 = 0x55 ("U")   CSW signature byte 0
+  Write 0xD801 = 0x53 ("S")   CSW signature byte 1
+  Write 0xD802 = 0x42 ("B")   CSW signature byte 2
+  Write 0xD803 = 0x53 ("S")   CSW signature byte 3
+  Write 0x901A = 0x0D          MSC transfer length (13 = CSW size)
+  Write 0xC42C = 0x01          MSC trigger
+  Read  0xC42D → clear bit 0   MSC status ack
+
+Epilogue re-arm:
+  Write 0xC42C = 0x01          Re-arm for next CBW
+  Read/Write 0xC42D            Clear status
+```
+
 ## Reference Materials
 
 - `fw.bin` - Original firmware (98,012 bytes)
@@ -119,6 +252,18 @@ src/
 2. Include address comments: `/* 0xABCD-0xABEF */`
 3. Use `REG_` for registers, `G_` for globals
 4. Analyze with radare2 or Ghidra
+
+## Flashing
+
+Custom firmware is built and flashed from the `clean/` directory:
+```bash
+cd clean
+make flash          # Build, wrap with header, flash via USB, reset, show UART
+make flash-proxy    # Flash the UART proxy firmware instead
+```
+
+`flash.py` uses tinygrad's USB3 library to send SCSI vendor commands (E1, E3, E8)
+over bulk transfers to the device's bootloader.
 
 ## License
 
