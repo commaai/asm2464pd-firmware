@@ -179,20 +179,22 @@
  */
 
 /*
- * Core USB Status (0x9000)
- * Controls USB endpoint direction and bulk transfer readiness.
+ * Core USB Status (0x9000) — READ-ONLY hardware status register
  *
- * 9000 = 0x00: Accept bulk OUT (CBW reception). DEFAULT after Phase 11.
- *              MSC engine only accepts incoming CBWs when 9000 = 0x00.
+ * WARNING: Writing to this register BREAKS DMA transfers!
+ * All 0x9000 writes have been removed from CBW handlers.
  *
- * 9000 = 0x01: USB active for bulk IN. SET before sending data/CSW.
- *              Required for 90A1 DMA trigger and C42C MSC engine.
- *              MUST be restored to 0x00 after sending, or CBWs stop.
+ * Bit 0: Data path status — set by hardware when bulk OUT data is
+ *        in USB FIFO awaiting SW/NVMe DMA extraction.
+ *        Stock firmware checks this at 0x3427: if set → call dispatch_0206.
+ *        If clear → data went elsewhere (e.g., flash controller DMA).
  *
- * Pattern in CBW handler: 9000=0x01 → send data → send CSW → 9000=0x00.
+ * Read-modify-writeback is OK during init (SET_CONFIG, do_bulk_init)
+ * but NEVER write specific values during runtime transfer handling.
  */
 #define REG_USB_STATUS          XDATA_REG8(0x9000)
-#define   USB_STATUS_ACTIVE       0x01  // Bit 0: USB active / bulk IN mode
+#define   USB_STATUS_DMA_READY    0x01  // Bit 0: Data in FIFO for DMA (read-only)
+#define   USB_STATUS_ACTIVE       0x01  // Alias for DMA_READY (legacy name)
 #define   USB_STATUS_BIT2         0x04  // Bit 2: USB status flag
 #define   USB_STATUS_INDICATOR    0x10  // Bit 4: USB status indicator
 #define   USB_STATUS_CONNECTED    0x80  // Bit 7: USB cable connected
@@ -244,10 +246,16 @@
 #define REG_USB_MODE_VAL_9019   XDATA_REG8(0x9019)
 /*
  * USB MSC Transfer Length (0x901A)
- * Set before C42C or 90A1 trigger to specify transfer size.
+ * Controls transfer size for C42C, 90A1, and 90E1 paths.
  *
- * For C42C path: set to data_len (e.g. 0x0D for 13-byte CSW).
- * For 90A1 path: set to 0x10 + data_len (16-byte header + payload).
+ * Default: 0x0D (13 bytes for CSW). Restore after SW DMA transfers.
+ *
+ * For C42C path: always 0x0D (13-byte CSW, hardware uses internal buffer).
+ * For SW DMA IN (C8D4=0xA0 + 90A1): set to actual data length (max 255).
+ *   90A1 sends this many bytes from 905B:905C address to host.
+ * For SW DMA OUT: NOT explicitly set by stock firmware's dispatch_0206.
+ *   May not control receive length (hardware uses CBW transfer length).
+ * For NVMe DMA: set by dispatch_0206 NVMe path at 0x02E4.
  */
 #define REG_USB_MSC_LENGTH      XDATA_REG8(0x901A)
 
@@ -255,7 +263,9 @@
 /*
  * Software DMA EP config (0x905A)
  * Written before 90E1 trigger in dispatch_0206 software path.
- * 0x10 = bulk IN (send to host), 0x08 = bulk OUT (receive from host)
+ * Sets the direction for the SW DMA engine.
+ * 0x10 = bulk IN (DMA from XDATA to USB host)
+ * 0x08 = bulk OUT (DMA from USB FIFO to XDATA)
  */
 #define REG_USB_EP_CFG_905A     XDATA_REG8(0x905A)
 #define   USB_EP_CFG_BULK_IN      0x10  // Bulk IN (send data to host)
@@ -351,28 +361,34 @@
  * USB Endpoint Config 1 (0x9093)
  * Controls endpoint transfer mode and triggers bulk operations.
  *
- * ISR bit handlers (when bit is set):
+ * Read: current endpoint state (ISR checks bits to dispatch handlers)
  *   Bit 0: Calls cleanup (0x54b4 -> 0x3169, 0x320d)
- *   Bit 1: Bulk data complete - calls 0x32e4
+ *   Bit 1: Bulk data complete - calls 0x32e4 (BULK_DATA handler)
  *   Bit 2: Calls cleanup (same as bit 0)
  *   Bit 3: State machine handler - calls 0x4d3e
  *
- * Values written by firmware:
- *   0x08: Bulk transfer mode (with 0x9094=0x02) - at 0x529c, 0x1cca
- *   0x02: Interrupt transfer mode (with 0x9094=0x10) - at 0x1cd5
- *   0x04: Event handler default action - at 0x1009
- *   0x02: Clear bit 1 after ISR - at 0x0fac
+ * Write: arm/ack endpoint
+ *   Arm bulk IN:  9093=0x08, 9094=0x02 (at 0x1CCA from main loop)
+ *   Arm bulk OUT: 9093=0x02, 9094=0x10 (at 0x1CD5/0x32A6 from main loop)
+ *     CRITICAL: Must be set from main loop, NOT from within CBW handler!
+ *     The MSC engine needs the CBW handler to return before it transitions
+ *     to the data-ready state. Arming inside handle_cbw → BULK_DATA never fires.
+ *   Ack bulk done: 9093=0x02 (at 0x0FAC, after BULK_DATA fires in ISR)
  */
 #define REG_USB_EP_CFG1         XDATA_REG8(0x9093)
 #define   USB_EP_CFG1_CLEANUP     0x01  // Bit 0: Cleanup pending
-#define   USB_EP_CFG1_BULK_DONE   0x02  // Bit 1: Bulk transfer complete
+#define   USB_EP_CFG1_BULK_DONE   0x02  // Bit 1: Bulk data complete / ack
 #define   USB_EP_CFG1_CLEANUP2    0x04  // Bit 2: Cleanup pending (alt)
 #define   USB_EP_CFG1_STATE_MACH  0x08  // Bit 3: State machine event
-#define   USB_EP_CFG1_BULK_MODE   0x08  // Write: Configure bulk transfer mode
-#define   USB_EP_CFG1_INT_MODE    0x02  // Write: Configure interrupt mode
+#define   USB_EP_CFG1_ARM_IN      0x08  // Write: Arm bulk IN endpoint
+#define   USB_EP_CFG1_ARM_OUT     0x02  // Write: Arm bulk OUT endpoint / ack
+#define   USB_EP_CFG1_BULK_MODE   0x08  // Legacy alias for ARM_IN
+#define   USB_EP_CFG1_INT_MODE    0x02  // Legacy alias for ARM_OUT
 #define REG_USB_EP_CFG2         XDATA_REG8(0x9094)
-#define   USB_EP_CFG2_BULK_MODE   0x02  // Write with CFG1=0x08 for bulk mode
-#define   USB_EP_CFG2_INT_MODE    0x10  // Write with CFG1=0x02 for int mode
+#define   USB_EP_CFG2_ARM_IN      0x02  // Write with CFG1=0x08 to arm bulk IN
+#define   USB_EP_CFG2_ARM_OUT     0x10  // Write with CFG1=0x02 to arm bulk OUT
+#define   USB_EP_CFG2_BULK_MODE   0x02  // Legacy alias for ARM_IN
+#define   USB_EP_CFG2_INT_MODE    0x10  // Legacy alias for ARM_OUT
 /*
  * USB Endpoint Ready/Status Masks (0x9096-0x909E)
  * These 9 registers (0x9096-0x909E) control endpoint ready state.
@@ -395,29 +411,42 @@
 #define REG_USB_CTRL_90A0       XDATA_REG8(0x90A0)  /* Bulk strobe (auto-clears after write) */
 /*
  * Bulk DMA Trigger (0x90A1)
- * Write 0x01 to send bulk IN data via NVMe-USB DMA bridge.
- * Data at D800+ (header at D800-D80F, payload at D810+).
- * Length in 0x901A = 0x10 + data_len.
+ * Write 0x01 to trigger bulk data transfer.
  *
- * REQUIRES: C471=0x01 (NVMe queue busy), B480=0x01 (PCIe link up).
- * Without NVMe device, C471 writes don't stick → 90A1 not consumed.
- * Without PCIe device, B480=0x00 → trigger consumed but no USB packet.
+ * Behavior depends on C8D4 (DMA config):
+ *   C8D4=0x00 (NVMe mode): sends from NVMe DMA registers. 901A=0x0D for CSW.
+ *     REQUIRES: C471=0x01 (NVMe queue busy), B480=0x01 (PCIe link up).
+ *   C8D4=0xA0 (SW DMA mode): sends from 905B:905C address. 901A=data_len.
+ *     Proven working for bulk IN: 90E1 sets up source, 90A1 triggers send.
+ *     For bulk OUT: stock firmware does NOT write 90A1 in dispatch_0206
+ *       SW DMA path — only 90E1 is used. 90A1 is written at 0x3261 inside
+ *       the CSW send function (0x3258), AFTER data has been received.
  *
+ * EP completion fires 9101 bit 5 (0x20) when host completes the read.
  * On success: reads back 0x00 (consumed). On failure: stays 0x01.
- * EP completion fires 9101 bit 5 (0x20) when USB packet sent.
- *
- * Used by stock firmware on USB 2.0 with NVMe. Not usable with GPU only.
  */
 #define REG_USB_BULK_DMA_TRIGGER XDATA_REG8(0x90A1)
-#define REG_USB_SIGNAL_90A1     XDATA_REG8(0x90A1)  /* Alias for bulk DMA trigger */
+#define REG_USB_SIGNAL_90A1     XDATA_REG8(0x90A1)  /* Legacy alias */
 #define REG_USB_SPEED           XDATA_REG8(0x90E0)
 #define   USB_SPEED_MASK         0x03  // Bits 0-1: USB speed mode
 /*
  * Software DMA Trigger (0x90E1)
- * Used by dispatch_0206 software path to trigger bulk data transfer.
- * Write 0x01 to trigger (via nvme_initialize at 0x3288).
- * For bulk IN (send to host): set 905A=0x10 first.
- * For bulk OUT (receive from host): set 905A=0x08 first.
+ * Used by dispatch_0206 software path to set up SW DMA transfer.
+ * Write 0x01 to trigger (via 0x3288: writes 0x01, clears C509 bit 0).
+ *
+ * For bulk IN: set 905A=0x10 first. 90E1 sets up DMA source at 905B:905C.
+ *   Does NOT send data by itself — 90A1=0x01 is needed to actually trigger.
+ * For bulk OUT: set 905A=0x08 first. 90E1 should set up DMA destination.
+ *   Stock firmware does NOT write 90A1 after 90E1 for OUT direction.
+ *   Data should move from USB FIFO to XDATA[905B:905C] address.
+ *
+ * Prerequisites before writing 90E1:
+ *   C8D4 = 0xA0 (SW DMA mode enabled)
+ *   905B:905C = DMA buffer address (source for IN, dest for OUT)
+ *   D800 = 0x03 (IN) or 0x04 (OUT) — direction
+ *   D802:D803 = same address as 905B:905C
+ *   905A = 0x10 (IN) or 0x08 (OUT) — EP config
+ *   C509 bit 0 set (pre-trigger, cleared by 0x3288 after 90E1 write)
  */
 #define REG_USB_SW_DMA_TRIGGER  XDATA_REG8(0x90E1)
 /*
@@ -1041,8 +1070,15 @@
 #define REG_INT_USB_STATUS      XDATA_REG8(0xC802)  /* USB interrupt status */
 #define   INT_USB_MASTER          0x01  // Bit 0: USB master interrupt
 #define   INT_USB_NVME_QUEUE      0x04  // Bit 2: NVMe queue processing
-#define REG_INT_AUX_STATUS      XDATA_REG8(0xC805)  /* Auxiliary interrupt status */
-#define   INT_AUX_ENABLE          0x02  // Bit 1: Auxiliary enable
+/*
+ * Auxiliary/DMA Mode Status (0xC805)
+ * Also used for DMA mode configuration before bulk OUT data handling.
+ * Stock firmware at 0x32BF: C805 = (C805 & 0xF9) | 0x02 before ALL
+ * bulk OUT data handlers (E1 flash write, SCSI writes, etc.)
+ * This configures the DMA path for receiving bulk data.
+ */
+#define REG_INT_AUX_STATUS      XDATA_REG8(0xC805)
+#define   INT_AUX_ENABLE          0x02  // Bit 1: DMA mode / auxiliary enable
 #define   INT_AUX_STATUS          0x04  // Bit 2: Auxiliary status
 #define REG_INT_SYSTEM          XDATA_REG8(0xC806)  /* System interrupt status */
 #define   INT_SYSTEM_EVENT        0x01  // Bit 0: System event interrupt
