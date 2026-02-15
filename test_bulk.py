@@ -168,6 +168,148 @@ def test_stress(dev):
         print(f"  FAIL at command {i}: {e}")
         return False
 
+def e6_bulk_in(dev, addr, length=64):
+    """Bulk IN: read data from XDATA[addr] via E6 vendor command with data phase.
+    CDB[1] = length (max 255), CDB[3:4] = XDATA address."""
+    ah = (addr >> 8) & 0xFF
+    al = addr & 0xFF
+    xfer_len = min(length, 255)
+    cdb = struct.pack('>BBBBB10x', 0xE6, xfer_len, 0x00, ah, al)
+    # CBW with data_transfer_length = length, direction = IN (0x80)
+    dev._tag += 1
+    cbw = struct.pack('<IIIBBB', 0x43425355, dev._tag, length, 0x80, 0, len(cdb)) + cdb + b'\x00' * (16 - len(cdb))
+    dev._bulk_out(dev.ep_data_out, cbw)
+    # Read data phase
+    data = dev._bulk_in(dev.ep_data_in, length, timeout=3000)
+    # Read CSW
+    csw = dev._bulk_in(dev.ep_data_in, 13, timeout=3000)
+    sig, rtag, residue, status = struct.unpack('<IIIB', csw)
+    assert sig == 0x53425355, f"Bad CSW signature 0x{sig:08X}"
+    assert rtag == dev._tag, f"CSW tag mismatch: got {rtag}, expected {dev._tag}"
+    assert status == 0, f"SCSI command failed, status=0x{status:02X}"
+    return data
+
+def e7_bulk_out(dev, addr, data):
+    """Bulk OUT: write data to XDATA[addr] via E7 vendor command with data phase.
+    CDB[1] = length (max 255), CDB[3:4] = XDATA address."""
+    ah = (addr >> 8) & 0xFF
+    al = addr & 0xFF
+    length = len(data)
+    xfer_len = min(length, 255)
+    cdb = struct.pack('>BBBBB10x', 0xE7, xfer_len, 0x00, ah, al)
+    # CBW with data_transfer_length = length, direction = OUT (0x00)
+    dev._tag += 1
+    cbw = struct.pack('<IIIBBB', 0x43425355, dev._tag, length, 0x00, 0, len(cdb)) + cdb + b'\x00' * (16 - len(cdb))
+    dev._bulk_out(dev.ep_data_out, cbw)
+    # Send data phase
+    dev._bulk_out(dev.ep_data_out, data)
+    # Read CSW
+    csw = dev._bulk_in(dev.ep_data_in, 13, timeout=3000)
+    sig, rtag, residue, status = struct.unpack('<IIIB', csw)
+    assert sig == 0x53425355, f"Bad CSW signature 0x{sig:08X}"
+    assert rtag == dev._tag, f"CSW tag mismatch: got {rtag}, expected {dev._tag}"
+    assert status == 0, f"SCSI command failed, status=0x{status:02X}"
+
+def test_e6_bulk_in(dev):
+    """Test E6 bulk IN — write known pattern via E5, read back via E6 data phase"""
+    print("\n--- Test 8: E6 bulk IN (software DMA) ---")
+    base = 0x5100
+    try:
+        # Write a known pattern to XDATA via E5 (single byte writes)
+        for i in range(64):
+            e5_write(dev, base + i, 0xA0 + (i & 0x3F))
+            time.sleep(0.01)
+        # Manual E6 with debug output
+        ah = (base >> 8) & 0xFF
+        al = base & 0xFF
+        length = 64
+        cdb = struct.pack('>BBBBB10x', 0xE6, length, 0x00, ah, al)
+        dev._tag += 1
+        cbw = struct.pack('<IIIBBB', 0x43425355, dev._tag, length, 0x80, 0, len(cdb)) + cdb + b'\x00' * (16 - len(cdb))
+        dev._bulk_out(dev.ep_data_out, cbw)
+        # Read data phase
+        try:
+            data = dev._bulk_in(dev.ep_data_in, length, timeout=5000)
+            print(f"  DATA: got {len(data)} bytes: {data[:32].hex()}")
+        except Exception as e:
+            print(f"  DATA FAILED: {e}")
+            data = b''
+        # Read CSW
+        try:
+            csw = dev._bulk_in(dev.ep_data_in, 13, timeout=5000)
+            print(f"  CSW raw ({len(csw)} bytes): {csw.hex()}")
+            if len(csw) >= 13:
+                sig, rtag, residue, status = struct.unpack('<IIIB', csw[:13])
+                print(f"  CSW: sig=0x{sig:08X} tag={rtag} residue={residue} status={status}")
+                if sig == 0x53425355 and rtag == dev._tag and status == 0:
+                    ok = True
+                    for i in range(min(len(data), 64)):
+                        expected = 0xA0 + (i & 0x3F)
+                        if data[i] != expected:
+                            print(f"  MISMATCH at offset {i}: expected 0x{expected:02X}, got 0x{data[i]:02X}")
+                            ok = False
+                            break
+                    if ok and len(data) == 64:
+                        print("  PASS: 64-byte pattern verified + CSW OK")
+                        return True
+            else:
+                print(f"  CSW too short")
+        except Exception as e:
+            print(f"  CSW FAILED: {e}")
+        return False
+    except Exception as e:
+        print(f"  FAIL: {e}")
+        return False
+
+def test_e7_bulk_out(dev):
+    """Test E7 bulk OUT — write data via E7 data phase, read back via E4"""
+    print("\n--- Test 9: E7 bulk OUT (software DMA) ---")
+    base = 0x5200
+    try:
+        # Create 64 bytes of test pattern
+        pattern = bytes([(i * 7 + 0x33) & 0xFF for i in range(64)])
+        e7_bulk_out(dev, base, pattern)
+        # Read back first 4 bytes via E4
+        data = e4_read(dev, base, 4)
+        print(f"  Wrote 64 bytes, read back first 4: {data.hex()}")
+        expected = pattern[:4]
+        if data == expected:
+            print("  PASS: data verified")
+            return True
+        else:
+            print(f"  MISMATCH: expected {expected.hex()}, got {data.hex()}")
+            return False
+    except Exception as e:
+        print(f"  FAIL: {e}")
+        return False
+
+def test_bulk_roundtrip(dev):
+    """Test E7 write then E6 read back — full bulk roundtrip"""
+    print("\n--- Test 10: Bulk roundtrip (E7 write + E6 read) ---")
+    base = 0x5300
+    try:
+        # Write 64 bytes via E7 bulk OUT
+        pattern = bytes([(i * 13 + 0x42) & 0xFF for i in range(64)])
+        e7_bulk_out(dev, base, pattern)
+        time.sleep(0.05)
+        # Read back via E6 bulk IN
+        data = e6_bulk_in(dev, base, 64)
+        if data == pattern:
+            print("  PASS: 64-byte roundtrip verified")
+            return True
+        else:
+            # Find first mismatch
+            for i in range(min(len(data), len(pattern))):
+                if data[i] != pattern[i]:
+                    print(f"  MISMATCH at offset {i}: expected 0x{pattern[i]:02X}, got 0x{data[i]:02X}")
+                    break
+            print(f"  First 16 written:  {pattern[:16].hex()}")
+            print(f"  First 16 readback: {data[:16].hex()}")
+            return False
+    except Exception as e:
+        print(f"  FAIL: {e}")
+        return False
+
 def main():
     dev = find_device()
 
@@ -180,6 +322,9 @@ def main():
         ("E4 read 4 bytes", test_e4_read_multi),
         ("E5+E4 roundtrip", test_roundtrip),
         ("Stress test", test_stress),
+        ("E6 bulk IN", test_e6_bulk_in),
+        ("E7 bulk OUT", test_e7_bulk_out),
+        ("Bulk roundtrip", test_bulk_roundtrip),
     ]
     for name, test_fn in tests:
         ok = test_fn(dev)

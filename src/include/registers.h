@@ -252,9 +252,21 @@
 #define REG_USB_MSC_LENGTH      XDATA_REG8(0x901A)
 
 // USB endpoint registers (0x905A-0x90FF)
-#define REG_USB_EP_CFG_905A     XDATA_REG8(0x905A)  /* USB endpoint config */
-#define REG_USB_EP_BUF_HI       XDATA_REG8(0x905B)  /* DMA source address high (descriptor ROM) */
-#define REG_USB_EP_BUF_LO       XDATA_REG8(0x905C)  /* DMA source address low (descriptor ROM) */
+/*
+ * Software DMA EP config (0x905A)
+ * Written before 90E1 trigger in dispatch_0206 software path.
+ * 0x10 = bulk IN (send to host), 0x08 = bulk OUT (receive from host)
+ */
+#define REG_USB_EP_CFG_905A     XDATA_REG8(0x905A)
+#define   USB_EP_CFG_BULK_IN      0x10  // Bulk IN (send data to host)
+#define   USB_EP_CFG_BULK_OUT     0x08  // Bulk OUT (receive data from host)
+/*
+ * Software DMA buffer address (0x905B:905C)
+ * Source address for bulk IN, dest address for bulk OUT.
+ * Set from XDATA[0x0056:0x0057] in dispatch_0206 software path.
+ */
+#define REG_USB_EP_BUF_HI       XDATA_REG8(0x905B)
+#define REG_USB_EP_BUF_LO       XDATA_REG8(0x905C)
 #define REG_USB_EP_CTRL_905D    XDATA_REG8(0x905D)  /* USB endpoint control 1 */
 #define REG_USB_EP_MGMT         XDATA_REG8(0x905E)
 #define REG_USB_EP_CTRL_905F    XDATA_REG8(0x905F)  /* USB endpoint control 2 */
@@ -400,6 +412,14 @@
 #define REG_USB_SIGNAL_90A1     XDATA_REG8(0x90A1)  /* Alias for bulk DMA trigger */
 #define REG_USB_SPEED           XDATA_REG8(0x90E0)
 #define   USB_SPEED_MASK         0x03  // Bits 0-1: USB speed mode
+/*
+ * Software DMA Trigger (0x90E1)
+ * Used by dispatch_0206 software path to trigger bulk data transfer.
+ * Write 0x01 to trigger (via nvme_initialize at 0x3288).
+ * For bulk IN (send to host): set 905A=0x10 first.
+ * For bulk OUT (receive from host): set 905A=0x08 first.
+ */
+#define REG_USB_SW_DMA_TRIGGER  XDATA_REG8(0x90E1)
 /*
  * USB Mode / EP Control (0x90E2)
  * Read-modify-writeback in CBW handler. Controls endpoint mode.
@@ -968,11 +988,12 @@
 #define REG_NVME_PARAM_C4EA     XDATA_REG8(0xC4EA)  // NVMe parameter storage
 #define REG_NVME_PARAM_C4EB     XDATA_REG8(0xC4EB)  // NVMe parameter storage high
 /*
- * NVMe Transfer Control (0xC509)
- * Set/clear bit 0 around 90A1 DMA trigger.
- * Pre-trigger: C509 |= 0x01. Post-trigger: C509 &= ~0x01.
+ * Transfer Control (0xC509)
+ * Used by both NVMe and software DMA paths in dispatch_0206.
+ * Pre-trigger: C509 = (C509 & 0xFE) | 0x01 (set bit 0, via 0x3172)
+ * Post-trigger: C509 &= 0xFE (clear bit 0, via 0x3288)
  */
-#define REG_NVME_XFER_CTRL_C509 XDATA_REG8(0xC509) /* Set bit 0 before 90A1 trigger */
+#define REG_XFER_CTRL_C509      XDATA_REG8(0xC509)
 #define REG_NVME_BUF_CFG        XDATA_REG8(0xC508)  // NVMe buffer configuration
 #define   NVME_BUF_CFG_MASK_LO   0x3F  // Bits 0-5: Buffer index
 #define   NVME_BUF_CFG_MASK_HI   0xC0  // Bits 6-7: Buffer mode
@@ -1096,11 +1117,13 @@
 #define   DMA_TRIGGER_START       0x01  // Bit 0: Trigger transfer
 /*
  * DMA Config (0xC8D4)
- * Write 0x80 to enable DMA before 90A1 trigger.
- * Write 0x00 to disable DMA after trigger completes.
+ * 0xA0 = software DMA mode (used by dispatch_0206 software path)
+ * 0x80 | param = NVMe DMA mode (param_2 | 0x80)
+ * 0x00 = disable DMA (cleanup after transfer)
  */
 #define REG_DMA_CONFIG          XDATA_REG8(0xC8D4)
-#define   DMA_CONFIG_ENABLE       0x80  // Enable DMA engine
+#define   DMA_CONFIG_SW_MODE      0xA0  // Software DMA mode (no NVMe)
+#define   DMA_CONFIG_ENABLE       0x80  // Enable DMA engine (NVMe path)
 #define   DMA_CONFIG_DISABLE      0x00  // Disable DMA engine
 #define REG_DMA_QUEUE_IDX       XDATA_REG8(0xC8D5)
 #define REG_DMA_STATUS          XDATA_REG8(0xC8D6)
