@@ -3118,11 +3118,13 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
             # Patch VID/PID in USB descriptor response
             # Only when PC=0xB495 (descriptor write loop) with original values
             pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
+            """
             if pc == 0xB495:
                 if addr == 0x9E08 and value == 0x4C: value = 0xBB    # VID low
                 elif addr == 0x9E09 and value == 0x17: value = 0xAA  # VID high
                 elif addr == 0x9E0A and value == 0x63: value = 0xDD  # PID low
                 elif addr == 0x9E0B and value == 0x24: value = 0xCC  # PID high
+            """
             
             proxy_ref.write(addr, value)
             if proxy_ref.debug >= 2:
