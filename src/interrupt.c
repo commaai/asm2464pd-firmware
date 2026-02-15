@@ -478,7 +478,7 @@ void isr_buffer_handler_17db(uint8_t param)
     I_WORK_38 = REG_NVME_CMD_STATUS_C47A;
 
     /* Write to CE88 */
-    REG_XFER_CTRL_CE88 = I_WORK_38;
+    REG_BULK_DMA_HANDSHAKE = I_WORK_38;
 
     /* Poll CE89 bit 0 until set */
     while (!(REG_USB_DMA_STATE & 0x01)) {

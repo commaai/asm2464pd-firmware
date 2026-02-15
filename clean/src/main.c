@@ -8,6 +8,7 @@
 
 #include "types.h"
 #include "registers.h"
+#include "globals.h"
 
 __sfr __at(0xA8) IE;
 __sfr __at(0x88) TCON;
@@ -483,7 +484,6 @@ static void send_csw(uint8_t status) {
 static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
     uint8_t ah = (addr >> 8) & 0xFF;
     uint8_t al = addr & 0xFF;
-    uint8_t t;
 
     /* Clear stale EP_COMPLETE */
     {
@@ -508,16 +508,14 @@ static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
     EP_BUF(0x0F) = 0x00;
     EP_BUF(0x00) = 0x03;                       /* Direction = IN */
 
-    t = REG_XFER_CTRL_C509;
-    REG_XFER_CTRL_C509 = (t & 0xFE) | 0x01;
+    REG_XFER_CTRL_C509 |= 0x01;
 
     REG_USB_EP_CFG_905A = USB_EP_CFG_BULK_IN;  /* 905A = 0x10 */
     REG_USB_SW_DMA_TRIGGER = 0x01;             /* 90E1 = 0x01 */
 
-    t = REG_XFER_CTRL_C509;
-    REG_XFER_CTRL_C509 = t & 0xFE;
+    REG_XFER_CTRL_C509 &= ~0x01;
 
-    XDATA_REG8(0x0AF4) = 0x40;
+    G_XFER_STATE_0AF4 = 0x40;
     REG_USB_BULK_DMA_TRIGGER = 0x01;           /* 90A1 = actual send */
 
     /* Wait for EP_COMPLETE (9101 bit 5) */
@@ -555,10 +553,9 @@ static void handle_cbw(void) {
     REG_USB_MODE = 0x01;
 
     /* CE88/CE89 DMA handshake (stock: 0x3484-0x3498) */
-    REG_XFER_CTRL_CE88 = 0x00;
+    REG_BULK_DMA_HANDSHAKE = 0x00;
     for (timeout = 50000; timeout; timeout--) {
-        t = REG_USB_DMA_STATE;
-        if (t & 0x01) break;
+        if (REG_USB_DMA_STATE & USB_DMA_STATE_READY) break;
     }
 
     /* Copy CBW tag to CSW buffer and save to globals */
@@ -1176,11 +1173,11 @@ void main(void)
 
                 /* CE88/CE89 handshake: triggers DMA of bulk OUT data
                  * to flash buffer at 0x7000. Poll CE89 bit 0 for ready. */
-                REG_XFER_CTRL_CE88 = 0x00;
+                REG_BULK_DMA_HANDSHAKE = 0x00;
                 {
                     uint16_t t16;
                     for (t16 = 50000; t16; t16--) {
-                        if (REG_USB_DMA_STATE & 0x01) break;
+                        if (REG_USB_DMA_STATE & USB_DMA_STATE_READY) break;
                     }
                 }
 

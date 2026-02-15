@@ -194,7 +194,6 @@
  */
 #define REG_USB_STATUS          XDATA_REG8(0x9000)
 #define   USB_STATUS_DMA_READY    0x01  // Bit 0: Data in FIFO for DMA (read-only)
-#define   USB_STATUS_ACTIVE       0x01  // Alias for DMA_READY (legacy name)
 #define   USB_STATUS_BIT2         0x04  // Bit 2: USB status flag
 #define   USB_STATUS_INDICATOR    0x10  // Bit 4: USB status indicator
 #define   USB_STATUS_CONNECTED    0x80  // Bit 7: USB cable connected
@@ -382,13 +381,9 @@
 #define   USB_EP_CFG1_STATE_MACH  0x08  // Bit 3: State machine event
 #define   USB_EP_CFG1_ARM_IN      0x08  // Write: Arm bulk IN endpoint
 #define   USB_EP_CFG1_ARM_OUT     0x02  // Write: Arm bulk OUT endpoint / ack
-#define   USB_EP_CFG1_BULK_MODE   0x08  // Legacy alias for ARM_IN
-#define   USB_EP_CFG1_INT_MODE    0x02  // Legacy alias for ARM_OUT
 #define REG_USB_EP_CFG2         XDATA_REG8(0x9094)
 #define   USB_EP_CFG2_ARM_IN      0x02  // Write with CFG1=0x08 to arm bulk IN
 #define   USB_EP_CFG2_ARM_OUT     0x10  // Write with CFG1=0x02 to arm bulk OUT
-#define   USB_EP_CFG2_BULK_MODE   0x02  // Legacy alias for ARM_IN
-#define   USB_EP_CFG2_INT_MODE    0x10  // Legacy alias for ARM_OUT
 /*
  * USB Endpoint Ready/Status Masks (0x9096-0x909E)
  * These 9 registers (0x9096-0x909E) control endpoint ready state.
@@ -426,7 +421,6 @@
  * On success: reads back 0x00 (consumed). On failure: stays 0x01.
  */
 #define REG_USB_BULK_DMA_TRIGGER XDATA_REG8(0x90A1)
-#define REG_USB_SIGNAL_90A1     XDATA_REG8(0x90A1)  /* Legacy alias */
 #define REG_USB_SPEED           XDATA_REG8(0x90E0)
 #define   USB_SPEED_MASK         0x03  // Bits 0-1: USB speed mode
 /*
@@ -513,7 +507,7 @@
 #define REG_USB_SETUP_WLEN_L    XDATA_REG8(0x910A)  /* wLength low */
 #define REG_USB_SETUP_WLEN_H    XDATA_REG8(0x910B)  /* wLength high */
 
-#define REG_USB_PHY_STATUS_9105 XDATA_REG8(0x9105)  /* USB PHY status check (0xFF = active) - alias for SETUP_BREQ */
+
 #define REG_USB_STAT_EXT_L      XDATA_REG8(0x910D)
 #define REG_USB_STAT_EXT_H      XDATA_REG8(0x910E)
 /*
@@ -698,7 +692,6 @@
 #define REG_PCIE_TLP_CTRL       XDATA_REG8(0xB213)
 #define REG_PCIE_TLP_LENGTH     XDATA_REG8(0xB216)
 #define REG_PCIE_BYTE_EN        XDATA_REG8(0xB217)
-// REG_PCIE_B217 removed (alias)
 #define REG_PCIE_ADDR_0         XDATA_REG8(0xB218)
 #define REG_PCIE_ADDR_1         XDATA_REG8(0xB219)
 #define REG_PCIE_ADDR_2         XDATA_REG8(0xB21A)
@@ -785,7 +778,7 @@
 #define REG_POWER_CTRL_B432     XDATA_REG8(0xB432)  // Power control for lanes
 #define REG_PCIE_LINK_STATE     XDATA_REG8(0xB434)  // PCIe link state (low nibble = lane mask)
 #define REG_POWER_CTRL_B455     XDATA_REG8(0xB455)  /* Power control */
-#define REG_POWER_LANE_B404     REG_PCIE_LINK_PARAM_B404  // Alias for power lane config
+
 #define   PCIE_LINK_STATE_MASK    0x0F  // Bits 0-3: PCIe link state/lane mask
 #define REG_PCIE_LANE_CONFIG    XDATA_REG8(0xB436)  // PCIe lane configuration
 #define   PCIE_LANE_CFG_LO_MASK   0x0F  // Bits 0-3: Low config
@@ -1307,8 +1300,14 @@
 //=============================================================================
 // SCSI DMA Control (0xCE00-0xCE3F)
 //=============================================================================
-#define REG_SCSI_DMA_CTRL       XDATA_REG8(0xCE00)  // SCSI DMA control register
-#define REG_SCSI_DMA_PARAM      XDATA_REG8(0xCE01)  // SCSI DMA parameter register
+/*
+ * SCSI DMA Engine (0xCE00-0xCE01)
+ * CE00: Write 0x03 to start sector DMA, poll until 0x00 for completion.
+ *       Stock firmware uses at 0x352E-0x3538 in per-sector copy loop.
+ * CE01: DMA parameter -- combined with XDATA[0x0AFF] and CE01 upper bits.
+ */
+#define REG_SCSI_DMA_CTRL       XDATA_REG8(0xCE00)  /* Write 0x03 to start, poll 0x00 for done */
+#define REG_SCSI_DMA_PARAM      XDATA_REG8(0xCE01)  /* DMA parameter (upper 2 bits | tag value) */
 #define REG_SCSI_DMA_CFG_CE36   XDATA_REG8(0xCE36)  // SCSI DMA config 0xCE36
 #define REG_SCSI_DMA_TAG_CE3A   XDATA_REG8(0xCE3A)  // SCSI DMA tag storage
 
@@ -1355,7 +1354,7 @@
 /*
  * USB/DMA State Machine Control (0xCE86-0xCE89)
  *
- * REG_XFER_CTRL_CE88 (0xCE88): Transfer control trigger.
+ * REG_BULK_DMA_HANDSHAKE (0xCE88): Bulk transfer DMA handshake trigger.
  *   Write 0x00 to init/reset the DMA state machine.
  *   After writing 0x00, CE89 transitions to 0x03 (ready).
  *   Written at end of handle_set_interface_inner() to arm bulk transfers.
@@ -1367,13 +1366,27 @@
  *
  * Sequence: write CE88=0x00 → CE89 becomes 0x03 → bulk IN enabled.
  */
-#define REG_XFER_STATUS_CE86    XDATA_REG8(0xCE86)  /* Transfer status (bit 4 checked at 0x349D) */
-#define REG_XFER_CTRL_CE88      XDATA_REG8(0xCE88)  /* Write 0x00 to init DMA state machine */
-#define REG_USB_DMA_STATE       XDATA_REG8(0xCE89)  /* Must be 0x03 for bulk DMA (CE89) */
-#define   USB_DMA_STATE_READY     0x01  // Bit 0: Ready
-#define   USB_DMA_STATE_SUCCESS   0x02  // Bit 1: Success / enumeration ok
-#define   USB_DMA_STATE_COMPLETE  0x04  // Bit 2: State machine complete
-#define REG_XFER_CTRL_CE8A      XDATA_REG8(0xCE8A)   /* Transfer control CE8A */
+/*
+ * USB Bulk DMA Handshake Registers (0xCE86-0xCE8A)
+ *
+ * CE88/CE89 handshake triggers USB bulk OUT data DMA to flash buffer (0x7000).
+ * Stock firmware sequence at 0x3484-0x349D:
+ *   1. Write CE88 = 0x00 (init DMA state machine)
+ *   2. Poll CE89 bit 0 until set (DMA triggered)
+ *   3. Check CE89 bit 1: set = CBW (ljmp 0x35A1), clear = bulk data
+ *   4. Check CE86 bit 4: set = error (ljmp 0x35A1), clear = OK
+ *   5. Read CE55 for DMA transfer byte count
+ *
+ * After handshake completes, poll CE55 != 0 to confirm data at 0x7000.
+ */
+#define REG_USB_DMA_ERROR       XDATA_REG8(0xCE86)  /* Bit 4: DMA error flag (stock: 0x349D) */
+#define   USB_DMA_ERROR_BIT       0x10  // Bit 4: DMA error
+#define REG_BULK_DMA_HANDSHAKE  XDATA_REG8(0xCE88)  /* Write 0x00 to start bulk DMA handshake */
+#define REG_USB_DMA_STATE       XDATA_REG8(0xCE89)  /* DMA handshake status */
+#define   USB_DMA_STATE_READY     0x01  // Bit 0: DMA ready (poll this after CE88 write)
+#define   USB_DMA_STATE_CBW       0x02  // Bit 1: 1=CBW received, 0=bulk data
+#define   USB_DMA_STATE_ERROR     0x04  // Bit 2: DMA error in copy loop (stock: 0x3546)
+#define REG_USB_DMA_SECTOR_CTRL XDATA_REG8(0xCE8A)  /* Per-sector DMA control (stock: bit 2 set at 0x3251) */
 #define REG_XFER_MODE_CE95      XDATA_REG8(0xCE95)
 #define REG_SCSI_DMA_CMD_REG    XDATA_REG8(0xCE96)
 #define REG_SCSI_DMA_RESP_REG   XDATA_REG8(0xCE97)
@@ -1497,8 +1510,7 @@
 //=============================================================================
 // Timer/CPU Control (0xCC00-0xCCFF)
 //=============================================================================
-#define REG_USB_STATUS_CC89     XDATA_REG8(0xCC89)  /* USB status - poll bit 1 for ready */
-#define   USB_STATUS_CC89_BIT1    0x02  // Bit 1: USB ready flag
+
 
 //=============================================================================
 // Debug/Interrupt (0xE600-0xE6FF)

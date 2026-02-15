@@ -868,7 +868,7 @@ void nvme_call_and_signal(void)
     dma_buffer_write();
 
     /* Set the signal register */
-    REG_USB_SIGNAL_90A1 = 0x01;
+    REG_USB_BULK_DMA_TRIGGER = 0x01;
 }
 
 /*
@@ -1280,7 +1280,7 @@ void nvme_init_registers(void)
     G_INIT_STATE_00E5 = 0;
 
     /* Clear SCSI DMA control register */
-    REG_XFER_CTRL_CE88 = 0;
+    REG_BULK_DMA_HANDSHAKE = 0;
 
     /* Wait for bit 0 of 0xCE89 to be set */
     do {
@@ -1289,13 +1289,13 @@ void nvme_init_registers(void)
 
     /* Check bit 1 for error/abort condition */
     val = REG_USB_DMA_STATE;
-    if (val & USB_DMA_STATE_SUCCESS) {
+    if (val & USB_DMA_STATE_CBW) {
         /* Error condition, abort initialization */
         return;
     }
 
     /* Check bit 4 of 0xCE86 */
-    val = REG_XFER_STATUS_CE86;
+    val = REG_USB_DMA_ERROR;
     if (val & 0x10) {
         /* Abort initialization */
         return;
@@ -1964,14 +1964,14 @@ void nvme_state_handler(void)
         cmd_type = G_IO_CMD_TYPE;
         if (cmd_type == 3) {
             /* Mode 3: Check USB status bit 0 */
-            if (REG_USB_STATUS & USB_STATUS_ACTIVE) {
+            if (REG_USB_STATUS & USB_STATUS_DMA_READY) {
                 /* USB active - call status handlers */
                 nvme_call_and_signal();
                 usb_addr_copy_to_regs(cmd_type);
             } else {
                 /* USB not active - call DMA buffer write and signal */
                 dma_buffer_write();
-                REG_USB_SIGNAL_90A1 = 0x01;
+                REG_USB_BULK_DMA_TRIGGER = 0x01;
             }
         } else {
             /* Other modes - set transfer flag and bit 7 of EP0 config */
@@ -2019,14 +2019,14 @@ handle_error:
 
 common_exit:
     /* Check USB status and handle */
-    if (REG_USB_STATUS & USB_STATUS_ACTIVE) {
+    if (REG_USB_STATUS & USB_STATUS_DMA_READY) {
         /* USB active */
         nvme_call_and_signal();
         usb_addr_copy_to_regs(cmd_type);
     } else {
         /* USB not active - call DMA buffer write and signal */
         dma_buffer_write();
-        REG_USB_SIGNAL_90A1 = 0x01;
+        REG_USB_BULK_DMA_TRIGGER = 0x01;
     }
 
     /* Set state to 5 */

@@ -121,15 +121,13 @@
  *     - Firmware polls at 0x348C waiting for this
  *     - CLEAR while DMA in progress
  *
- *   Bit 1 (USB_DMA_STATE_SUCCESS):
- *     - SET when transfer completed successfully
+ *   Bit 1 (USB_DMA_STATE_CBW):
+ *     - 1=CBW received, 0=bulk data
  *     - Checked at 0x3493 for enumeration path
- *     - CLEAR on error or in-progress
  *
- *   Bit 2 (USB_DMA_STATE_COMPLETE):
- *     - SET when all queued transfers complete
+ *   Bit 2 (USB_DMA_STATE_ERROR):
+ *     - DMA error in copy loop (stock: 0x3546)
  *     - Controls state 3→4→5 transitions
- *     - Used for multi-step enumeration
  *
  *   State Progression (emulator behavior):
  *     - Reads 1-2: Return 0x00 (busy)

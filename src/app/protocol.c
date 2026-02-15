@@ -486,7 +486,7 @@ void protocol_setup_params(uint8_t r3, uint8_t r5, uint8_t r7)
     G_TRANSFER_ACTIVE = 0x01;
 
     /* Check USB status bit 0 */
-    if (!(REG_USB_STATUS & USB_STATUS_ACTIVE)) {
+    if (!(REG_USB_STATUS & USB_STATUS_DMA_READY)) {
         /* Bit 0 not set - trigger endpoint and call helper */
         REG_USB_EP_CSW_STATUS = 0x01;
         helper_1bcb();
@@ -2307,7 +2307,7 @@ void cmd_queue_status_handler(uint8_t param_1)
     G_STATE_WORK_0A85 = cmd_entry & 0x7F;
 
     /* Check USB status bit 0 */
-    if ((REG_USB_STATUS & USB_STATUS_ACTIVE) == 0) {
+    if ((REG_USB_STATUS & USB_STATUS_DMA_READY) == 0) {
         /* USB not ready - exit */
         return;
     }
@@ -2589,7 +2589,7 @@ uint8_t helper_313a_check_nonzero(void)
  * 1. If G_USB_STATE_0B41 != 0, call parse_descriptor(1)
  * 2. If I_USB_STATE != 0, skip to continuation at 0x3577
  * 3. Clear state variables: 0x0B01, 0x053B, 0x00C2, 0x0517, 0x014E, 0x00E5
- * 4. Clear REG_XFER_CTRL_CE88
+ * 4. Clear REG_BULK_DMA_HANDSHAKE
  * 5. Wait for REG_USB_DMA_STATE bit 0 to be set
  * 6. Check abort conditions (bit 1 of CE89, bit 4 of CE86, AF8 != 1)
  * 7. Call usb_state_setup_4c98
@@ -2630,8 +2630,8 @@ void usb_ep_loop_3419(void)
     G_USB_INDEX_COUNTER = 0;   /* 0x014E */
     G_INIT_STATE_00E5 = 0;
 
-    /* Step 4: Clear REG_XFER_CTRL_CE88 */
-    REG_XFER_CTRL_CE88 = 0;
+    /* Step 4: Clear REG_BULK_DMA_HANDSHAKE */
+    REG_BULK_DMA_HANDSHAKE = 0;
 
     /* Step 5: Wait for REG_USB_DMA_STATE bit 0 */
     do {
@@ -2640,12 +2640,12 @@ void usb_ep_loop_3419(void)
 
     /* Step 6a: Check bit 1 of CE89 for abort */
     val = REG_USB_DMA_STATE;
-    if (val & USB_DMA_STATE_SUCCESS) {
+    if (val & USB_DMA_STATE_CBW) {
         goto abort_path;
     }
 
     /* Step 6b: Check bit 4 of CE86 */
-    val = REG_XFER_STATUS_CE86;
+    val = REG_USB_DMA_ERROR;
     if (val & 0x10) {
         goto abort_path;
     }
@@ -3008,7 +3008,7 @@ __xdata uint8_t *helper_3226(uint8_t addr_low, uint8_t addr_high)
 void nvme_call_and_signal_3219(void)
 {
     dma_buffer_write();
-    REG_USB_SIGNAL_90A1 = 0x01;
+    REG_USB_BULK_DMA_TRIGGER = 0x01;
 }
 
 /*
@@ -3259,7 +3259,7 @@ case_e3_fb:
     dword_6b[3] = (sub_result >> 24) & 0xFF;
 
     /* Check REG 0x9000 bit 0 */
-    if (!(REG_USB_STATUS & USB_STATUS_ACTIVE)) {
+    if (!(REG_USB_STATUS & USB_STATUS_DMA_READY)) {
         goto path_330b_alt;
     }
 
@@ -3362,7 +3362,7 @@ common_exit_d8:
 
 common_exit_e8:
     /* 0x33e8: Check REG 0x9000 bit 0 */
-    if (REG_USB_STATUS & USB_STATUS_ACTIVE) {
+    if (REG_USB_STATUS & USB_STATUS_DMA_READY) {
         /* Bit 0 set: Get queue index, then call dispatch_0206 */
         (void)queue_idx_get_3291();  /* Sets R7 for dispatch_0206 */
         dispatch_0206();
@@ -3381,7 +3381,7 @@ default_handler:
     set_ptr_bit7();
 
     /* Check REG 0x9000 bit 0 */
-    if (REG_USB_STATUS & USB_STATUS_ACTIVE) {
+    if (REG_USB_STATUS & USB_STATUS_DMA_READY) {
         /* Bit 0 set: Call helper_3133 on 0x905F and 0x905D */
         __xdata uint8_t *reg_905f = (__xdata uint8_t *)0x905F;
         __xdata uint8_t *reg_905d = (__xdata uint8_t *)0x905D;

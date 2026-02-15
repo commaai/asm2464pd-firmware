@@ -120,13 +120,11 @@
  *     - Firmware polls at 0x348C waiting for this bit
  *     - SET to exit enumeration wait loop
  *
- *   Bit 1 (USB_DMA_STATE_SUCCESS):
- *     - Checked at 0x3493 for successful enumeration path
- *     - SET indicates enumeration succeeded
+ *   Bit 1 (USB_DMA_STATE_CBW):
+ *     - Checked at 0x3493; 1=CBW received, 0=bulk data
  *
- *   Bit 2 (USB_DMA_STATE_COMPLETE):
- *     - Controls state 3→4→5 transitions
- *     - SET when DMA transfer complete
+ *   Bit 2 (USB_DMA_STATE_ERROR):
+ *     - DMA error in copy loop (stock: 0x3546)
  *
  *   Read callback increments internal counter and returns appropriate
  *   bits based on enumeration progress.

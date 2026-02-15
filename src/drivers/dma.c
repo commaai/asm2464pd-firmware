@@ -1493,7 +1493,7 @@ process_transfer:
             dma_setup_transfer(DMA_MODE_SCSI_STATUS, 0x47, 0x0B);
         }
         scsi_csw_write_residue();
-        REG_USB_SIGNAL_90A1 = 0x01;
+        REG_USB_BULK_DMA_TRIGGER = 0x01;
         *(__idata uint8_t *)0x6A = 0x05;
         I_VENDOR_STATE = 0;
         while (I_VENDOR_STATE < G_NVME_STATE_053B) {
