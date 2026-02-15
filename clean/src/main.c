@@ -40,12 +40,8 @@ static volatile uint8_t is_usb3;
 static volatile uint8_t need_bulk_init;
 /* Global: set in ISR when CBW received, cleared in main loop after processing */
 static volatile uint8_t need_cbw_process;
-/* Global: SCSI opcode from last CBW */
-static volatile uint8_t cbw_opcode;
 /* Global: CBW tag bytes (saved before EP_BUF is overwritten by data) */
 static uint8_t cbw_tag[4];
-/* Global: set by ISR when EP_COMPLETE fires, cleared by wait_ep_complete */
-static volatile uint8_t ep_complete_flag;
 /* Global: deferred bulk OUT state (0=idle, 1=pending arm, 2=armed/waiting) */
 static volatile uint8_t bulk_out_state;
 static uint16_t bulk_out_addr;
@@ -146,7 +142,7 @@ static void handle_set_address(void) {
     uart_puts("[A]\n");
 }
 
-/* Device descriptor (18 bytes) — bcdUSB/bMaxPacketSize patched per speed */
+/* Device descriptor (18 bytes) -- bcdUSB/bMaxPacketSize patched per speed */
 static __code const uint8_t dev_desc[] = {
     0x12, 0x01, 0x20, 0x03,     /* bLength, bDescType, bcdUSB=3.20 */
     0x00, 0x00, 0x00, 0x09,     /* class=0, subclass=0, proto=0, maxpkt=9 */
@@ -206,7 +202,7 @@ static void handle_get_descriptor(uint8_t desc_type, uint8_t desc_idx, uint8_t w
     while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA_IN)) { }
 
     if (desc_type == USB_DESC_TYPE_DEVICE) {
-        /* Device descriptor — patch bcdUSB and bMaxPacketSize for speed */
+        /* Device descriptor -- patch bcdUSB and bMaxPacketSize for speed */
         desc_copy(dev_desc, 18);
         if (!is_usb3) {
             DESC_BUF[2] = 0x10; DESC_BUF[3] = 0x02;  /* bcdUSB = 0x0210 */
@@ -270,7 +266,7 @@ static void handle_set_config(void) {
 }
 
 /*==========================================================================
- * Bulk Endpoint Init — arms the MSC engine for CBW reception
+ * Bulk Endpoint Init -- arms the MSC engine for CBW reception
  * Deferred from ISR via need_bulk_init flag.
  * From trace/pcie_enum lines 5304-10262.
  *==========================================================================*/
@@ -408,7 +404,7 @@ static void do_bulk_init(void) {
     REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~NVME_DOORBELL_BIT3;
     REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~NVME_DOORBELL_BIT4;
 
-    /* USBS signature + MSC trigger — arms receiver for CBW */
+    /* USBS signature + MSC trigger -- arms receiver for CBW */
     EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
     EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
     REG_USB_MSC_LENGTH = 0x0D;
@@ -454,60 +450,21 @@ static void do_bulk_init(void) {
 }
 
 /*==========================================================================
- * Bulk Transfer Engine — Runtime CSW/Data via 90A1 Path
+ * Bulk Transfer Engine
  *
- * Stock firmware runtime CSW (from trace/e1_bulk_out.txt):
- *   1. D80C = status, D808-D80B = residue
- *   2. 90A1 = 0x01 (trigger send)
- *   3. Wait for 9101 bit 5 (EP complete) — confirms data sent
- *   4. Re-arm MSC engine (C42C=0x01)
+ * CSW send: 90A1=0x01 triggers DMA, C42C=0x01 re-arms MSC for next CBW.
+ * SW DMA bulk IN: C8D4=0xA0, 905B:905C=source, 90E1=0x01, 90A1=0x01.
+ * Bulk OUT data: hardware auto-DMA's to flash buffer at 0x7000.
  *==========================================================================*/
 
-/*
- * wait_ep_complete - Wait for bulk EP send to complete, then ack
- *
- * Polls 9101 for bit 5 (EP_COMPLETE). When set, does the full
- * acknowledge sequence matching stock firmware (trace/e1_bulk_out.txt:592-597):
- *   1. Read 9000 (USB status check)
- *   2. Read 9096 (EP ready check)
- *   3. Write 90E3 = 0x02 (clear EP complete status)
- *   4. Write 9096 = 0x01 (re-arm bulk endpoint)
- */
-static void wait_ep_complete(void) {
-    uint16_t timeout;
-    for (timeout = 60000; timeout; timeout--) {
-        if (ep_complete_flag) {
-            ep_complete_flag = 0;
-            return;
-        }
-        /* Poll directly in case main loop polling hasn't run */
-        poll_bulk_events();
-    }
-    uart_puts("!TO!");
-}
-
-/*
- * send_csw - Send CSW (Command Status Wrapper) via 90A1 path
- *
- * Writes CSW fields, triggers 90A1, waits for EP complete.
- * Then re-arms MSC engine for next CBW.
- */
+/* send_csw - Send CSW (Command Status Wrapper) and re-arm MSC engine */
 static void send_csw(uint8_t status) {
-    /* Set CSW status (stock: 0x52C7 → D80C) */
     EP_BUF(0x0C) = status;
-
-    /* USB status check (stock: 0x342B → 9000) */
     (void)REG_USB_STATUS;
-
-    /* Set residue = 0 (stock: 0x5434-0x5440 → D808-D80B) */
     EP_BUF(0x08) = 0x00;
     EP_BUF(0x09) = 0x00;
     EP_BUF(0x0A) = 0x00;
     EP_BUF(0x0B) = 0x00;
-
-    /* Trigger CSW send: 90A1 (NVMe DMA path, no-op without NVMe) +
-     * C42C (MSC engine sends D800+ data and arms for next CBW).
-     * ISR handles EP_COMPLETE asynchronously — ack + re-arm. */
     REG_USB_BULK_DMA_TRIGGER = 0x01;
     REG_USB_MSC_CTRL = 0x01;
     {
@@ -516,49 +473,19 @@ static void send_csw(uint8_t status) {
     }
 }
 
-/*==========================================================================
- * Software DMA Bulk Transfer (from dispatch_0206 at 0x0206-0x02FC)
- *
- * This is the software DMA path used when param_1 & 0x06 != 0.
- * It transfers data between XDATA and the USB bulk endpoint without NVMe.
- *
- * Register sequence (verified from disassembly):
- *   1. C8D4 = 0xA0 (software DMA mode)
- *   2. 905B/905C = addr hi/lo (DMA buffer address)
- *   3. D802/D803 = addr hi/lo (EP buffer address)
- *   4. D804-D807 = 0, D80F = 0 (clear params)
- *   5. D800 = 0x03 (IN/send) or 0x04 (OUT/receive)
- *   6. C509 = (C509 & 0xFE) | 0x01 (pre-trigger)
- *   7. 905A = 0x10 (IN) or 0x08 (OUT) (EP config)
- *   8. 90E1 = 0x01 (trigger via nvme_initialize at 0x3288)
- *   9. C509 &= 0xFE (post-trigger, done inside 0x3288)
- *  10. XDATA[0x0AF4] = 0x40 (state = active)
- *  11. Wait for completion
- *  12. C8D4 = 0x00 (cleanup)
- *==========================================================================*/
-
 /*
  * sw_dma_bulk_in - Send data from XDATA to host via software DMA
  *
- * addr: XDATA source address (data to send must be at this address)
- * len: number of bytes to send (written to 901A)
- *
- * Implements the software DMA IN path from dispatch_0206.
- * Uses C8D4=0xA0 for software mode, 905B:905C for source address,
- * and triggers via 90E1 (software DMA trigger).
- *
- * Proven working: 901A controls transfer length, 90E1 triggers DMA,
- * C8D4 must stay 0xA0 until host reads data (EP_COMPLETE fires).
- *
- * After this returns, the data phase is complete. Caller must send CSW.
+ * Uses C8D4=0xA0 (SW DMA mode), 905B:905C for source address,
+ * 90E1 for DMA setup, 90A1 for send trigger.
+ * Waits for EP_COMPLETE (9101 bit 5) before returning.
  */
 static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
     uint8_t ah = (addr >> 8) & 0xFF;
     uint8_t al = addr & 0xFF;
     uint8_t t;
 
-    /* Clear any stale EP_COMPLETE */
-    ep_complete_flag = 0;
+    /* Clear stale EP_COMPLETE */
     {
         uint8_t st = REG_USB_PERIPH_STATUS;
         if (st & 0x20) {
@@ -567,50 +494,33 @@ static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
         }
     }
 
-    /* 1. Set transfer length */
-    REG_USB_MSC_LENGTH = len;             /* 901A = transfer size */
+    REG_USB_MSC_LENGTH = len;
+    REG_DMA_CONFIG = DMA_CONFIG_SW_MODE;       /* C8D4 = 0xA0 */
 
-    /* 2. Enable software DMA mode */
-    REG_DMA_CONFIG = DMA_CONFIG_SW_MODE;  /* C8D4 = 0xA0 */
+    REG_USB_EP_BUF_HI = ah;                    /* 905B */
+    REG_USB_EP_BUF_LO = al;                    /* 905C */
+    EP_BUF(0x02) = ah;                         /* D802 */
+    EP_BUF(0x03) = al;                         /* D803 */
+    EP_BUF(0x04) = 0x00;
+    EP_BUF(0x05) = 0x00;
+    EP_BUF(0x06) = 0x00;
+    EP_BUF(0x07) = 0x00;
+    EP_BUF(0x0F) = 0x00;
+    EP_BUF(0x00) = 0x03;                       /* Direction = IN */
 
-    /* 3-4. Set DMA source address in both places */
-    REG_USB_EP_BUF_HI = ah;              /* 905B */
-    REG_USB_EP_BUF_LO = al;              /* 905C */
-    EP_BUF(0x02) = ah;                   /* D802 */
-    EP_BUF(0x03) = al;                   /* D803 */
-
-    /* 5. Clear transfer params */
-    EP_BUF(0x04) = 0x00;                 /* D804 */
-    EP_BUF(0x05) = 0x00;                 /* D805 */
-    EP_BUF(0x06) = 0x00;                 /* D806 */
-    EP_BUF(0x07) = 0x00;                 /* D807 */
-    EP_BUF(0x0F) = 0x00;                 /* D80F */
-
-    /* 6. Direction = send (IN) */
-    EP_BUF(0x00) = 0x03;                 /* D800 */
-
-    /* 7. Pre-trigger: set C509 bit 0 */
     t = REG_XFER_CTRL_C509;
     REG_XFER_CTRL_C509 = (t & 0xFE) | 0x01;
 
-    /* 8. EP config for bulk IN */
     REG_USB_EP_CFG_905A = USB_EP_CFG_BULK_IN;  /* 905A = 0x10 */
+    REG_USB_SW_DMA_TRIGGER = 0x01;             /* 90E1 = 0x01 */
 
-    /* 9. Setup SW DMA source */
-    REG_USB_SW_DMA_TRIGGER = 0x01;       /* 90E1 = 0x01 */
-
-    /* 10. Post-trigger: clear C509 bit 0 */
     t = REG_XFER_CTRL_C509;
     REG_XFER_CTRL_C509 = t & 0xFE;
 
-    /* 11. Set transfer state = active */
     XDATA_REG8(0x0AF4) = 0x40;
+    REG_USB_BULK_DMA_TRIGGER = 0x01;           /* 90A1 = actual send */
 
-    /* 12. Trigger actual bulk DMA send — with C8D4=0xA0, 90A1 sends
-     * from the SW DMA source (905B:905C) instead of NVMe registers. */
-    REG_USB_BULK_DMA_TRIGGER = 0x01;     /* 90A1 = 0x01 */
-
-    /* 13. Wait for EP_COMPLETE (data phase done) */
+    /* Wait for EP_COMPLETE (9101 bit 5) */
     {
         uint16_t t16;
         for (t16 = 0; t16 < 60000; t16++) {
@@ -625,142 +535,33 @@ static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
         }
     }
 
-    /* 14. Cleanup: disable DMA and restore MSC length */
-    REG_DMA_CONFIG = DMA_CONFIG_DISABLE;  /* C8D4 = 0x00 */
-    REG_USB_MSC_LENGTH = 0x0D;            /* Restore for CSW */
+    REG_DMA_CONFIG = DMA_CONFIG_DISABLE;       /* C8D4 = 0x00 */
+    REG_USB_MSC_LENGTH = 0x0D;                 /* Restore for CSW */
 }
-
-/*
- * setup_sw_dma_out - Configure SW DMA registers for bulk OUT receive
- *
- * addr: XDATA destination address
- *
- * Sets up DMA registers so hardware knows WHERE to put received data.
- * Must be called BEFORE arming endpoint (9093/9094) so hardware has
- * the DMA destination ready when data arrives.
- *
- * Follows dispatch_0206 SW DMA OUT path (0x020B-0x02F3):
- *   C8D4=0xA0, 905B:905C=addr, D802:D803=addr, D800=0x04 (OUT),
- *   C509|=0x01, 905A=0x08, 90E1=0x01, C509&=0xFE, 0x0AF4=0x40
- *   Stock firmware does NOT write 90A1 for SW DMA OUT.
- */
-static void setup_sw_dma_out(uint16_t addr) {
-    uint8_t ah = (addr >> 8) & 0xFF;
-    uint8_t al = addr & 0xFF;
-    uint8_t t;
-
-    /* Stock firmware 0x32BF: configure C805 DMA mode bit.
-     * Called for ALL bulk OUT data handlers in stock firmware. */
-    t = REG_INT_AUX_STATUS;
-    REG_INT_AUX_STATUS = (t & 0xF9) | 0x02;
-
-    /* 1. Enable SW DMA mode (dispatch_0206: 0x020B-0x0210) */
-    REG_DMA_CONFIG = DMA_CONFIG_SW_MODE;  /* C8D4 = 0xA0 */
-
-    /* 2. Set DMA destination address (0x0211-0x0228) */
-    REG_USB_EP_BUF_HI = ah;              /* 905B */
-    REG_USB_EP_BUF_LO = al;              /* 905C */
-    EP_BUF(0x02) = ah;                   /* D802 */
-    EP_BUF(0x03) = al;                   /* D803 */
-
-    /* 3. Clear transfer params, set direction (0x0247-0x0267) */
-    EP_BUF(0x04) = 0x00;                 /* D804 */
-    EP_BUF(0x05) = 0x00;                 /* D805 */
-    EP_BUF(0x06) = 0x00;                 /* D806 */
-    EP_BUF(0x07) = 0x00;                 /* D807 */
-    EP_BUF(0x0F) = 0x00;                 /* D80F */
-    EP_BUF(0x00) = 0x04;                 /* D800 = OUT direction */
-
-    /* 4. Pre-trigger: C509 bit 0 (stock: call 0x3172) */
-    t = REG_XFER_CTRL_C509;
-    REG_XFER_CTRL_C509 = (t & 0xFE) | 0x01;
-
-    /* 5. EP config for bulk OUT (stock: 905A = 0x08) */
-    REG_USB_EP_CFG_905A = USB_EP_CFG_BULK_OUT;  /* 905A = 0x08 */
-
-    /* 6. SW DMA trigger (stock: call 0x3288 → 90E1=0x01) */
-    REG_USB_SW_DMA_TRIGGER = 0x01;       /* 90E1 = 0x01 */
-
-    /* 7. Post-trigger: clear C509 bit 0 (stock: done inside 0x3288) */
-    t = REG_XFER_CTRL_C509;
-    REG_XFER_CTRL_C509 = t & 0xFE;
-
-    /* 8. Transfer state = active (stock: 0x0AF4 = 0x40) */
-    XDATA_REG8(0x0AF4) = 0x40;
-
-    /* Stock firmware does NOT write 90A1 for SW DMA OUT.
-     * 90A1 is only used in the NVMe DMA path and for CSW send. */
-}
-
-/*
- * complete_sw_dma_out - Finalize SW DMA OUT after data received
- *
- * Called after BULK_DATA fires and 9093 is acked.
- * Cleans up DMA state and restores MSC length.
- */
-static void complete_sw_dma_out(void) {
-    /* Cleanup (stock: 0x02F7-0x02FB) */
-    REG_DMA_CONFIG = DMA_CONFIG_DISABLE;  /* C8D4 = 0x00 */
-    REG_USB_MSC_LENGTH = 0x0D;            /* Restore for CSW */
-}
-
-
 
 /*==========================================================================
- * CBW Handler — dispatches SCSI commands from bulk OUT
- *
- * Stock firmware flow (0x0FEB → 0x1023 → 0x3458 → epilogue → state machine):
- *   1. Check 90E2 bit 0 (must be set for CBW processing)
- *   2. Write 90E2 = 0x01 (acknowledge/re-arm)
- *   3. CE88/CE89 DMA handshake (0x3484-0x348C):
- *      - Write CE88 = 0x00 (init DMA state machine)
- *      - Poll CE89 bit 0 until set (hardware ready)
- *      - Check CE89 bit 1 for error
- *   4. Read CBW data from CE registers
- *   5. Set state machine state (IDATA[0x6A])
- *   6. Process SCSI command and send CSW via state machine
+ * CBW Handler -- dispatches SCSI commands from bulk OUT
  *==========================================================================*/
 static void handle_cbw(void) {
     uint8_t opcode, t;
     uint16_t timeout;
 
-    /* Stock firmware (0x0FEE-0x0FF5): Check 90E2 bit 0 before proceeding.
-     * If bit 0 not set, skip CBW processing (data not ready). */
+    /* Check 90E2 bit 0 before proceeding (stock: 0x0FEE) */
     t = REG_USB_MODE;
-    if (!(t & 0x01)) {
-        uart_puts("[90E2=0]\n");
+    if (!(t & 0x01))
         return;
-    }
 
-    /* USB status check (stock: 0x0FFC reads 9000) */
     (void)REG_USB_STATUS;
-
-    /* Ack and re-arm bulk mode (stock: 0x1023-0x1028) */
     REG_USB_MODE = 0x01;
 
-    /* CE88/CE89 DMA handshake (stock: 0x3484-0x3498)
-     * Write CE88=0x00 to init the DMA state machine,
-     * poll CE89 bit 0 until set, then check for errors.
-     * Stock firmware does this with a tight loop (no timeout). */
+    /* CE88/CE89 DMA handshake (stock: 0x3484-0x3498) */
     REG_XFER_CTRL_CE88 = 0x00;
     for (timeout = 50000; timeout; timeout--) {
         t = REG_USB_DMA_STATE;
         if (t & 0x01) break;
     }
 
-    /* Check for DMA errors (stock: 0x3493 checks CE89 bit 1, 0x349D checks CE86 bit 4)
-     * NOTE: If DMA errors, just log and continue — the opcode register (912A)
-     * may still be valid since the hardware already received the CBW. */
-    t = REG_USB_DMA_STATE;
-    if (t & 0x02) {
-        uart_puts("[D1:");
-        uart_puthex(t);
-        uart_puts("]\n");
-    }
-
-    /* Copy CBW tag to CSW buffer AND save to globals.
-     * (stock: 0x318A-0x31A6 copies 911F-9122 → D804-D807)
-     * Globals are needed because data-in commands overwrite D804-D807. */
+    /* Copy CBW tag to CSW buffer and save to globals */
     cbw_tag[0] = REG_CBW_TAG_0;
     cbw_tag[1] = REG_CBW_TAG_1;
     cbw_tag[2] = REG_CBW_TAG_2;
@@ -769,20 +570,14 @@ static void handle_cbw(void) {
     EP_BUF(0x05) = cbw_tag[1];
     EP_BUF(0x06) = cbw_tag[2];
     EP_BUF(0x07) = cbw_tag[3];
-
-    /* Clear CSW status (stock: 0x4DF5 writes D80C=0x00) */
     EP_BUF(0x0C) = 0x00;
 
-    /* Read SCSI opcode */
     opcode = REG_USB_CBWCB_0;
 
-    /* C428 direction bit clearing (stock: 0x4D09-0x4D0C reads C428, writes back with &~0x03)
-     * The stock trace shows C428=0x30, writes back 0x30 (bits 0-1 already clear).
-     * This clears direction bits before command dispatch. */
+    /* Clear C428 direction bits (stock: 0x4D09) */
     t = REG_NVME_QUEUE_CFG;
     REG_NVME_QUEUE_CFG = t & ~0x03;
 
-    /* USB status check (stock: 0x4D18 reads 9000) */
     (void)REG_USB_STATUS;
     uart_puts("[CBW:");
     uart_puthex(opcode);
@@ -792,7 +587,7 @@ static void handle_cbw(void) {
         /* TEST UNIT READY */
         send_csw(0x00);
     } else if (opcode == 0xE5) {
-        /* VENDOR WRITE REGISTER */
+        /* VENDOR WRITE REGISTER: CDB[1]=value, CDB[3:4]=address */
         uint8_t val  = REG_USB_CBWCB_1;
         uint8_t ah   = REG_USB_CBWCB_3;
         uint8_t al   = REG_USB_CBWCB_4;
@@ -800,25 +595,20 @@ static void handle_cbw(void) {
         XDATA_REG8(addr) = val;
         send_csw(0x00);
     } else if (opcode == 0xE4) {
-        /* VENDOR READ REGISTER — returns data in CSW residue field.
-         * No data phase (90A1 requires NVMe, C42C only sends 13 bytes).
-         * CDB[1] = size (1-4 bytes), CDB[3:4] = address.
-         * CSW residue D808-D80B contains the register value(s).
-         * Host sends CBW with data_transfer_length=0 and reads CSW. */
+        /* VENDOR READ REGISTER: CDB[1]=size, CDB[3:4]=address.
+         * Returns data in CSW residue field (D808-D80B). */
         uint8_t sz   = REG_USB_CBWCB_1;
         uint8_t ah   = REG_USB_CBWCB_3;
         uint8_t al   = REG_USB_CBWCB_4;
         uint16_t addr = ((uint16_t)ah << 8) | al;
-        if (sz > 4) sz = 4;  /* Max 4 bytes fit in residue */
-        /* Write register values to CSW residue field (D808-D80B) */
+        if (sz > 4) sz = 4;
         EP_BUF(0x08) = (sz >= 1) ? XDATA_REG8(addr) : 0x00;
         EP_BUF(0x09) = (sz >= 2) ? XDATA_REG8(addr + 1) : 0x00;
         EP_BUF(0x0A) = (sz >= 3) ? XDATA_REG8(addr + 2) : 0x00;
         EP_BUF(0x0B) = (sz >= 4) ? XDATA_REG8(addr + 3) : 0x00;
-        /* send_csw_raw: send CSW with residue already set */
-        EP_BUF(0x0C) = 0x00;  /* status = success */
+        EP_BUF(0x0C) = 0x00;
         (void)REG_USB_STATUS;
-        /* Don't clear residue — it contains our data */
+        /* Send CSW with residue intact (don't clear D808-D80B) */
         REG_USB_BULK_DMA_TRIGGER = 0x01;
         REG_USB_MSC_CTRL = 0x01;
         {
@@ -826,17 +616,15 @@ static void handle_cbw(void) {
             REG_USB_MSC_STATUS = st & ~0x01;
         }
     } else if (opcode == 0xE6) {
-        /* VENDOR BULK IN — send data from XDATA[addr] to host.
-         * CDB[1] = length (bytes to send, max 255, 0 defaults to 64).
-         * CDB[3:4] = source XDATA address. */
+        /* VENDOR BULK IN: CDB[1]=length, CDB[3:4]=source address.
+         * Sends data from XDATA to host via SW DMA. */
         uint8_t len  = REG_USB_CBWCB_1;
         uint8_t ah   = REG_USB_CBWCB_3;
         uint8_t al   = REG_USB_CBWCB_4;
         uint16_t addr = ((uint16_t)ah << 8) | al;
-
         if (len == 0) len = 64;
 
-        /* Pre-fill EP buffer with source data — required for DMA engine */
+        /* Pre-fill EP buffer with source data */
         {
             uint8_t i;
             for (i = 0; i < len; i++)
@@ -852,27 +640,22 @@ static void handle_cbw(void) {
         EP_BUF(0x06) = cbw_tag[2]; EP_BUF(0x07) = cbw_tag[3];
         send_csw(0x00);
     } else if (opcode == 0xE7) {
-        /* VENDOR BULK OUT — receive data from host into XDATA[addr].
-         * CDB[1] = length (bytes to receive, max 255).
-         * CDB[3:4] = dest XDATA address.
-         *
-         * From E1 trace: flash DMA is set up AFTER BULK_DATA fires.
-         * So: arm endpoint → wait BULK_DATA → ack 9093 → do SW DMA → CSW
-         * No DMA setup before arming — just like stock firmware.
-         */
+        /* VENDOR BULK OUT: CDB[1]=length, CDB[3:4]=dest address.
+         * Receives data from host. Deferred to main loop state machine:
+         * state 1 arms endpoint, state 2 waits for BULK_DATA, copies
+         * from flash buffer (0x7000) to target, then sends CSW. */
         uint8_t len  = REG_USB_CBWCB_1;
         uint8_t ah   = REG_USB_CBWCB_3;
         uint8_t al   = REG_USB_CBWCB_4;
         bulk_out_addr = ((uint16_t)ah << 8) | al;
         bulk_out_len = (len == 0) ? 64 : len;
-        bulk_out_state = 1;  /* pending: arm endpoint next main loop iteration */
-        uart_puts("[E7]\n");
-        return;  /* Return to main loop — arm + DMA happens there */
+        bulk_out_state = 1;
+        return;  /* Return to main loop for deferred processing */
     } else if (opcode == 0xE8) {
-        /* VENDOR NO-DATA — accept and return success */
+        /* VENDOR NO-DATA */
         send_csw(0x00);
     } else {
-        /* Unknown — fail */
+        /* Unknown -- fail */
         send_csw(0x01);
     }
 }
@@ -884,7 +667,7 @@ static void handle_link_event(void) {
     uint8_t r9300 = REG_BUF_CFG_9300;
 
     if (r9300 & BUF_CFG_9300_SS_FAIL) {
-        /* USB 3.0 failed — fall back to USB 2.0 */
+        /* USB 3.0 failed -- fall back to USB 2.0 */
         REG_POWER_STATUS = REG_POWER_STATUS | POWER_STATUS_USB_PATH;
         REG_POWER_EVENT_92E1 = 0x10;
         REG_USB_STATUS = REG_USB_STATUS | 0x04;
@@ -1003,25 +786,20 @@ static void handle_usb_reset(void) {
 
 /*
  * poll_bulk_events - Check 9101 for bulk events (EP_COMPLETE, CBW_RECEIVED)
- * Called from main loop. Avoids edge-triggered interrupt issues where
- * multiple events on the same INT0 line miss edges.
+ * Called from main loop to avoid edge-triggered interrupt issues.
  */
 static void poll_bulk_events(void) {
     uint8_t st = REG_USB_PERIPH_STATUS;
 
-    /* EP complete (bit 5 = 0x20): ack only.
-     * 90E3/9096 ack re-enables bulk OUT for next CBW.
-     * Do NOT re-arm with C42C here — it sends 13 bytes of stale data
-     * which the host receives as an unsolicited BULK IN packet. */
+    /* EP complete (bit 5): ack only, do NOT re-arm with C42C here */
     if (st & USB_PERIPH_EP_COMPLETE) {
         (void)REG_USB_STATUS;
         (void)REG_USB_EP_READY;
         REG_USB_EP_STATUS_90E3 = 0x02;
         REG_USB_EP_READY = 0x01;
-        ep_complete_flag = 1;
     }
 
-    /* CBW received (bit 6 = 0x40) */
+    /* CBW received (bit 6) */
     if (st & USB_PERIPH_CBW_RECEIVED) {
         need_cbw_process = 1;
     }
@@ -1032,17 +810,17 @@ void int0_isr(void) __interrupt(0) {
 
     periph_status = REG_USB_PERIPH_STATUS;
 
-    /* Link event (bit 4 = 0x10): USB 3.0 link status change */
+    /* Link event (bit 4): USB 3.0 link status change */
     if (periph_status & USB_PERIPH_LINK_EVENT) {
         handle_link_event();
     }
 
-    /* Bus reset (bit 0 = 0x01) without control (bit 1 = 0x02) */
+    /* Bus reset (bit 0) without control (bit 1) */
     if ((periph_status & USB_PERIPH_BUS_RESET) && !(periph_status & USB_PERIPH_CONTROL)) {
         handle_usb_reset();
     }
 
-    /* Bulk request (bit 3 = 0x08): ack 9301/9302 bits */
+    /* Bulk request (bit 3): ack 9301/9302 bits */
     if (periph_status & USB_PERIPH_BULK_REQ) {
         uint8_t r9301 = REG_BUF_CFG_9301;
         if (r9301 & BUF_CFG_9301_BIT6)
@@ -1057,7 +835,7 @@ void int0_isr(void) __interrupt(0) {
         }
     }
 
-    /* Control transfer (bit 1 = 0x02): EP0 setup packet */
+    /* Control transfer (bit 1): EP0 setup packet */
     if (!(periph_status & USB_PERIPH_CONTROL))
         return;
 
@@ -1096,7 +874,7 @@ void int0_isr(void) __interrupt(0) {
             send_zlp_ack();
             uart_puts("[I]\n");
         } else if (bmReq == 0xA1 && bReq == 0xFE) {
-            /* GET_MAX_LUN — required for MSC */
+            /* GET_MAX_LUN -- required for MSC */
             while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA_IN)) { }
             DESC_BUF[0] = 0x00;
             send_descriptor_data(1);
@@ -1107,9 +885,7 @@ void int0_isr(void) __interrupt(0) {
             /* BULK_ONLY_RESET */
             send_zlp_ack();
         } else if (bmReq == 0xC0 && bReq == 0xE4) {
-            /* VENDOR READ XDATA via control transfer.
-             * wValue = XDATA address, wLength = byte count (max 255).
-             * Returns data in the data phase. */
+            /* VENDOR READ XDATA via control transfer */
             uint16_t addr = ((uint16_t)wValH << 8) | wValL;
             uint8_t len = REG_USB_SETUP_WLEN_L;
             uint8_t vi;
@@ -1118,25 +894,17 @@ void int0_isr(void) __interrupt(0) {
                 DESC_BUF[vi] = XDATA_REG8(addr + vi);
             send_descriptor_data(len);
         } else if (bmReq == 0x40 && bReq == 0xE5) {
-            /* VENDOR WRITE XDATA via control transfer.
-             * wValue = XDATA address, wIndex low = byte value.
-             * No data phase. */
+            /* VENDOR WRITE XDATA via control transfer */
             uint16_t addr = ((uint16_t)wValH << 8) | wValL;
             uint8_t val = REG_USB_SETUP_WIDX_L;
             XDATA_REG8(addr) = val;
             send_zlp_ack();
         } else if (bmReq == 0x40 && bReq == 0xE6) {
-            /* VENDOR WRITE XDATA BLOCK via control transfer.
-             * wValue = XDATA address, wLength = byte count.
-             * Data phase: host sends data bytes. */
+            /* VENDOR WRITE XDATA BLOCK via control transfer */
             uint16_t addr = ((uint16_t)wValH << 8) | wValL;
             uint8_t len = REG_USB_SETUP_WLEN_L;
             uint8_t vi;
-            /* For OUT data phase on USB 3.0, we need to receive data.
-             * The data arrives at 9E00 buffer after the setup packet. */
-            /* Wait for data phase */
             if (is_usb3) {
-                /* USB 3.0: data arrives after setup, copy from 9E00 */
                 for (vi = 0; vi < len; vi++)
                     XDATA_REG8(addr + vi) = DESC_BUF[vi];
                 send_zlp_ack();
@@ -1171,7 +939,7 @@ void serial_isr(void) __interrupt(4) { }
 void timer2_isr(void) __interrupt(5) { }
 
 /*==========================================================================
- * Hardware Init (from trace/enumerate_min — stock firmware)
+ * Hardware Init (from trace/enumerate_min -- stock firmware)
  *==========================================================================*/
 static void hw_init(void) {
     uint8_t i;
@@ -1347,7 +1115,7 @@ void main(void)
     IE = 0;
     is_usb3 = 0;
     need_bulk_init = 0;
-    ep_complete_flag = 0;
+    bulk_out_state = 0;
     REG_UART_LCR &= 0xF7;
     uart_puts("\n[BOOT]\n");
 
@@ -1385,40 +1153,29 @@ void main(void)
             handle_cbw();
         }
 
-        /* Deferred bulk OUT state machine.
-         * DMA is already configured (setup_sw_dma_out called in handle_cbw).
-         * State 1: arm endpoint (DMA already ready).
-         * State 2: wait for BULK_DATA, then ack + cleanup + CSW. */
+        /* Deferred bulk OUT state machine:
+         * State 1: arm endpoint for data reception.
+         * State 2: wait for BULK_DATA, copy from flash buffer (0x7000)
+         *          to target address, then send CSW. */
         if (bulk_out_state == 1) {
-            /* Arm bulk OUT endpoint AFTER DMA is configured.
-             * Same as stock firmware 0x1CD5/0x32A6. */
             REG_USB_EP_CFG1 = USB_EP_CFG1_ARM_OUT;  /* 9093 = 0x02 */
             REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;  /* 9094 = 0x10 */
             bulk_out_state = 2;
-            uart_puts("[arm]\n");
         } else if (bulk_out_state == 2) {
-            /* Check for BULK_DATA (9101 bit 2) */
             uint8_t st = REG_USB_PERIPH_STATUS;
             if (st & USB_PERIPH_BULK_DATA) {
-                uint8_t t, di;
-                uint8_t ah = (bulk_out_addr >> 8) & 0xFF;
-                uint8_t al = bulk_out_addr & 0xFF;
+                uint8_t t;
 
-                /* Step 1: Ack 9093 (stock: 0x0FAC-0x0FAF) */
-                (void)REG_USB_EP_CFG1;  /* read 9093 */
-                REG_USB_EP_CFG1 = USB_EP_CFG1_ARM_OUT;  /* write 9093=0x02 */
+                /* Ack 9093 (stock: 0x0FAC) */
+                (void)REG_USB_EP_CFG1;
+                REG_USB_EP_CFG1 = USB_EP_CFG1_ARM_OUT;
 
-                /* Step 2: C805 config (stock: 0x32BF-0x32C8) */
+                /* C805 DMA config (stock: 0x32BF) */
                 t = REG_INT_AUX_STATUS;
                 REG_INT_AUX_STATUS = (t & 0xF9) | 0x02;
 
-                /* Step 3: Wait for DMA to flash buffer to complete, then
-                 * copy received data from flash buffer (0x7000)
-                 * to target XDATA address. USB hardware automatically
-                 * DMA's bulk OUT data to the flash buffer at 0x7000.
-                 * Need to wait for the transfer to finish first. */
-
-                /* Poll CE89 for DMA completion (like CBW extraction) */
+                /* CE88/CE89 handshake: triggers DMA of bulk OUT data
+                 * to flash buffer at 0x7000. Poll CE89 bit 0 for ready. */
                 REG_XFER_CTRL_CE88 = 0x00;
                 {
                     uint16_t t16;
@@ -1427,28 +1184,28 @@ void main(void)
                     }
                 }
 
-                /* Copy from flash buffer to target */
+                /* Wait for DMA transfer byte count (CE55) to become nonzero,
+                 * indicating USB-to-flash-buffer DMA is complete.
+                 * Stock firmware reads CE55 at 0x34B6 after CE88/CE89 handshake. */
+                {
+                    uint16_t t16;
+                    for (t16 = 50000; t16; t16--) {
+                        if (REG_SCSI_DMA_XFER_CNT) break;
+                    }
+                }
+
+                /* Copy received data from flash buffer (0x7000) to target */
                 {
                     uint8_t ci;
                     for (ci = 0; ci < bulk_out_len; ci++)
                         XDATA_REG8(bulk_out_addr + ci) = XDATA_REG8(0x7000 + ci);
                 }
 
-                /* Debug: check target address */
-                uart_puts("[O:");
-                for (di = 0; di < 8; di++)
-                    uart_puthex(XDATA_REG8(bulk_out_addr + di));
-                uart_puts("]\n");
-
                 /* Restore USBS signature and tag for CSW */
-                EP_BUF(0x00) = 0x55;
-                EP_BUF(0x01) = 0x53;
-                EP_BUF(0x02) = 0x42;
-                EP_BUF(0x03) = 0x53;
-                EP_BUF(0x04) = cbw_tag[0];
-                EP_BUF(0x05) = cbw_tag[1];
-                EP_BUF(0x06) = cbw_tag[2];
-                EP_BUF(0x07) = cbw_tag[3];
+                EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
+                EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
+                EP_BUF(0x04) = cbw_tag[0]; EP_BUF(0x05) = cbw_tag[1];
+                EP_BUF(0x06) = cbw_tag[2]; EP_BUF(0x07) = cbw_tag[3];
 
                 send_csw(0x00);
                 bulk_out_state = 0;

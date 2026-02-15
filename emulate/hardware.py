@@ -1144,7 +1144,7 @@ class HardwareState:
         # Firmware writes 0x03 to start DMA at 0x3531-0x3533, polls at 0x3534-0x3538
         self.read_callbacks[0xCE00] = self._usb_ce00_read
         self.write_callbacks[0xCE00] = self._usb_ce00_write
-        # REG_SCSI_TAG_VALUE (0xCE55): Transfer slot count for loop iterations
+        # REG_SCSI_DMA_XFER_CNT (0xCE55): DMA transfer byte count after CE88/CE89 handshake
         # Read at 0x34B9 and stored to G_USB_WORK_009F as loop limit
         self.read_callbacks[0xCE55] = self._usb_ce55_read
         # REG_XFER_CTRL_CE88 (0xCE88): DMA trigger - write resets state

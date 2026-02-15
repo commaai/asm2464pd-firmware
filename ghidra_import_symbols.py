@@ -1478,7 +1478,7 @@ def add_registers():
         (0xCE44, "REG_SCSI_DMA_PARAM4"),
         (0xCE45, "REG_SCSI_DMA_PARAM5"),
         (0xCE51, "REG_SCSI_TAG_IDX"),
-        (0xCE55, "REG_SCSI_TAG_VALUE"),
+        (0xCE55, "REG_SCSI_DMA_XFER_CNT"),
         (0xCE5C, "REG_SCSI_DMA_COMPL"),
         (0xCE5D, "REG_SCSI_DMA_MASK"),
         (0xCE5F, "REG_SCSI_DMA_QUEUE"),

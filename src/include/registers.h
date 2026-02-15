@@ -1322,7 +1322,7 @@
 #define REG_SCSI_DMA_PARAM4     XDATA_REG8(0xCE44)
 #define REG_SCSI_DMA_PARAM5     XDATA_REG8(0xCE45)
 #define REG_SCSI_TAG_IDX        XDATA_REG8(0xCE51)   /* SCSI tag index */
-#define REG_SCSI_TAG_VALUE      XDATA_REG8(0xCE55)   /* SCSI tag value */
+#define REG_SCSI_DMA_XFER_CNT  XDATA_REG8(0xCE55)   /* DMA transfer byte count (after CE88/CE89 handshake) */
 #define REG_SCSI_DMA_COMPL      XDATA_REG8(0xCE5C)
 #define REG_SCSI_DMA_MASK       XDATA_REG8(0xCE5D)  /* SCSI DMA mask register */
 #define REG_SCSI_DMA_QUEUE      XDATA_REG8(0xCE5F)  /* SCSI DMA queue control */

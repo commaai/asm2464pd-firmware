@@ -2593,7 +2593,7 @@ uint8_t helper_313a_check_nonzero(void)
  * 5. Wait for REG_USB_DMA_STATE bit 0 to be set
  * 6. Check abort conditions (bit 1 of CE89, bit 4 of CE86, AF8 != 1)
  * 7. Call usb_state_setup_4c98
- * 8. Read REG_SCSI_TAG_VALUE and set up tag loop
+ * 8. Read REG_SCSI_DMA_XFER_CNT and set up tag loop
  * 9. Loop through tags, setting up SCSI DMA for each
  * 10. Set final state flags and return
  */
@@ -2663,7 +2663,7 @@ void usb_ep_loop_3419(void)
     G_NVME_PARAM_053A = 0;
 
     /* Read tag value from CE55, copy to 009F */
-    tag_val = REG_SCSI_TAG_VALUE;
+    tag_val = REG_SCSI_DMA_XFER_CNT;
     G_USB_WORK_009F = tag_val;
 
     /* Call buffer_setup */

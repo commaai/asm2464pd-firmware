@@ -2622,7 +2622,7 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
 
         if (val == 0xFF) {
             /* Tag is complete - copy tag value to slot tables */
-            uint8_t tag_val = REG_SCSI_TAG_VALUE;
+            uint8_t tag_val = REG_SCSI_DMA_XFER_CNT;
 
             /* Store to 0x009F + slot */
             ptr = get_addr_from_slot(0x9F);
