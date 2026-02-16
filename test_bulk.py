@@ -13,11 +13,13 @@ Protocol:
 Usage: python3 test_bulk.py
 """
 
+import ctypes
 import struct
 import sys
 import time
 
 from tinygrad.runtime.support.usb import USB3
+from tinygrad.runtime.autogen import libusb
 
 SUPPORTED_CONTROLLERS = [
     (0xADD1, 0x0001),  # Custom firmware
@@ -236,6 +238,7 @@ TESTS = [
 
 def main():
     dev = find_device()
+    time.sleep(0.1)  # Wait for bulk init to complete after set_configuration
     results = []
     for name, fn in TESTS:
         print(f"\n--- {name} ---")
@@ -253,6 +256,11 @@ def main():
     for name, ok in results:
         print(f"  {'PASS' if ok else 'FAIL'}: {name}")
     print(f"\n{passed}/{len(results)} tests passed")
+
+    # Properly clean up USB interface so second run works.
+    libusb.libusb_release_interface(dev.handle, 0)
+    libusb.libusb_close(dev.handle)
+
     return 0 if passed == len(results) else 1
 
 if __name__ == "__main__":

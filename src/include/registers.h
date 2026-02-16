@@ -643,8 +643,9 @@
 
 // Buffer config registers (0x9300-0x93FF)
 #define REG_BUF_CFG_9300        XDATA_REG8(0x9300)
+#define   BUF_CFG_9300_SS_OK      0x02  // Bit 1: USB 3.0 link established (empirically verified)
 #define   BUF_CFG_9300_SS_FAIL    0x04  // Bit 2: USB 3.0 link failed, fall back to 2.0
-#define   BUF_CFG_9300_SS_OK      0x08  // Bit 3: USB 3.0 link established
+#define   BUF_CFG_9300_SS_EVENT   0x08  // Bit 3: SS link event (checked at 0x10b2 after 91D1 dispatch)
 #define REG_BUF_CFG_9301        XDATA_REG8(0x9301)
 #define   BUF_CFG_9301_BIT6      0x40  // Bit 6: Buffer config flag
 #define   BUF_CFG_9301_BIT7      0x80  // Bit 7: Buffer config flag
@@ -852,6 +853,7 @@
 #define REG_PHY_CTRL            XDATA_REG8(0xC205)
 #define REG_PHY_LINK_CTRL_C208  XDATA_REG8(0xC208)
 #define REG_PHY_LINK_CONFIG_C20C XDATA_REG8(0xC20C)
+#define REG_PHY_CTRL_C20F       XDATA_REG8(0xC20F)  /* PHY control (cleared during U1/U2 entry, restored to 0xC8) */
 #define REG_PHY_CONFIG          XDATA_REG8(0xC233)
 #define   PHY_CONFIG_MODE_MASK    0x03  // Bits 0-1: PHY config mode
 #define REG_PHY_STATUS          XDATA_REG8(0xC284)

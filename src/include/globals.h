@@ -481,6 +481,7 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_USB_INIT_0B01         XDATA_VAR8(0x0B01)  /* USB init state flag */
 #define G_PCIE_WORK_0B12        XDATA_VAR8(0x0B12)  /* PCIe work variable */
 /* NOTE: G_TLP_PENDING_0B21 removed - use G_DMA_WORK_0B21 (same address) */
+#define G_LINK_EVENT_0B2D       XDATA_VAR8(0x0B2D)  /* Link event flag (cleared in bda4 reset) */
 #define G_USB_TRANSFER_FLAG     XDATA_VAR8(0x0B2E)  /* USB transfer flag */
 #define G_INTERFACE_READY_0B2F  XDATA_VAR8(0x0B2F)  /* Interface ready flag */
 #define G_STATE_0B39            XDATA_VAR8(0x0B39)  /* State control 0x0B39 */
@@ -650,8 +651,9 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_EP_CFG_0A5F           XDATA_VAR8(0x0A5F)  /* EP config value (cleared by 0x9741) */
 #define G_EP_CFG_0A60           XDATA_VAR8(0x0A60)  /* EP config value (cleared by 0x9741) */
 #define G_LANE_STATE_0A9D       XDATA_VAR8(0x0A9D)  /* Lane state value */
+#define G_LINK_POWER_STATE_0ACA XDATA_VAR8(0x0ACA)  /* Link power state (cleared in bda4 reset) */
 #define G_TLP_MASK_0ACB         XDATA_VAR8(0x0ACB)  /* TLP mask value */
-#define G_TLP_BLOCK_SIZE_0ACC   XDATA_VAR8(0x0ACC)  /* TLP block size (double = 2x) */
+#define G_TLP_BLOCK_SIZE_0ACC   XDATA_VAR8(0x0ACC)  /* TLP block size (bit 1 checked in 91D1 bit 3) */
 #define G_TLP_STATE_0ACF        XDATA_VAR8(0x0ACF)  /* TLP state (low 5 bits) */
 #define G_TLP_CMD_STATE_0AD0    XDATA_VAR8(0x0AD0)  /* TLP command state */
 #define G_LINK_STATE_0AD1       XDATA_VAR8(0x0AD1)  /* Link state counter */

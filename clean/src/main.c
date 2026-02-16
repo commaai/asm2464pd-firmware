@@ -60,7 +60,10 @@ static void poll_bulk_events(void);
 
 /* Complete USB 3.0 status phase */
 static void complete_usb3_status(void) {
-    while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STAT_IN)) { }
+    uint16_t t;
+    for (t = 0; t < 50000; t++) {
+        if (REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STAT_IN) break;
+    }
     REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
     REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STAT_IN;
 }
@@ -114,9 +117,12 @@ static void handle_set_address(void) {
 
     if (is_usb3) {
         /* USB 3.0 SET_ADDRESS (from trace/flash_usb3 lines 3242-3279) */
+        uint16_t t;
         REG_LINK_STATUS_E716 = 0x01;
 
-        while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STAT_IN)) { }
+        for (t = 0; t < 50000; t++) {
+            if (REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STAT_IN) break;
+        }
 
         /* Address programming registers */
         REG_USB_ADDR_CFG_A = 0x03;
@@ -199,8 +205,12 @@ static __code const uint8_t str_empty[] = { 0x02, 0x03 };
 static void handle_get_descriptor(uint8_t desc_type, uint8_t desc_idx, uint8_t wlen) {
     __code const uint8_t *src;
     uint8_t desc_len;
+    uint16_t t;
 
-    while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA_IN)) { }
+    for (t = 0; t < 50000; t++) {
+        if (REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA_IN) break;
+    }
+    if (t == 50000) return;  /* Timeout — host cancelled */
 
     if (desc_type == USB_DESC_TYPE_DEVICE) {
         /* Device descriptor -- patch bcdUSB and bMaxPacketSize for speed */
@@ -538,7 +548,7 @@ static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
 }
 
 /*==========================================================================
- * CBW Handler -- dispatches SCSI commands from bulk OUT
+ * CBW Handler -- dispatches vendor commands from bulk OUT
  *==========================================================================*/
 static void handle_cbw(void) {
     uint8_t opcode, t;
@@ -580,10 +590,7 @@ static void handle_cbw(void) {
     uart_puthex(opcode);
     uart_puts("]\n");
 
-    if (opcode == 0x00) {
-        /* TEST UNIT READY */
-        send_csw(0x00);
-    } else if (opcode == 0xE5) {
+    if (opcode == 0xE5) {
         /* VENDOR WRITE REGISTER: CDB[1]=value, CDB[3:4]=address */
         uint8_t val  = REG_USB_CBWCB_1;
         uint8_t ah   = REG_USB_CBWCB_3;
@@ -664,117 +671,275 @@ static void handle_link_event(void) {
     uint8_t r9300 = REG_BUF_CFG_9300;
 
     if (r9300 & BUF_CFG_9300_SS_FAIL) {
-        /* USB 3.0 failed -- fall back to USB 2.0 */
-        REG_POWER_STATUS = REG_POWER_STATUS | POWER_STATUS_USB_PATH;
-        REG_POWER_EVENT_92E1 = 0x10;
-        REG_USB_STATUS = REG_USB_STATUS | 0x04;
-        REG_USB_STATUS = REG_USB_STATUS & ~0x04;
-        REG_PHY_LINK_CTRL = 0x00;
-        REG_CPU_MODE = 0x00;
-        REG_LINK_WIDTH_E710 = 0x1F;
-        REG_USB_PHY_CTRL_91C0 = 0x10;
+        /* USB 3.0 link lost -- mark as not USB3.
+         * Run the same reset sequence as 91D1 bit 0 handler to
+         * allow the link to retrain. */
         is_usb3 = 0;
+
+        /* C6A8 |= 0x01: set link ready for retrain (from bda4) */
+        {
+            uint8_t t = REG_PHY_CFG_C6A8;
+            REG_PHY_CFG_C6A8 = (t & 0xFE) | 0x01;
+        }
+
+        /* 92C8 &= ~0x03: clear clock bits for re-init */
+        {
+            uint8_t t = REG_POWER_CTRL_92C8;
+            REG_POWER_CTRL_92C8 = t & ~0x01;
+            t = REG_POWER_CTRL_92C8;
+            REG_POWER_CTRL_92C8 = t & ~0x02;
+        }
+
+        /* CD31 reset sequence */
+        REG_CPU_TIMER_CTRL_CD31 = 0x04;
+        REG_CPU_TIMER_CTRL_CD31 = 0x02;
+
+        /* E710 link mode config */
+        {
+            uint8_t t = REG_LINK_WIDTH_E710;
+            REG_LINK_WIDTH_E710 = (t & 0xE0) | 0x04;
+        }
+
+        /* CC3B: clear link status bit */
+        {
+            uint8_t t = REG_TIMER_CTRL_CC3B;
+            REG_TIMER_CTRL_CC3B = t & ~0x02;
+        }
+
+        /* Reset software state for re-enumeration */
+        bulk_out_state = 0;
+        need_cbw_process = 0;
+        need_bulk_init = 0;
+
         uart_puts("[T]\n");
     } else if (r9300 & BUF_CFG_9300_SS_OK) {
         /* USB 3.0 link OK */
-        REG_BUF_CFG_9300 = BUF_CFG_9300_SS_OK;
         is_usb3 = 1;
         uart_puts("[3]\n");
     }
 
-    REG_BUF_CFG_9300 = BUF_CFG_9300_SS_FAIL;
+    /* Clear all pending link event bits including bit 3 (write-1-to-clear)
+     * Stock firmware writes 0x0C to 9300 during init (hw_init), which clears
+     * bits 2 and 3.  The ISR at 0x10b2 also checks bit 3 after 91D1 dispatch. */
+    REG_BUF_CFG_9300 = BUF_CFG_9300_SS_OK | BUF_CFG_9300_SS_FAIL | BUF_CFG_9300_SS_EVENT;
 }
 
 /*==========================================================================
- * USB Bus Reset Handler (from trace/enumerate_usb_20)
+ * 91D1 Link Training Handlers
+ *
+ * Stock firmware ISR at 0x0f4a reads 91D1 and dispatches on individual bits.
+ * Each handler is called via bank-switch trampoline at 0x0300 (DPX=0).
+ * These handlers configure PHY/power/clock registers to maintain the SS link.
+ * Without them, the SS link degrades and dies after 30-75 seconds.
  *==========================================================================*/
-static void handle_usb_reset(void) {
+
+/*
+ * handle_91d1_bit3 - Power management handler (U1/U2 state transitions)
+ * Address: 0x9b95-0x9cdb
+ *
+ * Called when 91D1 bit 3 fires (SS power state change event).
+ * Clears CC3B bit 1, configures 92CF clock recovery, toggles 92C1 bit 4,
+ * polls E712 for completion, then restores.
+ *
+ * Simplified: we do the critical MMIO writes but skip the deep state
+ * machine (0x0ACC checks, 0xE712 polling, 0xCA51 calls) since our
+ * firmware doesn't use U1/U2 power states.
+ */
+static void handle_91d1_bit3(void) {
+    uint8_t t;
+
+    /* Clear link event counter (stock: 0x9b95-0x9b99) */
+    G_USB_TRANSFER_FLAG = 0;
+
+    /* CC3B &= ~0x02: clear SS link status bit (stock: 0x9b9a-0x9ba0) */
+    t = REG_TIMER_CTRL_CC3B;
+    REG_TIMER_CTRL_CC3B = t & ~0x02;
+
+    /* Set link event processed flag (stock: 0x9c14-0x9c19) */
+    G_TLP_BASE_LO = 0x01;
+}
+
+/*
+ * handle_91d1_bit0 - Link training/recovery handler
+ * Address: 0xc465-0xc4ce
+ *
+ * Called when 91D1 bit 0 fires (link training event).
+ * Calls the full state reset (bda4), checks 91C0 bit 1 for link status.
+ * If link is down, polls 92FB and may force link retrain via 9300.
+ *
+ * We implement the critical state reset from 0xbda4:
+ * - Clear XDATA state variables
+ * - C6A8 |= 0x01 (link ready)
+ * - 92C8 &= ~0x03 (clear clock bits)
+ * - CD31 = 0x04, then 0x02 (reset sequence)
+ */
+static void handle_91d1_bit0(void) {
+    uint8_t t;
+
+    /* bda4 state reset: clear critical XDATA state variables */
+    G_SYS_FLAGS_07ED = 0;
+    G_SYS_FLAGS_07EE = 0;
+    G_EP_DISPATCH_OFFSET = 0;  /* 0x0AF5 */
+    G_SYS_FLAGS_07EB = 0;
+    G_STATE_FLAG_0AF1 = 0;
+    G_LINK_POWER_STATE_0ACA = 0;
+    G_USB_CTRL_STATE_07E1 = 0x05;  /* Ready state */
+    G_USB_TRANSFER_FLAG = 0;  /* 0x0B2E */
+    G_TLP_MASK_0ACB = 0;
+    G_CMD_WORK_E3 = 0;  /* 0x07E3 */
+    G_TRANSFER_ACTIVE = 0;  /* 0x07E5 */
+    G_SYS_FLAGS_07E8 = 0;
+    G_TLP_STATE_07E9 = 0;
+    G_LINK_EVENT_0B2D = 0;
+    G_XFER_FLAG_07EA = 0;
+    G_TRANSFER_BUSY_0B3B = 0;
+
+    /* C6A8 |= 0x01: set link ready (stock: bda4 calls cc56) */
+    t = REG_PHY_CFG_C6A8;
+    REG_PHY_CFG_C6A8 = (t & 0xFE) | 0x01;
+
+    /* 92C8 &= ~0x01, &= ~0x02: clear clock enable bits (stock: 0xbe00-0xbe0a) */
+    t = REG_POWER_CTRL_92C8;
+    REG_POWER_CTRL_92C8 = t & ~0x01;
+    t = REG_POWER_CTRL_92C8;
+    REG_POWER_CTRL_92C8 = t & ~0x02;
+
+    /* CD31 = 0x04, then 0x02: hardware reset sequence (stock: 0xbe0b-0xbe13) */
+    REG_CPU_TIMER_CTRL_CD31 = 0x04;
+    REG_CPU_TIMER_CTRL_CD31 = 0x02;
+
+    /* Check 91C0 bit 1: if link is up, we're done (stock: 0xc468-0xc46c) */
+    t = REG_USB_PHY_CTRL_91C0;
+    if (t & 0x02) {
+        return;  /* Link is up, recovery complete */
+    }
+
+    /* Link is down: configure E710 and clear CC3B bit 1 (stock: 0xc4bb-0xc4ca) */
+    t = REG_LINK_WIDTH_E710;
+    REG_LINK_WIDTH_E710 = (t & 0xE0) | 0x04;
+
+    t = REG_TIMER_CTRL_CC3B;
+    REG_TIMER_CTRL_CC3B = t & ~0x02;
+}
+
+/*
+ * handle_91d1_bit1 - Simple flag handler
+ * Address: 0xe6aa-0xe6ac -> ljmp 0xc324
+ *
+ * Sets R7=0, jumps to common handler at 0xc324 which stores the
+ * event type and sets the link event flag (0x0B2E = 1).
+ */
+static void handle_91d1_bit1(void) {
+    G_EP_DISPATCH_VAL3 = 0;  /* 0x0A7D = 0 (event type) */
+    G_USB_TRANSFER_FLAG = 1;  /* 0x0B2E = 1 (link event flag) */
+}
+
+/*
+ * handle_91d1_bit2 - Link reset acknowledgment
+ * Address: 0xe682-0xe688
+ *
+ * Calls cc56 (C6A8 |= 0x01) and cc79 (0x0B2E=0, 0x07E8=0).
+ */
+static void handle_91d1_bit2(void) {
+    uint8_t t;
+    /* cc56: C6A8 = (old & 0xFE) | 0x01 */
+    t = REG_PHY_CFG_C6A8;
+    REG_PHY_CFG_C6A8 = (t & 0xFE) | 0x01;
+    /* cc79: clear state */
+    G_USB_TRANSFER_FLAG = 0;  /* 0x0B2E */
+    G_SYS_FLAGS_07E8 = 0;
+}
+
+/*
+ * handle_91d1_events - Dispatch 91D1 link training events
+ *
+ * Stock firmware at 0x0f4a-0x0f8e: checks 9101 bit 0 first,
+ * then reads 91D1 and dispatches on individual bits.
+ * Each bit is acknowledged by writing its mask back to 91D1 (write-1-to-clear).
+ * Handler is called AFTER ack for bits 3,0,1 and BEFORE ack for bit 2.
+ *
+ * Priority order: bit 3 > bit 0 > bit 1 > bit 2
+ */
+static void handle_91d1_events(void) {
     uint8_t r91d1;
-    uint16_t timeout;
+
+    /* Check 9101 bit 0: SS link interrupt pending (stock: 0x0f4a-0x0f4e) */
+    if (!(REG_USB_PERIPH_STATUS & 0x01))
+        return;
 
     r91d1 = REG_USB_PHY_CTRL_91D1;
-    REG_USB_PHY_CTRL_91D1 = r91d1;
 
-    REG_TIMER_CTRL_CC3B = REG_TIMER_CTRL_CC3B & ~0x02;
-    REG_CLOCK_CTRL_92CF = 0x00;
-    REG_CLOCK_CTRL_92CF = 0x04;
-    REG_CLOCK_ENABLE = REG_CLOCK_ENABLE | 0x10;
-    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
-    REG_TIMER0_DIV = 0x10;
-    REG_TIMER0_THRESHOLD_HI = 0x00; REG_TIMER0_THRESHOLD_LO = 0x0A;
-    REG_TIMER0_CSR = 0x01;
-    REG_TIMER0_CSR = 0x02;
-    REG_CLOCK_ENABLE = REG_CLOCK_ENABLE & ~0x10;
-    REG_CLOCK_CTRL_92CF = 0x07;
-    REG_CLOCK_CTRL_92CF = 0x03;
-    REG_PHY_LINK_CTRL = 0x00;
-    REG_POWER_EVENT_92E1 = 0x40;
-    REG_POWER_STATUS = REG_POWER_STATUS & ~POWER_STATUS_USB_PATH;
-
-    for (timeout = 10000; timeout; timeout--) {
-        r91d1 = REG_USB_PHY_CTRL_91D1;
-        if (r91d1 & USB_PHY_CTRL_BIT0) break;
+    /* 91D1 bit 3: power management (stock: 0x0f55-0x0f5b) */
+    if (r91d1 & 0x08) {
+        REG_USB_PHY_CTRL_91D1 = 0x08;  /* ack bit 3 */
+        handle_91d1_bit3();
     }
-    if (r91d1 & USB_PHY_CTRL_BIT0)
-        REG_USB_PHY_CTRL_91D1 = r91d1;
 
-    REG_CPU_TIMER_CTRL_CD31 = 0x04; REG_CPU_TIMER_CTRL_CD31 = 0x02;
-    REG_TIMER2_CSR = 0x04; REG_TIMER2_CSR = 0x02;
-    REG_TIMER4_CSR = 0x04; REG_TIMER4_CSR = 0x02;
-    REG_TIMER2_THRESHOLD_LO = 0x00; REG_TIMER2_THRESHOLD_HI = 0x8B;
-    REG_TIMER4_THRESHOLD_LO = 0x00; REG_TIMER4_THRESHOLD_HI = 0xC7;
+    /* Re-read 91D1 for remaining bits (stock re-reads at 0x0f5e) */
+    r91d1 = REG_USB_PHY_CTRL_91D1;
 
-    /* MSC + NVMe doorbell dance */
-    REG_USB_MSC_CFG = REG_USB_MSC_CFG | 0x02;
-    REG_USB_MSC_CFG = REG_USB_MSC_CFG | 0x04;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x01;
-    REG_USB_MSC_CFG = REG_USB_MSC_CFG | 0x01;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x02;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x04;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x08;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x10;
-    REG_USB_MSC_CFG = REG_USB_MSC_CFG & ~0x02;
-    REG_USB_MSC_CFG = REG_USB_MSC_CFG & ~0x04;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x01;
-    REG_USB_MSC_CFG = REG_USB_MSC_CFG & ~0x01;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x02;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x04;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x08;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x10;
-
-    REG_USB_EP_BUF_CTRL = 0x55;
-    REG_USB_EP_BUF_SEL  = 0x53;
-    REG_USB_EP_BUF_DATA = 0x42;
-    REG_USB_EP_BUF_PTR_LO = 0x53;
-    REG_USB_MSC_LENGTH = 0x0D;
-    REG_USB_MSC_CTRL = 0x01;
-    REG_USB_MSC_STATUS = REG_USB_MSC_STATUS;
-
-    /* NVMe init under doorbell bit 5 */
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL | 0x20;
-    REG_NVME_INIT_CTRL2 = 0xFF;
-    REG_NVME_INIT_CTRL2_1 = 0xFF;
-    REG_NVME_INIT_CTRL2_2 = 0xFF;
-    REG_NVME_INIT_CTRL2_3 = 0xFF;
-    REG_NVME_INIT_CTRL = 0xFF;
-    REG_NVME_CMD_CDW11 = 0xFF;
-    REG_NVME_INT_MASK_A = 0xFF;
-    REG_NVME_INT_MASK_B = 0xFF;
-    REG_NVME_DOORBELL = REG_NVME_DOORBELL & ~0x20;
-
-    REG_BUF_CFG_9300 = BUF_CFG_9300_SS_FAIL;
-    REG_POWER_STATUS = REG_POWER_STATUS | POWER_STATUS_USB_PATH;
-    REG_POWER_EVENT_92E1 = 0x10;
-    REG_TIMER_CTRL_CC3B = REG_TIMER_CTRL_CC3B | 0x02;
-
-    /* Detect USB speed after reset */
-    {
-        uint8_t link = REG_USB_LINK_STATUS;
-        is_usb3 = (link >= USB_SPEED_SUPER) ? 1 : 0;
-        uart_puts("[R");
-        uart_puthex(link);
-        uart_puts("]\n");
+    /* 91D1 bit 0: link training (stock: 0x0f62-0x0f68) */
+    if (r91d1 & 0x01) {
+        REG_USB_PHY_CTRL_91D1 = 0x01;  /* ack bit 0 */
+        handle_91d1_bit0();
+        return;  /* stock jumps to 0x10b8 after bit 0 handler */
     }
+
+    /* 91D1 bit 1: simple flag (stock: 0x0f72-0x0f78) */
+    if (r91d1 & 0x02) {
+        REG_USB_PHY_CTRL_91D1 = 0x02;  /* ack bit 1 */
+        handle_91d1_bit1();
+        return;
+    }
+
+    /* 91D1 bit 2: link reset ack (stock: 0x0f82-0x0f8b) */
+    if (r91d1 & 0x04) {
+        handle_91d1_bit2();  /* handler BEFORE ack for bit 2 */
+        REG_USB_PHY_CTRL_91D1 = 0x04;  /* ack bit 2 */
+    }
+}
+
+/*==========================================================================
+ * USB Bus Reset Handler
+ *
+ * Stock firmware ISR at 0x0e33 handles bus reset via two paths:
+ *
+ * Path 1 (0x0ef4): When 9101 bit 5 set + 9000 bit 0 clear
+ *   - Checks 9096 bit 0 (EP_READY reset flag)
+ *   - Calls 0x5333 which (for normal state) does:
+ *     - Write 0x01 to XDATA[0x0AF1] (state flag)
+ *     - Set bit 0 of 0x9006 (EP0 enable)
+ *     - Set bit 7 of 0x9006 (EP0 ready)
+ *   - Acks by writing 0x01 to 0x9096
+ *
+ * Path 2 (0x0f4a): When 9101 bit 0 set (link event)
+ *   - Reads 91D1 and dispatches on individual bits
+ *   - Each bit handler calls a bank-switched function
+ *   - Acks each bit by writing it back to 91D1
+ *
+ * Our firmware handles both paths here. The previous implementation
+ * was traced from a USB 2.0 enumeration and incorrectly forced
+ * USB 2.0 fallback (REG_BUF_CFG_9300 = SS_FAIL), broke the PHY,
+ * and reset timers/MSC/NVMe — none of which the stock firmware does
+ * on a normal bus reset.
+ *==========================================================================*/
+static void handle_usb_reset(void) {
+    /* EP0 reset sequence (stock firmware 0x5333 → 0x3169 + 0x320d):
+     * 0x3169: write 0x01 to 0x0AF1, then 0x9006 = (0x9006 & 0xFE) | 0x01
+     * 0x320d: 0x9006 = (0x9006 & 0x7F) | 0x80 */
+    G_STATE_FLAG_0AF1 = 0x01;
+    REG_USB_EP0_CONFIG = (REG_USB_EP0_CONFIG & 0xFE) | 0x01;
+    REG_USB_EP0_CONFIG = (REG_USB_EP0_CONFIG & 0x7F) | 0x80;
+
+    /* Ack the EP ready reset flag (stock firmware 0x0f01-0x100f) */
+    REG_USB_EP_READY = 0x01;
+
+    /* Reset software state so re-enumeration works */
+    bulk_out_state = 0;
+    need_cbw_process = 0;
+    need_bulk_init = 0;
+
+    uart_puts("[R]\n");
 }
 
 /*==========================================================================
@@ -811,6 +976,12 @@ void int0_isr(void) __interrupt(0) {
     if (periph_status & USB_PERIPH_LINK_EVENT) {
         handle_link_event();
     }
+
+    /* 91D1 link training dispatch (stock: 0x0f4a-0x0f8e)
+     * Triggered when 9101 bit 0 is set (SS link interrupt).
+     * Must be called to handle U1/U2 power transitions and
+     * link recovery events that keep the SS link alive. */
+    handle_91d1_events();
 
     /* Bus reset (bit 0) without control (bit 1) */
     if ((periph_status & USB_PERIPH_BUS_RESET) && !(periph_status & USB_PERIPH_CONTROL)) {
@@ -870,26 +1041,31 @@ void int0_isr(void) __interrupt(0) {
             need_bulk_init = 1;
             send_zlp_ack();
             uart_puts("[I]\n");
-        } else if (bmReq == 0xA1 && bReq == 0xFE) {
-            /* GET_MAX_LUN -- required for MSC */
-            while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA_IN)) { }
-            DESC_BUF[0] = 0x00;
-            send_descriptor_data(1);
         } else if (bmReq == 0x02 && bReq == 0x01) {
-            /* CLEAR_FEATURE(HALT) on endpoint */
+            /* CLEAR_FEATURE(HALT) on endpoint -- re-arm MSC for CBW */
             send_zlp_ack();
-        } else if (bmReq == 0x21 && bReq == 0xFF) {
-            /* BULK_ONLY_RESET */
-            send_zlp_ack();
+            EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
+            EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
+            REG_USB_MSC_LENGTH = 0x0D;
+            REG_USB_MSC_CTRL = 0x01;
+            {
+                uint8_t ct = REG_USB_MSC_STATUS;
+                REG_USB_MSC_STATUS = ct & ~0x01;
+            }
         } else if (bmReq == 0xC0 && bReq == 0xE4) {
             /* VENDOR READ XDATA via control transfer */
             uint16_t addr = ((uint16_t)wValH << 8) | wValL;
             uint8_t len = REG_USB_SETUP_WLEN_L;
             uint8_t vi;
-            while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA_IN)) { }
-            for (vi = 0; vi < len; vi++)
-                DESC_BUF[vi] = XDATA_REG8(addr + vi);
-            send_descriptor_data(len);
+            uint16_t tw;
+            for (tw = 0; tw < 50000; tw++) {
+                if (REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA_IN) break;
+            }
+            if (tw < 50000) {
+                for (vi = 0; vi < len; vi++)
+                    DESC_BUF[vi] = XDATA_REG8(addr + vi);
+                send_descriptor_data(len);
+            }
         } else if (bmReq == 0x40 && bReq == 0xE5) {
             /* VENDOR WRITE XDATA via control transfer */
             uint16_t addr = ((uint16_t)wValH << 8) | wValL;
@@ -1129,13 +1305,13 @@ void main(void)
 
     uart_puts("[GO]\n");
 
-    TCON = 0x05;  /* IT0=1 (edge-triggered INT0), IT1=1 (edge-triggered INT1) */
+    TCON = 0x04;  /* IT0=0 (level-triggered INT0), IT1=1 (edge-triggered INT1) */
     IE = IE_EA | IE_EX0 | IE_EX1 | IE_ET0;
 
     while (1) {
         REG_CPU_KEEPALIVE = 0x0C;
 
-        /* Poll 9101 for bulk events (avoids edge-triggered ISR issues) */
+        /* Poll 9101 for bulk events */
         poll_bulk_events();
 
         /* Deferred bulk init (too heavy for ISR) */
