@@ -1709,6 +1709,14 @@
 #define REG_BANK_2269           XDATA_REG8(0x2269)  /* Bank register at 0x2269 */
 
 //=============================================================================
+// GPIO (0xC620-0xC638 control, 0xC650-0xC653 input)
+//=============================================================================
+// Control: write 0x00=input(pull-up), 0x02=output LOW, 0x03=output HIGH
+#define REG_GPIO_CTRL(n)        XDATA_REG8(0xC620 + (n))  /* n = 0-27 */
+// Input: read actual pin level regardless of mode
+#define REG_GPIO_INPUT(n)       XDATA_REG8(0xC650 + ((n) >> 3))  /* bit (n & 7) */
+
+//=============================================================================
 // Timeouts (milliseconds)
 //=============================================================================
 #define TIMEOUT_NVME            5000
