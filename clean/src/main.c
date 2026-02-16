@@ -342,14 +342,14 @@ static void handle_cbw(void) {
     } else if (opcode == 0xE4) {
         uint8_t sz = REG_USB_CBWCB_1;
         uint16_t addr = ((uint16_t)REG_USB_CBWCB_3 << 8) | REG_USB_CBWCB_4;
-        if (sz > 4) sz = 4;
-        EP_BUF(0x08) = (sz >= 1) ? XDATA_REG8(addr) : 0x00;
-        EP_BUF(0x09) = (sz >= 2) ? XDATA_REG8(addr + 1) : 0x00;
-        EP_BUF(0x0A) = (sz >= 3) ? XDATA_REG8(addr + 2) : 0x00;
-        EP_BUF(0x0B) = (sz >= 4) ? XDATA_REG8(addr + 3) : 0x00;
-        REG_USB_BULK_DMA_TRIGGER = 0x01;
-        REG_USB_MSC_CTRL = 0x01;
-        REG_USB_MSC_STATUS &= ~0x01;
+        uint8_t i;
+        for (i = 0; i < sz; i++) EP_BUF(i) = XDATA_REG8(addr + i);
+        sw_dma_bulk_in(addr, sz);
+        EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
+        EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
+        EP_BUF(0x04) = cbw_tag[0]; EP_BUF(0x05) = cbw_tag[1];
+        EP_BUF(0x06) = cbw_tag[2]; EP_BUF(0x07) = cbw_tag[3];
+        send_csw(0x00);
     } else if (opcode == 0xE6) {
         uint8_t len = REG_USB_CBWCB_1;
         uint16_t addr = ((uint16_t)REG_USB_CBWCB_3 << 8) | REG_USB_CBWCB_4;
@@ -559,6 +559,36 @@ void timer1_isr(void) __interrupt(3) { }
 void serial_isr(void) __interrupt(4) { }
 void timer2_isr(void) __interrupt(5) { }
 
+/*=== PCIe Tunnel Init (from stock firmware 0xCC83) ===*/
+static void pcie_init(void) {
+    uint8_t tmp;
+
+    /* Clear CPU mode bit 4 (exit NVMe mode) */
+    REG_CPU_MODE_NEXT &= 0xEF;
+
+    /* Pulse B401 bit 0 (tunnel control enable) */
+    REG_PCIE_TUNNEL_CTRL |= PCIE_TUNNEL_ENABLE;
+
+    /* B482: set bit 0, then set high nibble 0xF0 */
+    REG_TUNNEL_ADAPTER_MODE |= 0x01;
+    tmp = REG_TUNNEL_ADAPTER_MODE;
+    REG_TUNNEL_ADAPTER_MODE = (tmp & 0x0F) | 0xF0;
+
+    /* Clear B401 bit 0 */
+    REG_PCIE_TUNNEL_CTRL &= ~PCIE_TUNNEL_ENABLE;
+
+    /* SET B480 BIT 0 = PCIe LINK UP */
+    REG_TUNNEL_LINK_CTRL |= TUNNEL_LINK_UP;
+
+    /* Clear B430 bit 0 */
+    REG_TUNNEL_LINK_STATE &= ~0x01;
+
+    /* Set B298 bit 4 (tunnel enable in TLP config) */
+    REG_PCIE_TUNNEL_CFG |= PCIE_TLP_CTRL_TUNNEL;
+
+    uart_puts("[PCIe]\n");
+}
+
 /*=== Hardware Init (from stock firmware trace) ===*/
 static void hw_init(void) {
     uint8_t i;
@@ -689,6 +719,7 @@ void main(void) {
     uart_puts("\n[BOOT]\n");
 
     hw_init();
+    pcie_init();
 
     uint8_t link = REG_USB_LINK_STATUS;
     is_usb3 = (link >= USB_SPEED_SUPER) ? 1 : 0;

@@ -48,18 +48,19 @@ def e5_write(dev, addr, val):
 
 def e4_read(dev, addr, size=1):
     """Read bytes from an XDATA address via E4 vendor command.
-    Returns bytes from CSW residue (max 4 bytes)."""
-    size = min(size, 4)
+    Returns bytes via bulk IN data phase (up to 255 bytes)."""
+    size = min(size, 255)
     cdb = struct.pack('>BBBBB10x', 0xE4, size, 0x00, (addr >> 8) & 0xFF, addr & 0xFF)
     dev._tag += 1
-    cbw = struct.pack('<IIIBBB', 0x43425355, dev._tag, 0, 0x80, 0, len(cdb)) + cdb + b'\x00' * (16 - len(cdb))
+    cbw = struct.pack('<IIIBBB', 0x43425355, dev._tag, size, 0x80, 0, len(cdb)) + cdb + b'\x00' * (16 - len(cdb))
     dev._bulk_out(dev.ep_data_out, cbw)
+    data = dev._bulk_in(dev.ep_data_in, size, timeout=2000)
     csw = dev._bulk_in(dev.ep_data_in, 13, timeout=2000)
     sig, rtag, residue, status = struct.unpack('<IIIB', csw)
     assert sig == 0x53425355, f"Bad CSW sig 0x{sig:08X}"
     assert rtag == dev._tag, f"CSW tag mismatch"
     assert status == 0, f"CSW status {status}"
-    return bytes([(residue >> (i * 8)) & 0xFF for i in range(size)])
+    return data
 
 def e6_bulk_in(dev, addr, length=64):
     """Bulk IN: read length bytes from XDATA[addr] via E6 data phase."""
@@ -216,6 +217,54 @@ def test_bulk_stress(dev):
         assert verify_match(pattern, data, f"round={r}"), f"Stress round {r} failed"
     return True
 
+def test_pcie_cfg_read(dev):
+    """PCIe config read bus 0 dev 0 — should return VID/PID"""
+    # CfgRd0: fmt_type=0x04, address = (bus<<24)|(dev<<19)|(fn<<16)|byte_addr
+    bus, device, fn, byte_addr = 0, 0, 0, 0  # Read VID/PID at offset 0
+    address = (bus << 24) | (device << 19) | (fn << 16) | (byte_addr & 0xFFF)
+
+    # Write address (big-endian 32-bit to B218-B21B)
+    e5_write(dev, 0xB218, (address >> 24) & 0xFF)
+    e5_write(dev, 0xB219, (address >> 16) & 0xFF)
+    e5_write(dev, 0xB21A, (address >> 8) & 0xFF)
+    e5_write(dev, 0xB21B, address & 0xFF)
+    # Address high = 0
+    e5_write(dev, 0xB21C, 0x00)
+    e5_write(dev, 0xB21D, 0x00)
+    e5_write(dev, 0xB21E, 0x00)
+    e5_write(dev, 0xB21F, 0x00)
+    # Byte enable = 0x0F (all 4 bytes)
+    e5_write(dev, 0xB217, 0x0F)
+    # Format/Type = CfgRd0
+    e5_write(dev, 0xB210, 0x04)
+    # Trigger
+    e5_write(dev, 0xB254, 0x0F)
+    e5_write(dev, 0xB296, 0x04)
+
+    # Poll B296 for completion (bit 1)
+    for _ in range(50):
+        stat = e4_read(dev, 0xB296, 1)[0]
+        if stat & 0x02:
+            break
+        if stat & 0x01:
+            print(f"  TLP error (B296=0x{stat:02X}), retrying...")
+            e5_write(dev, 0xB296, 0x01)
+            time.sleep(0.01)
+    else:
+        print(f"  TIMEOUT: B296=0x{stat:02X}")
+        return False
+
+    # Read result from B220 (4 bytes, big-endian)
+    result_bytes = e4_read(dev, 0xB220, 4)
+    result = struct.unpack('>I', result_bytes)[0]
+    vid = result & 0xFFFF
+    pid = (result >> 16) & 0xFFFF
+    print(f"  Bus 0 VID:PID = {vid:04X}:{pid:04X}")
+    # We expect the ASMedia bridge: 1B21:6424 (or similar)
+    assert vid != 0xFFFF, f"Got FFFF — no device present or link not up"
+    assert vid != 0x0000, f"Got 0000 — TLP completion data invalid"
+    return True
+
 # ============================================================
 # Runner
 # ============================================================
@@ -234,6 +283,7 @@ TESTS = [
     ("Bulk sizes",         test_bulk_sizes),
     ("Bulk addresses",     test_bulk_addresses),
     ("Bulk stress x20",    test_bulk_stress),
+    ("PCIe cfg read",      test_pcie_cfg_read),
 ]
 
 def main():
