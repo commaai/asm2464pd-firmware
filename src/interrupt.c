@@ -478,7 +478,7 @@ void isr_buffer_handler_17db(uint8_t param)
     I_WORK_38 = REG_NVME_CMD_STATUS_C47A;
 
     /* Write to CE88 */
-    REG_XFER_CTRL_CE88 = I_WORK_38;
+    REG_BULK_DMA_HANDSHAKE = I_WORK_38;
 
     /* Poll CE89 bit 0 until set */
     while (!(REG_USB_DMA_STATE & 0x01)) {
@@ -770,9 +770,9 @@ peripheral_handler:
     status = REG_USB_PHY_CTRL_91D1;
 
     /* 0x0F55: Check bit 3 */
-    if (status & USB_PHY_CTRL_BIT3) {
+    if (status & USB_91D1_POWER_MGMT) {
         /* 0x0F58: Write 0x08 to 0x91D1 to clear */
-        REG_USB_PHY_CTRL_91D1 = USB_PHY_CTRL_BIT3;
+        REG_USB_PHY_CTRL_91D1 = USB_91D1_POWER_MGMT;
         /* 0x0F5B: Call dispatch_0345 */
         dispatch_0345();
     }
@@ -781,9 +781,9 @@ peripheral_handler:
     status = REG_USB_PHY_CTRL_91D1;
 
     /* 0x0F62: Check bit 0 */
-    if (status & USB_PHY_CTRL_BIT0) {
+    if (status & USB_91D1_LINK_TRAIN) {
         /* 0x0F65: Write 0x01 to 0x91D1 to clear */
-        REG_USB_PHY_CTRL_91D1 = USB_PHY_CTRL_BIT0;
+        REG_USB_PHY_CTRL_91D1 = USB_91D1_LINK_TRAIN;
         /* 0x0F68: Call dispatch_034a */
         dispatch_034a();
         goto usb_master_handler;
@@ -793,9 +793,9 @@ peripheral_handler:
     status = REG_USB_PHY_CTRL_91D1;
 
     /* 0x0F72: Check bit 1 */
-    if (status & USB_PHY_CTRL_BIT1) {
+    if (status & USB_91D1_FLAG) {
         /* 0x0F75: Write 0x02 to 0x91D1 to clear */
-        REG_USB_PHY_CTRL_91D1 = USB_PHY_CTRL_BIT1;
+        REG_USB_PHY_CTRL_91D1 = USB_91D1_FLAG;
         /* 0x0F78: Call dispatch_034f */
         dispatch_034f();
         goto usb_master_handler;
@@ -805,7 +805,7 @@ peripheral_handler:
     status = REG_USB_PHY_CTRL_91D1;
 
     /* 0x0F82: Check bit 2 */
-    if (!(status & USB_PHY_CTRL_BIT2)) {
+    if (!(status & USB_91D1_LINK_RESET)) {
         goto usb_master_handler;
     }
 

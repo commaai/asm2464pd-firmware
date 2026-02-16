@@ -179,20 +179,21 @@
  */
 
 /*
- * Core USB Status (0x9000)
- * Controls USB endpoint direction and bulk transfer readiness.
+ * Core USB Status (0x9000) — READ-ONLY hardware status register
  *
- * 9000 = 0x00: Accept bulk OUT (CBW reception). DEFAULT after Phase 11.
- *              MSC engine only accepts incoming CBWs when 9000 = 0x00.
+ * WARNING: Writing to this register BREAKS DMA transfers!
+ * All 0x9000 writes have been removed from CBW handlers.
  *
- * 9000 = 0x01: USB active for bulk IN. SET before sending data/CSW.
- *              Required for 90A1 DMA trigger and C42C MSC engine.
- *              MUST be restored to 0x00 after sending, or CBWs stop.
+ * Bit 0: Data path status — set by hardware when bulk OUT data is
+ *        in USB FIFO awaiting SW/NVMe DMA extraction.
+ *        Stock firmware checks this at 0x3427: if set → call dispatch_0206.
+ *        If clear → data went elsewhere (e.g., flash controller DMA).
  *
- * Pattern in CBW handler: 9000=0x01 → send data → send CSW → 9000=0x00.
+ * Read-modify-writeback is OK during init (SET_CONFIG, do_bulk_init)
+ * but NEVER write specific values during runtime transfer handling.
  */
 #define REG_USB_STATUS          XDATA_REG8(0x9000)
-#define   USB_STATUS_ACTIVE       0x01  // Bit 0: USB active / bulk IN mode
+#define   USB_STATUS_DMA_READY    0x01  // Bit 0: Data in FIFO for DMA (read-only)
 #define   USB_STATUS_BIT2         0x04  // Bit 2: USB status flag
 #define   USB_STATUS_INDICATOR    0x10  // Bit 4: USB status indicator
 #define   USB_STATUS_CONNECTED    0x80  // Bit 7: USB cable connected
@@ -244,17 +245,37 @@
 #define REG_USB_MODE_VAL_9019   XDATA_REG8(0x9019)
 /*
  * USB MSC Transfer Length (0x901A)
- * Set before C42C or 90A1 trigger to specify transfer size.
+ * Controls transfer size for C42C, 90A1, and 90E1 paths.
  *
- * For C42C path: set to data_len (e.g. 0x0D for 13-byte CSW).
- * For 90A1 path: set to 0x10 + data_len (16-byte header + payload).
+ * Default: 0x0D (13 bytes for CSW). Restore after SW DMA transfers.
+ *
+ * For C42C path: always 0x0D (13-byte CSW, hardware uses internal buffer).
+ * For SW DMA IN (C8D4=0xA0 + 90A1): set to actual data length (max 255).
+ *   90A1 sends this many bytes from 905B:905C address to host.
+ * For SW DMA OUT: NOT explicitly set by stock firmware's dispatch_0206.
+ *   May not control receive length (hardware uses CBW transfer length).
+ * For NVMe DMA: set by dispatch_0206 NVMe path at 0x02E4.
  */
 #define REG_USB_MSC_LENGTH      XDATA_REG8(0x901A)
 
 // USB endpoint registers (0x905A-0x90FF)
-#define REG_USB_EP_CFG_905A     XDATA_REG8(0x905A)  /* USB endpoint config */
-#define REG_USB_EP_BUF_HI       XDATA_REG8(0x905B)  /* DMA source address high (descriptor ROM) */
-#define REG_USB_EP_BUF_LO       XDATA_REG8(0x905C)  /* DMA source address low (descriptor ROM) */
+/*
+ * Software DMA EP config (0x905A)
+ * Written before 90E1 trigger in dispatch_0206 software path.
+ * Sets the direction for the SW DMA engine.
+ * 0x10 = bulk IN (DMA from XDATA to USB host)
+ * 0x08 = bulk OUT (DMA from USB FIFO to XDATA)
+ */
+#define REG_USB_EP_CFG_905A     XDATA_REG8(0x905A)
+#define   USB_EP_CFG_BULK_IN      0x10  // Bulk IN (send data to host)
+#define   USB_EP_CFG_BULK_OUT     0x08  // Bulk OUT (receive data from host)
+/*
+ * Software DMA buffer address (0x905B:905C)
+ * Source address for bulk IN, dest address for bulk OUT.
+ * Set from XDATA[0x0056:0x0057] in dispatch_0206 software path.
+ */
+#define REG_USB_EP_BUF_HI       XDATA_REG8(0x905B)
+#define REG_USB_EP_BUF_LO       XDATA_REG8(0x905C)
 #define REG_USB_EP_CTRL_905D    XDATA_REG8(0x905D)  /* USB endpoint control 1 */
 #define REG_USB_EP_MGMT         XDATA_REG8(0x905E)
 #define REG_USB_EP_CTRL_905F    XDATA_REG8(0x905F)  /* USB endpoint control 2 */
@@ -339,28 +360,30 @@
  * USB Endpoint Config 1 (0x9093)
  * Controls endpoint transfer mode and triggers bulk operations.
  *
- * ISR bit handlers (when bit is set):
+ * Read: current endpoint state (ISR checks bits to dispatch handlers)
  *   Bit 0: Calls cleanup (0x54b4 -> 0x3169, 0x320d)
- *   Bit 1: Bulk data complete - calls 0x32e4
+ *   Bit 1: Bulk data complete - calls 0x32e4 (BULK_DATA handler)
  *   Bit 2: Calls cleanup (same as bit 0)
  *   Bit 3: State machine handler - calls 0x4d3e
  *
- * Values written by firmware:
- *   0x08: Bulk transfer mode (with 0x9094=0x02) - at 0x529c, 0x1cca
- *   0x02: Interrupt transfer mode (with 0x9094=0x10) - at 0x1cd5
- *   0x04: Event handler default action - at 0x1009
- *   0x02: Clear bit 1 after ISR - at 0x0fac
+ * Write: arm/ack endpoint
+ *   Arm bulk IN:  9093=0x08, 9094=0x02 (at 0x1CCA from main loop)
+ *   Arm bulk OUT: 9093=0x02, 9094=0x10 (at 0x1CD5/0x32A6 from main loop)
+ *     CRITICAL: Must be set from main loop, NOT from within CBW handler!
+ *     The MSC engine needs the CBW handler to return before it transitions
+ *     to the data-ready state. Arming inside handle_cbw → BULK_DATA never fires.
+ *   Ack bulk done: 9093=0x02 (at 0x0FAC, after BULK_DATA fires in ISR)
  */
 #define REG_USB_EP_CFG1         XDATA_REG8(0x9093)
 #define   USB_EP_CFG1_CLEANUP     0x01  // Bit 0: Cleanup pending
-#define   USB_EP_CFG1_BULK_DONE   0x02  // Bit 1: Bulk transfer complete
+#define   USB_EP_CFG1_BULK_DONE   0x02  // Bit 1: Bulk data complete / ack
 #define   USB_EP_CFG1_CLEANUP2    0x04  // Bit 2: Cleanup pending (alt)
 #define   USB_EP_CFG1_STATE_MACH  0x08  // Bit 3: State machine event
-#define   USB_EP_CFG1_BULK_MODE   0x08  // Write: Configure bulk transfer mode
-#define   USB_EP_CFG1_INT_MODE    0x02  // Write: Configure interrupt mode
+#define   USB_EP_CFG1_ARM_IN      0x08  // Write: Arm bulk IN endpoint
+#define   USB_EP_CFG1_ARM_OUT     0x02  // Write: Arm bulk OUT endpoint / ack
 #define REG_USB_EP_CFG2         XDATA_REG8(0x9094)
-#define   USB_EP_CFG2_BULK_MODE   0x02  // Write with CFG1=0x08 for bulk mode
-#define   USB_EP_CFG2_INT_MODE    0x10  // Write with CFG1=0x02 for int mode
+#define   USB_EP_CFG2_ARM_IN      0x02  // Write with CFG1=0x08 to arm bulk IN
+#define   USB_EP_CFG2_ARM_OUT     0x10  // Write with CFG1=0x02 to arm bulk OUT
 /*
  * USB Endpoint Ready/Status Masks (0x9096-0x909E)
  * These 9 registers (0x9096-0x909E) control endpoint ready state.
@@ -383,23 +406,43 @@
 #define REG_USB_CTRL_90A0       XDATA_REG8(0x90A0)  /* Bulk strobe (auto-clears after write) */
 /*
  * Bulk DMA Trigger (0x90A1)
- * Write 0x01 to send bulk IN data via NVMe-USB DMA bridge.
- * Data at D800+ (header at D800-D80F, payload at D810+).
- * Length in 0x901A = 0x10 + data_len.
+ * Write 0x01 to trigger bulk data transfer.
  *
- * REQUIRES: C471=0x01 (NVMe queue busy), B480=0x01 (PCIe link up).
- * Without NVMe device, C471 writes don't stick → 90A1 not consumed.
- * Without PCIe device, B480=0x00 → trigger consumed but no USB packet.
+ * Behavior depends on C8D4 (DMA config):
+ *   C8D4=0x00 (NVMe mode): sends from NVMe DMA registers. 901A=0x0D for CSW.
+ *     REQUIRES: C471=0x01 (NVMe queue busy), B480=0x01 (PCIe link up).
+ *   C8D4=0xA0 (SW DMA mode): sends from 905B:905C address. 901A=data_len.
+ *     Proven working for bulk IN: 90E1 sets up source, 90A1 triggers send.
+ *     For bulk OUT: stock firmware does NOT write 90A1 in dispatch_0206
+ *       SW DMA path — only 90E1 is used. 90A1 is written at 0x3261 inside
+ *       the CSW send function (0x3258), AFTER data has been received.
  *
+ * EP completion fires 9101 bit 5 (0x20) when host completes the read.
  * On success: reads back 0x00 (consumed). On failure: stays 0x01.
- * EP completion fires 9101 bit 5 (0x20) when USB packet sent.
- *
- * Used by stock firmware on USB 2.0 with NVMe. Not usable with GPU only.
  */
 #define REG_USB_BULK_DMA_TRIGGER XDATA_REG8(0x90A1)
-#define REG_USB_SIGNAL_90A1     XDATA_REG8(0x90A1)  /* Alias for bulk DMA trigger */
 #define REG_USB_SPEED           XDATA_REG8(0x90E0)
 #define   USB_SPEED_MASK         0x03  // Bits 0-1: USB speed mode
+/*
+ * Software DMA Trigger (0x90E1)
+ * Used by dispatch_0206 software path to set up SW DMA transfer.
+ * Write 0x01 to trigger (via 0x3288: writes 0x01, clears C509 bit 0).
+ *
+ * For bulk IN: set 905A=0x10 first. 90E1 sets up DMA source at 905B:905C.
+ *   Does NOT send data by itself — 90A1=0x01 is needed to actually trigger.
+ * For bulk OUT: set 905A=0x08 first. 90E1 should set up DMA destination.
+ *   Stock firmware does NOT write 90A1 after 90E1 for OUT direction.
+ *   Data should move from USB FIFO to XDATA[905B:905C] address.
+ *
+ * Prerequisites before writing 90E1:
+ *   C8D4 = 0xA0 (SW DMA mode enabled)
+ *   905B:905C = DMA buffer address (source for IN, dest for OUT)
+ *   D800 = 0x03 (IN) or 0x04 (OUT) — direction
+ *   D802:D803 = same address as 905B:905C
+ *   905A = 0x10 (IN) or 0x08 (OUT) — EP config
+ *   C509 bit 0 set (pre-trigger, cleared by 0x3288 after 90E1 write)
+ */
+#define REG_USB_SW_DMA_TRIGGER  XDATA_REG8(0x90E1)
 /*
  * USB Mode / EP Control (0x90E2)
  * Read-modify-writeback in CBW handler. Controls endpoint mode.
@@ -420,22 +463,34 @@
 #define   USB_SPEED_SUPER_PLUS    0x03  // SuperSpeed+ (USB 3.1+, 10+ Gbps)
 
 /*
- * USB Interrupt/Event Status (0x9101)
- * Controls which USB handler path is taken in ISR.
- * Different bits trigger different code paths in the interrupt handler.
- * Read in ISR to determine event type, then dispatch accordingly.
+ * USB Peripheral Status (0x9101) — READ-ONLY STATUS REGISTER
+ *
+ * IMPORTANT: These bits REFLECT CURRENT STATE, they are NOT write-1-to-clear
+ * event flags. The bits stay asserted as long as the condition exists.
+ * This means if the ISR returns with bits still set (e.g., incomplete control
+ * transfer during libusb_close), the bits remain asserted and will re-trigger
+ * on the next interrupt (if using level-triggered INT0).
+ *
+ * Stock firmware ISR at 0x0e33 reads this register and dispatches:
+ *   Bit 5 (EP_COMPLETE) → checks 9118 for EP status (table dispatch)
+ *   Bit 3 (BULK_REQ) → reads 9301/9302 for bulk request handling
+ *   Bit 0 (without bit 1) → bus reset handler at 0x0ef4
+ *   Bit 0 (BUS_RESET) → 91D1 dispatch at 0x0f4a
+ *   Bit 4 (LINK_EVENT) → 9300 link status check
  *
  * Verified bit meanings from firmware and trace analysis:
- *   0x01 = Bus reset (when NOT combined with 0x02)
+ *   0x01 = Bus reset / 91D1 events pending (when NOT combined with 0x02)
  *   0x02 = Setup/control packet received (EP0)
- *   0x08 = Unknown (seen in USB 3.0 flash_usb3 trace)
+ *   0x04 = Bulk OUT data available in FIFO
+ *   0x08 = Bulk transfer request (9301/9302 handling)
  *   0x10 = Link event (USB 3.0→2.0 transition, cable state)
- *   0x20 = Bulk EP completion (IN transfer done, time to send CSW)
+ *   0x20 = Bulk EP completion (IN transfer done)
  *   0x40 = CBW received (bulk OUT, SCSI command ready at 0x912A+)
  */
 #define REG_USB_PERIPH_STATUS   XDATA_REG8(0x9101)
 #define   USB_PERIPH_BUS_RESET    0x01  // Bit 0: Bus reset (without bit 1)
 #define   USB_PERIPH_CONTROL      0x02  // Bit 1: Setup/control packet (EP0)
+#define   USB_PERIPH_BULK_DATA    0x04  // Bit 2: Bulk OUT data available
 #define   USB_PERIPH_BULK_REQ     0x08  // Bit 3: Bulk transfer request (USB 3.0)
 #define   USB_PERIPH_LINK_EVENT   0x10  // Bit 4: Link event (speed change, cable)
 #define   USB_PERIPH_EP_COMPLETE  0x20  // Bit 5: Bulk EP completion (IN done)
@@ -463,7 +518,7 @@
 #define REG_USB_SETUP_WLEN_L    XDATA_REG8(0x910A)  /* wLength low */
 #define REG_USB_SETUP_WLEN_H    XDATA_REG8(0x910B)  /* wLength high */
 
-#define REG_USB_PHY_STATUS_9105 XDATA_REG8(0x9105)  /* USB PHY status check (0xFF = active) - alias for SETUP_BREQ */
+
 #define REG_USB_STAT_EXT_L      XDATA_REG8(0x910D)
 #define REG_USB_STAT_EXT_H      XDATA_REG8(0x910E)
 /*
@@ -528,16 +583,40 @@
 #define REG_USB_EP_CTRL_9220    XDATA_REG8(0x9220)  /* EP control (read in setup phase) */
 
 // USB PHY registers (0x91C0-0x91FF)
+/*
+ * USB PHY Status (0x91C0) — Link state indicators
+ *   Bit 1: Link up indicator. Checked during 91D1 bit 0 recovery handler
+ *          at 0xc465. If clear → link is down → writes E710 and clears CC3B bit 1.
+ */
 #define REG_USB_PHY_CTRL_91C0   XDATA_REG8(0x91C0)
-#define   USB_PHY_CTRL_BIT1       0x02  // Bit 1: USB PHY ready/enable
+#define   USB_PHY_91C0_LINK_UP    0x02  // Bit 1: SS link up (checked in 91D1 bit 0 handler)
 #define REG_USB_PHY_CTRL_91C1   XDATA_REG8(0x91C1)
 #define REG_USB_PHY_CTRL_91C3   XDATA_REG8(0x91C3)
 #define REG_USB_EP_CTRL_91D0    XDATA_REG8(0x91D0)
+/*
+ * USB SS Link Event Register (0x91D1) — WRITE-1-TO-CLEAR
+ *
+ * Each bit signals a link-layer event. Stock firmware ISR at 0x0f4a
+ * dispatches on individual bits in priority order: bit 3 > 0 > 1 > 2.
+ * Ack each bit by writing its mask back (write-1-to-clear).
+ * Bit 2 handler is called BEFORE ack; all others AFTER ack.
+ *
+ * Without handling these events, the SS link dies after 30-75s idle.
+ * Init: hw_init writes 0x0F to clear all pending events.
+ *
+ * Stock firmware dispatch addresses:
+ *   Bit 3 → 0x9b95 (power management / U1/U2 transitions)
+ *   Bit 0 → 0xc465 (link training/recovery, calls bda4 state reset)
+ *   Bit 1 → 0xe6aa (simple: sets 0x0A7D=0, 0x0B2E=1)
+ *   Bit 2 → 0xe682 (link reset ack: C6A8|=1, clears 0x0B2E, 0x07E8)
+ */
 #define REG_USB_PHY_CTRL_91D1   XDATA_REG8(0x91D1)
-#define   USB_PHY_CTRL_BIT0      0x01  // Bit 0: PHY control flag 0
-#define   USB_PHY_CTRL_BIT1      0x02  // Bit 1: PHY control flag 1
-#define   USB_PHY_CTRL_BIT2      0x04  // Bit 2: PHY control flag 2
-#define   USB_PHY_CTRL_BIT3      0x08  // Bit 3: PHY control flag 3
+#define   USB_91D1_LINK_TRAIN     0x01  // Bit 0: Link training/recovery (→ bda4 state reset)
+#define   USB_91D1_FLAG           0x02  // Bit 1: Link flag (sets G_EP_DISPATCH_VAL3=0, G_USB_TRANSFER_FLAG=1)
+#define   USB_91D1_LINK_RESET     0x04  // Bit 2: Link reset ack (C6A8|=1, clears flags)
+#define   USB_91D1_POWER_MGMT     0x08  // Bit 3: Power management U1/U2 entry (CC3B&=~2, TLP_BASE_LO=1)
+#define   USB_91D1_ALL            0x0F  // All event bits (for init clear)
+
 
 // USB control registers (0x9200-0x92BF)
 #define REG_USB_CTRL_9200       XDATA_REG8(0x9200)  /* USB control base */
@@ -577,9 +656,15 @@
 #define REG_POWER_ENABLE        XDATA_REG8(0x92C0)
 #define   POWER_ENABLE_BIT        0x01  // Bit 0: Main power enable
 #define   POWER_ENABLE_MAIN       0x80  // Bit 7: Main power on
+/*
+ * Clock Enable / PHY Clock Control (0x92C1)
+ * Bit 4 toggled (set then clear) in full 91D1 bit 3 handler during
+ * PHY clock recovery after 92CF sequence.
+ */
 #define REG_CLOCK_ENABLE        XDATA_REG8(0x92C1)
 #define   CLOCK_ENABLE_BIT        0x01  // Bit 0: Clock enable
 #define   CLOCK_ENABLE_BIT1       0x02  // Bit 1: Secondary clock
+#define   CLOCK_ENABLE_PHY_TOGGLE 0x10  // Bit 4: PHY clock toggle (in 91D1 bit 3 handler)
 #define REG_POWER_STATUS        XDATA_REG8(0x92C2)
 #define   POWER_STATUS_READY      0x02  // Bit 1: Power ready
 #define   POWER_STATUS_USB_PATH   0x40  // Bit 6: Controls ISR/main loop USB path
@@ -588,19 +673,39 @@
 #define   PHY_POWER_ENABLE        0x04  // Bit 2: PHY power enable
 #define REG_POWER_CTRL_92C6     XDATA_REG8(0x92C6)
 #define REG_POWER_CTRL_92C7     XDATA_REG8(0x92C7)
+/*
+ * Power/PHY Control (0x92C8) — Link training PHY config
+ *   Bits 0-1 cleared in bda4 state reset (91D1 bit 0 handler).
+ *   Written 0x24 during hw_init.
+ *   Stock sequence at 0xc465: 92C8 &= ~0x01; 92C8 &= ~0x02.
+ */
 #define REG_POWER_CTRL_92C8     XDATA_REG8(0x92C8)
+#define   POWER_CTRL_92C8_BIT0    0x01  // Bit 0: Cleared in link training recovery
+#define   POWER_CTRL_92C8_BIT1    0x02  // Bit 1: Cleared in link training recovery
 #define REG_POWER_DOMAIN        XDATA_REG8(0x92E0)
 #define   POWER_DOMAIN_BIT1       0x02  // Bit 1: Power domain control
 #define REG_POWER_EVENT_92E1    XDATA_REG8(0x92E1)  // Power event register
-#define REG_CLOCK_CTRL_92CF     XDATA_REG8(0x92CF)  /* Clock control (0x00→0x04→0x07→0x03 in reset) */
+/*
+ * Clock Recovery Control (0x92CF)
+ * Used in full 91D1 bit 3 handler (0x9b95) for PHY clock recovery
+ * during U1/U2 power state transitions. Sequence: 0x00→0x04→0x07→0x03.
+ * Also involves 92C1 bit 4 toggle and E712 polling for completion.
+ */
+#define REG_CLOCK_CTRL_92CF     XDATA_REG8(0x92CF)
 #define REG_POWER_STATUS_92F7   XDATA_REG8(0x92F7)  // Power status (high nibble = state)
 #define REG_POWER_STATUS_92F8   XDATA_REG8(0x92F8)  /* Power status (read in reset/SET_ADDRESS) */
-#define REG_POWER_POLL_92FB     XDATA_REG8(0x92FB)  /* Power poll (read during reset 91D1 polling) */
+/*
+ * Link Status Poll (0x92FB)
+ * Read in full 91D1 bit 3 handler. Value 0x01 triggers link recovery
+ * sequence with timeout loops. Part of U1/U2 power management.
+ */
+#define REG_POWER_POLL_92FB     XDATA_REG8(0x92FB)
 
 // Buffer config registers (0x9300-0x93FF)
 #define REG_BUF_CFG_9300        XDATA_REG8(0x9300)
+#define   BUF_CFG_9300_SS_OK      0x02  // Bit 1: USB 3.0 link established (empirically verified)
 #define   BUF_CFG_9300_SS_FAIL    0x04  // Bit 2: USB 3.0 link failed, fall back to 2.0
-#define   BUF_CFG_9300_SS_OK      0x08  // Bit 3: USB 3.0 link established
+#define   BUF_CFG_9300_SS_EVENT   0x08  // Bit 3: SS link event (checked at 0x10b2 after 91D1 dispatch)
 #define REG_BUF_CFG_9301        XDATA_REG8(0x9301)
 #define   BUF_CFG_9301_BIT6      0x40  // Bit 6: Buffer config flag
 #define   BUF_CFG_9301_BIT7      0x80  // Bit 7: Buffer config flag
@@ -648,7 +753,6 @@
 #define REG_PCIE_TLP_CTRL       XDATA_REG8(0xB213)
 #define REG_PCIE_TLP_LENGTH     XDATA_REG8(0xB216)
 #define REG_PCIE_BYTE_EN        XDATA_REG8(0xB217)
-// REG_PCIE_B217 removed (alias)
 #define REG_PCIE_ADDR_0         XDATA_REG8(0xB218)
 #define REG_PCIE_ADDR_1         XDATA_REG8(0xB219)
 #define REG_PCIE_ADDR_2         XDATA_REG8(0xB21A)
@@ -735,7 +839,7 @@
 #define REG_POWER_CTRL_B432     XDATA_REG8(0xB432)  // Power control for lanes
 #define REG_PCIE_LINK_STATE     XDATA_REG8(0xB434)  // PCIe link state (low nibble = lane mask)
 #define REG_POWER_CTRL_B455     XDATA_REG8(0xB455)  /* Power control */
-#define REG_POWER_LANE_B404     REG_PCIE_LINK_PARAM_B404  // Alias for power lane config
+
 #define   PCIE_LINK_STATE_MASK    0x0F  // Bits 0-3: PCIe link state/lane mask
 #define REG_PCIE_LANE_CONFIG    XDATA_REG8(0xB436)  // PCIe lane configuration
 #define   PCIE_LANE_CFG_LO_MASK   0x0F  // Bits 0-3: Low config
@@ -809,6 +913,7 @@
 #define REG_PHY_CTRL            XDATA_REG8(0xC205)
 #define REG_PHY_LINK_CTRL_C208  XDATA_REG8(0xC208)
 #define REG_PHY_LINK_CONFIG_C20C XDATA_REG8(0xC20C)
+#define REG_PHY_CTRL_C20F       XDATA_REG8(0xC20F)  /* PHY control (cleared during U1/U2 entry, restored to 0xC8) */
 #define REG_PHY_CONFIG          XDATA_REG8(0xC233)
 #define   PHY_CONFIG_MODE_MASK    0x03  // Bits 0-1: PHY config mode
 #define REG_PHY_STATUS          XDATA_REG8(0xC284)
@@ -967,11 +1072,12 @@
 #define REG_NVME_PARAM_C4EA     XDATA_REG8(0xC4EA)  // NVMe parameter storage
 #define REG_NVME_PARAM_C4EB     XDATA_REG8(0xC4EB)  // NVMe parameter storage high
 /*
- * NVMe Transfer Control (0xC509)
- * Set/clear bit 0 around 90A1 DMA trigger.
- * Pre-trigger: C509 |= 0x01. Post-trigger: C509 &= ~0x01.
+ * Transfer Control (0xC509)
+ * Used by both NVMe and software DMA paths in dispatch_0206.
+ * Pre-trigger: C509 = (C509 & 0xFE) | 0x01 (set bit 0, via 0x3172)
+ * Post-trigger: C509 &= 0xFE (clear bit 0, via 0x3288)
  */
-#define REG_NVME_XFER_CTRL_C509 XDATA_REG8(0xC509) /* Set bit 0 before 90A1 trigger */
+#define REG_XFER_CTRL_C509      XDATA_REG8(0xC509)
 #define REG_NVME_BUF_CFG        XDATA_REG8(0xC508)  // NVMe buffer configuration
 #define   NVME_BUF_CFG_MASK_LO   0x3F  // Bits 0-5: Buffer index
 #define   NVME_BUF_CFG_MASK_HI   0xC0  // Bits 6-7: Buffer mode
@@ -1002,7 +1108,13 @@
 #define REG_PHY_EXT_B3          XDATA_REG8(0xC6B3)
 #define   PHY_EXT_LINK_READY      0x30  // Bits 4,5: Link ready status
 #define REG_PHY_LINK_CTRL_BD    XDATA_REG8(0xC6BD)  /* PHY link control (bit 0 = enable) */
-#define REG_PHY_CFG_C6A8        XDATA_REG8(0xC6A8)  /* PHY config (bit 0 = enable) */
+/*
+ * PHY Config (0xC6A8) — Link state control
+ * Bit 0 set (|= 0x01) in bda4 state reset, called by both
+ * 91D1 bit 0 (link training) and bit 2 (link reset ack) handlers.
+ */
+#define REG_PHY_CFG_C6A8        XDATA_REG8(0xC6A8)
+#define   PHY_CFG_C6A8_ENABLE     0x01  // Bit 0: PHY link state enable
 #define REG_PHY_VENDOR_CTRL_C6DB XDATA_REG8(0xC6DB) /* PHY vendor control (bit 2 = status) */
 #define   PHY_VENDOR_CTRL_C6DB_BIT2 0x04            /* Bit 2: Vendor status flag */
 
@@ -1016,11 +1128,28 @@
 #define   INT_ENABLE_USB          0x02  // Bit 1: USB interrupt enable
 #define   INT_ENABLE_PCIE         0x04  // Bit 2: PCIe interrupt enable
 #define   INT_ENABLE_SYSTEM       0x10  // Bit 4: System interrupt enable
-#define REG_INT_USB_STATUS      XDATA_REG8(0xC802)  /* USB interrupt status */
-#define   INT_USB_MASTER          0x01  // Bit 0: USB master interrupt
-#define   INT_USB_NVME_QUEUE      0x04  // Bit 2: NVMe queue processing
-#define REG_INT_AUX_STATUS      XDATA_REG8(0xC805)  /* Auxiliary interrupt status */
-#define   INT_AUX_ENABLE          0x02  // Bit 1: Auxiliary enable
+/*
+ * USB Interrupt Gate (0xC802) — ISR dispatch control
+ *
+ * Stock firmware ISR at 0x0e33 checks bit 0 as a gate condition before
+ * processing any USB events. Our firmware skips this check.
+ *
+ * Bit 2: Control transfer processing pending. Stock ISR exit at 0x10e5
+ *        checks this bit and if set, enters a loop reading C471 up to
+ *        32 times for control transfer completion polling.
+ */
+#define REG_INT_USB_STATUS      XDATA_REG8(0xC802)  /* USB interrupt gate/status */
+#define   INT_USB_GATE            0x01  // Bit 0: ISR gate (stock checks before processing)
+#define   INT_USB_CTRL_PENDING    0x04  // Bit 2: Control transfer processing (C471 poll loop)
+/*
+ * Auxiliary/DMA Mode Status (0xC805)
+ * Also used for DMA mode configuration before bulk OUT data handling.
+ * Stock firmware at 0x32BF: C805 = (C805 & 0xF9) | 0x02 before ALL
+ * bulk OUT data handlers (E1 flash write, SCSI writes, etc.)
+ * This configures the DMA path for receiving bulk data.
+ */
+#define REG_INT_AUX_STATUS      XDATA_REG8(0xC805)
+#define   INT_AUX_ENABLE          0x02  // Bit 1: DMA mode / auxiliary enable
 #define   INT_AUX_STATUS          0x04  // Bit 2: Auxiliary status
 #define REG_INT_SYSTEM          XDATA_REG8(0xC806)  /* System interrupt status */
 #define   INT_SYSTEM_EVENT        0x01  // Bit 0: System event interrupt
@@ -1095,11 +1224,13 @@
 #define   DMA_TRIGGER_START       0x01  // Bit 0: Trigger transfer
 /*
  * DMA Config (0xC8D4)
- * Write 0x80 to enable DMA before 90A1 trigger.
- * Write 0x00 to disable DMA after trigger completes.
+ * 0xA0 = software DMA mode (used by dispatch_0206 software path)
+ * 0x80 | param = NVMe DMA mode (param_2 | 0x80)
+ * 0x00 = disable DMA (cleanup after transfer)
  */
 #define REG_DMA_CONFIG          XDATA_REG8(0xC8D4)
-#define   DMA_CONFIG_ENABLE       0x80  // Enable DMA engine
+#define   DMA_CONFIG_SW_MODE      0xA0  // Software DMA mode (no NVMe)
+#define   DMA_CONFIG_ENABLE       0x80  // Enable DMA engine (NVMe path)
 #define   DMA_CONFIG_DISABLE      0x00  // Disable DMA engine
 #define REG_DMA_QUEUE_IDX       XDATA_REG8(0xC8D5)
 #define REG_DMA_STATUS          XDATA_REG8(0xC8D6)
@@ -1174,9 +1305,16 @@
 #define REG_TIMER_ENABLE_B      XDATA_REG8(0xCC3A)  /* Timer enable control B */
 #define   TIMER_ENABLE_B_BIT      0x02              /* Bit 1: Timer enable */
 #define   TIMER_ENABLE_B_BITS56   0x60              /* Bits 5-6: Timer extended mode */
-#define REG_TIMER_CTRL_CC3B     XDATA_REG8(0xCC3B)  /* Timer control */
+/*
+ * Timer / Link Power Control (0xCC3B)
+ * Bit 1 (0x02) is the SS link power management control bit.
+ * 91D1 bit 3 handler: clears bit 1 (CC3B &= ~0x02) during U1/U2 entry.
+ * 91D1 bit 0 handler: clears bit 1 if link is down (91C0 bit 1 == 0).
+ * Init: written 0x0C, then 0x0D, then 0x0F during hw_init.
+ */
+#define REG_TIMER_CTRL_CC3B     XDATA_REG8(0xCC3B)
 #define   TIMER_CTRL_ENABLE       0x01              /* Bit 0: Timer active */
-#define   TIMER_CTRL_START        0x02              /* Bit 1: Timer start */
+#define   TIMER_CTRL_LINK_POWER   0x02              /* Bit 1: SS link power control (cleared in 91D1 handlers) */
 /*
  * CPU Keepalive (0xCC2A)
  * Written in main loop to prevent watchdog reset.
@@ -1242,13 +1380,26 @@
 //=============================================================================
 // CPU Extended Control (0xCD00-0xCD3F)
 //=============================================================================
-#define REG_CPU_TIMER_CTRL_CD31 XDATA_REG8(0xCD31)  /* CPU timer control */
+/*
+ * CPU Timer / Link Reset Control (0xCD31)
+ * Written in bda4 state reset (91D1 bit 0 handler): 0x04 then 0x02.
+ * This sequence resets the link timer state machine.
+ */
+#define REG_CPU_TIMER_CTRL_CD31 XDATA_REG8(0xCD31)
+#define   CPU_TIMER_CD31_CLEAR    0x04  // Write first: clear/reset timer
+#define   CPU_TIMER_CD31_START    0x02  // Write second: restart timer
 
 //=============================================================================
 // SCSI DMA Control (0xCE00-0xCE3F)
 //=============================================================================
-#define REG_SCSI_DMA_CTRL       XDATA_REG8(0xCE00)  // SCSI DMA control register
-#define REG_SCSI_DMA_PARAM      XDATA_REG8(0xCE01)  // SCSI DMA parameter register
+/*
+ * SCSI DMA Engine (0xCE00-0xCE01)
+ * CE00: Write 0x03 to start sector DMA, poll until 0x00 for completion.
+ *       Stock firmware uses at 0x352E-0x3538 in per-sector copy loop.
+ * CE01: DMA parameter -- combined with XDATA[0x0AFF] and CE01 upper bits.
+ */
+#define REG_SCSI_DMA_CTRL       XDATA_REG8(0xCE00)  /* Write 0x03 to start, poll 0x00 for done */
+#define REG_SCSI_DMA_PARAM      XDATA_REG8(0xCE01)  /* DMA parameter (upper 2 bits | tag value) */
 #define REG_SCSI_DMA_CFG_CE36   XDATA_REG8(0xCE36)  // SCSI DMA config 0xCE36
 #define REG_SCSI_DMA_TAG_CE3A   XDATA_REG8(0xCE3A)  // SCSI DMA tag storage
 
@@ -1262,7 +1413,7 @@
 #define REG_SCSI_DMA_PARAM4     XDATA_REG8(0xCE44)
 #define REG_SCSI_DMA_PARAM5     XDATA_REG8(0xCE45)
 #define REG_SCSI_TAG_IDX        XDATA_REG8(0xCE51)   /* SCSI tag index */
-#define REG_SCSI_TAG_VALUE      XDATA_REG8(0xCE55)   /* SCSI tag value */
+#define REG_SCSI_DMA_XFER_CNT  XDATA_REG8(0xCE55)   /* DMA transfer byte count (after CE88/CE89 handshake) */
 #define REG_SCSI_DMA_COMPL      XDATA_REG8(0xCE5C)
 #define REG_SCSI_DMA_MASK       XDATA_REG8(0xCE5D)  /* SCSI DMA mask register */
 #define REG_SCSI_DMA_QUEUE      XDATA_REG8(0xCE5F)  /* SCSI DMA queue control */
@@ -1295,7 +1446,7 @@
 /*
  * USB/DMA State Machine Control (0xCE86-0xCE89)
  *
- * REG_XFER_CTRL_CE88 (0xCE88): Transfer control trigger.
+ * REG_BULK_DMA_HANDSHAKE (0xCE88): Bulk transfer DMA handshake trigger.
  *   Write 0x00 to init/reset the DMA state machine.
  *   After writing 0x00, CE89 transitions to 0x03 (ready).
  *   Written at end of handle_set_interface_inner() to arm bulk transfers.
@@ -1307,13 +1458,27 @@
  *
  * Sequence: write CE88=0x00 → CE89 becomes 0x03 → bulk IN enabled.
  */
-#define REG_XFER_STATUS_CE86    XDATA_REG8(0xCE86)  /* Transfer status (bit 4 checked at 0x349D) */
-#define REG_XFER_CTRL_CE88      XDATA_REG8(0xCE88)  /* Write 0x00 to init DMA state machine */
-#define REG_USB_DMA_STATE       XDATA_REG8(0xCE89)  /* Must be 0x03 for bulk DMA (CE89) */
-#define   USB_DMA_STATE_READY     0x01  // Bit 0: Ready
-#define   USB_DMA_STATE_SUCCESS   0x02  // Bit 1: Success / enumeration ok
-#define   USB_DMA_STATE_COMPLETE  0x04  // Bit 2: State machine complete
-#define REG_XFER_CTRL_CE8A      XDATA_REG8(0xCE8A)   /* Transfer control CE8A */
+/*
+ * USB Bulk DMA Handshake Registers (0xCE86-0xCE8A)
+ *
+ * CE88/CE89 handshake triggers USB bulk OUT data DMA to flash buffer (0x7000).
+ * Stock firmware sequence at 0x3484-0x349D:
+ *   1. Write CE88 = 0x00 (init DMA state machine)
+ *   2. Poll CE89 bit 0 until set (DMA triggered)
+ *   3. Check CE89 bit 1: set = CBW (ljmp 0x35A1), clear = bulk data
+ *   4. Check CE86 bit 4: set = error (ljmp 0x35A1), clear = OK
+ *   5. Read CE55 for DMA transfer byte count
+ *
+ * After handshake completes, poll CE55 != 0 to confirm data at 0x7000.
+ */
+#define REG_USB_DMA_ERROR       XDATA_REG8(0xCE86)  /* Bit 4: DMA error flag (stock: 0x349D) */
+#define   USB_DMA_ERROR_BIT       0x10  // Bit 4: DMA error
+#define REG_BULK_DMA_HANDSHAKE  XDATA_REG8(0xCE88)  /* Write 0x00 to start bulk DMA handshake */
+#define REG_USB_DMA_STATE       XDATA_REG8(0xCE89)  /* DMA handshake status */
+#define   USB_DMA_STATE_READY     0x01  // Bit 0: DMA ready (poll this after CE88 write)
+#define   USB_DMA_STATE_CBW       0x02  // Bit 1: 1=CBW received, 0=bulk data
+#define   USB_DMA_STATE_ERROR     0x04  // Bit 2: DMA error in copy loop (stock: 0x3546)
+#define REG_USB_DMA_SECTOR_CTRL XDATA_REG8(0xCE8A)  /* Per-sector DMA control (stock: bit 2 set at 0x3251) */
 #define REG_XFER_MODE_CE95      XDATA_REG8(0xCE95)
 #define REG_SCSI_DMA_CMD_REG    XDATA_REG8(0xCE96)
 #define REG_SCSI_DMA_RESP_REG   XDATA_REG8(0xCE97)
@@ -1437,8 +1602,7 @@
 //=============================================================================
 // Timer/CPU Control (0xCC00-0xCCFF)
 //=============================================================================
-#define REG_USB_STATUS_CC89     XDATA_REG8(0xCC89)  /* USB status - poll bit 1 for ready */
-#define   USB_STATUS_CC89_BIT1    0x02  // Bit 1: USB ready flag
+
 
 //=============================================================================
 // Debug/Interrupt (0xE600-0xE6FF)
@@ -1453,19 +1617,33 @@
 //=============================================================================
 // System Status / Link Control (0xE700-0xE7FF)
 //=============================================================================
-#define REG_LINK_WIDTH_E710     XDATA_REG8(0xE710)  /* Link width status (bits 5-7) */
-#define   LINK_WIDTH_MASK         0xE0  // Bits 5-7: Link width
+/*
+ * Link Width / Recovery Control (0xE710)
+ * Bits 5-7: Link width status (preserved in read-modify-write).
+ * Bits 0-4: Lane/recovery configuration.
+ *
+ * 91D1 bit 0 handler: if link is down (91C0 bit 1 == 0),
+ * writes (E710 & 0xE0) | 0x04 to set recovery mode while
+ * preserving the upper link width bits.
+ *
+ * Written 0x04 during hw_init (before any link is up).
+ */
+#define REG_LINK_WIDTH_E710     XDATA_REG8(0xE710)
+#define   LINK_WIDTH_MASK         0xE0  // Bits 5-7: Link width (preserve in RMW)
+#define   LINK_RECOVERY_MODE      0x04  // Bit 2: Link recovery mode
 #define   LINK_WIDTH_LANES_MASK   0x1F  // Bits 0-4: Lane configuration
 
 /*
- * USB EP0 Transfer Complete Status (0xE712)
- * The main loop at 0xCDC6-0xCDD9 polls this register waiting for
- * bits 0 or 1 to be SET to exit the polling loop and process USB events.
- * Without these bits, firmware never reaches USB dispatch at 0xCDE7.
+ * USB EP0 / Link Status (0xE712)
+ * Two uses:
+ * 1. Main loop at 0xCDC6: polls for bits 0|1 to process USB events.
+ * 2. 91D1 bit 3 handler (0x9b95): bit 0 = busy, bit 1 = done.
+ *    Polled during U1/U2 power transitions after 92CF clock recovery.
+ *    Also written 0x01 during SET_ADDRESS to signal link status change.
  */
-#define REG_USB_EP0_COMPLETE    XDATA_REG8(0xE712)
-#define   USB_EP0_COMPLETE_BIT0   0x01  // Bit 0: EP0 transfer complete
-#define   USB_EP0_COMPLETE_BIT1   0x02  // Bit 1: EP0 status phase complete
+#define REG_LINK_STATUS_E712    XDATA_REG8(0xE712)
+#define   LINK_E712_BUSY          0x01  // Bit 0: Operation busy / EP0 transfer pending
+#define   LINK_E712_DONE          0x02  // Bit 1: Operation done / EP0 status complete
 
 #define REG_LINK_STATUS_E716    XDATA_REG8(0xE716)
 #define   LINK_STATUS_E716_MASK  0x03  // Bits 0-1: Link status

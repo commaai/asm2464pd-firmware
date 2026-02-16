@@ -1356,7 +1356,7 @@ handler_final_check:
             dma_buffer_write();
 
             /* Write 0x01 to 0x90A1 (USB signal) */
-            REG_USB_SIGNAL_90A1 = 0x01;
+            REG_USB_BULK_DMA_TRIGGER = 0x01;
 
             /* Set IDATA[0x6A] = 5 */
             *i_state_6a = 0x05;
@@ -1723,7 +1723,7 @@ void state_transfer_calc_120d(void)
     G_XFER_DIV_0476 = quotient;
 
     /* Check REG_USB_STATUS (0x9000) bit 0 */
-    if ((REG_USB_STATUS & USB_STATUS_ACTIVE) == 0) {
+    if ((REG_USB_STATUS & USB_STATUS_DMA_READY) == 0) {
         return;  /* Bit 0 not set, nothing to do */
     }
 

@@ -555,7 +555,7 @@ check_loop_state:
             usb_status = (usb_status >> 4) & 0x03;
             if (usb_status != 0) {
                 /* Check REG_USB_PHY_CTRL_91C0 bit 1 (0x3031-0x303d) */
-                if (REG_USB_PHY_CTRL_91C0 & USB_PHY_CTRL_BIT1) {
+                if (REG_USB_PHY_CTRL_91C0 & USB_PHY_91C0_LINK_UP) {
                     dispatch_0322();  /* 0x0322 -> system_state_handler */
                 }
             }
@@ -714,7 +714,7 @@ loop_end:
             I_USB_STATE = 0x00;
 
             /* Check REG_USB_STATUS (0x9000) bit 0 (0x3111-0x3122) */
-            if (REG_USB_STATUS & USB_STATUS_ACTIVE) {
+            if (REG_USB_STATUS & USB_STATUS_DMA_READY) {
                 usb_ep_loop_180d(0x00);  /* 0x180d with R7=0 */
             } else {
                 usb_ep_loop_3419();       /* 0x3419 */

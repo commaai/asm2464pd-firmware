@@ -583,14 +583,14 @@ static void pd_usb_init_b02f(void)
     val &= 0x7F;  /* Clear bit 7 */
     REG_CMD_CTRL_E400 = val;
 
-    /* Poll REG_USB_STATUS_CC89 until bit 1 is set (0xB055-0xB059) */
-    while (!(REG_USB_STATUS_CC89 & 0x02)) {
-        /* Wait for USB ready */
+    /* Poll REG_XFER_DMA_CMD until bit 1 is set (0xB055-0xB059) */
+    while (!(REG_XFER_DMA_CMD & XFER_DMA_CMD_DONE)) {
+        /* Wait for transfer complete */
     }
 
-    /* Poll REG_USB_STATUS_CC89 again until bit 1 is set (0xB06E-0xB072) */
-    while (!(REG_USB_STATUS_CC89 & 0x02)) {
-        /* Wait for USB ready */
+    /* Poll REG_XFER_DMA_CMD again until bit 1 is set (0xB06E-0xB072) */
+    while (!(REG_XFER_DMA_CMD & XFER_DMA_CMD_DONE)) {
+        /* Wait for transfer complete */
     }
 
     /* Poll REG_CMD_STATUS_E402 until bit 3 is clear (0xB078-0xB084) */

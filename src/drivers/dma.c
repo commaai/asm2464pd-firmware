@@ -1493,7 +1493,7 @@ process_transfer:
             dma_setup_transfer(DMA_MODE_SCSI_STATUS, 0x47, 0x0B);
         }
         scsi_csw_write_residue();
-        REG_USB_SIGNAL_90A1 = 0x01;
+        REG_USB_BULK_DMA_TRIGGER = 0x01;
         *(__idata uint8_t *)0x6A = 0x05;
         I_VENDOR_STATE = 0;
         while (I_VENDOR_STATE < G_NVME_STATE_053B) {
@@ -1766,7 +1766,7 @@ void transfer_continuation_d996(void)
  *   ceab: mov r7, #0x03        ; Set timer divisor bits to 3
  *   cead: lcall 0xe50d         ; Call timer setup helper
  *   ; Poll loop:
- *   ceb0: mov dptr, #0xe712    ; REG_USB_EP0_COMPLETE
+ *   ceb0: mov dptr, #0xe712    ; REG_LINK_STATUS_E712
  *   ceb3: movx a, @dptr        ; Read status
  *   ceb4: jb 0xe0.0, 0xcec6    ; If bit 0 set (done), exit loop
  *   ceb7: movx a, @dptr        ; Re-read status
@@ -1797,10 +1797,10 @@ void dma_poll_complete(void)
     /* Poll loop: wait for link status or timer timeout */
     while (1) {
         /* Check link status register */
-        status = REG_USB_EP0_COMPLETE;
+        status = REG_LINK_STATUS_E712;
 
         /* If bit 0 is set, transfer complete - exit */
-        if (status & 0x01) {
+        if (status & LINK_E712_BUSY) {
             break;
         }
 
@@ -1856,15 +1856,15 @@ void dma_poll_link_ready(void)
     /* Poll loop: wait for E712 ready or timer timeout */
     while (1) {
         /* Read poll status register */
-        status = REG_USB_EP0_COMPLETE;
+        status = REG_LINK_STATUS_E712;
 
-        /* Check if bit 0 is set (ready) */
-        if (status & 0x01) {
+        /* Check if bit 0 is set (busy/pending) */
+        if (status & LINK_E712_BUSY) {
             break;
         }
 
-        /* Check if bit 1 is set (alternate ready) */
-        if (status & TIMER_CSR_EXPIRED) {
+        /* Check if bit 1 is set (done) */
+        if (status & LINK_E712_DONE) {
             break;
         }
 

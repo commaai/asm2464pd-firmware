@@ -1133,10 +1133,10 @@ class HardwareState:
         # USB state machine MMIO registers (see registers.h for definitions)
         # REG_USB_DMA_STATE (0xCE89): USB/DMA status - controls state transitions
         #   USB_DMA_STATE_READY (bit 0): Must be set to exit wait loop (0x348C)
-        #   USB_DMA_STATE_SUCCESS (bit 1): Checked at 0x3493 for branch path
-        #   USB_DMA_STATE_COMPLETE (bit 2): Controls state 3→4 transition (0x3588)
+        #   USB_DMA_STATE_CBW (bit 1): 1=CBW received, 0=bulk data (0x3493)
+        #   USB_DMA_STATE_ERROR (bit 2): DMA error in copy loop (0x3546)
         self.read_callbacks[0xCE89] = self._usb_ce89_read
-        # REG_XFER_STATUS_CE86 (0xCE86): USB status - bit 4 checked at 0x349D
+        # REG_USB_DMA_ERROR (0xCE86): USB status - bit 4 checked at 0x349D
         self.read_callbacks[0xCE86] = self._usb_ce86_read
         # REG_XFER_STATUS_CE6C (0xCE6C): USB controller ready - bit 7 must be set
         self.read_callbacks[0xCE6C] = self._usb_ce6c_read
@@ -1144,10 +1144,10 @@ class HardwareState:
         # Firmware writes 0x03 to start DMA at 0x3531-0x3533, polls at 0x3534-0x3538
         self.read_callbacks[0xCE00] = self._usb_ce00_read
         self.write_callbacks[0xCE00] = self._usb_ce00_write
-        # REG_SCSI_TAG_VALUE (0xCE55): Transfer slot count for loop iterations
+        # REG_SCSI_DMA_XFER_CNT (0xCE55): DMA transfer byte count after CE88/CE89 handshake
         # Read at 0x34B9 and stored to G_USB_WORK_009F as loop limit
         self.read_callbacks[0xCE55] = self._usb_ce55_read
-        # REG_XFER_CTRL_CE88 (0xCE88): DMA trigger - write resets state
+        # REG_BULK_DMA_HANDSHAKE (0xCE88): DMA trigger - write resets state
         # At 0x1806: firmware writes to CE88 before polling REG_USB_DMA_STATE
         self.write_callbacks[0xCE88] = self._usb_ce88_write
 

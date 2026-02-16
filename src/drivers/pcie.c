@@ -1981,7 +1981,7 @@ void pcie_tlp_handler_b28c(void)
                 /* Clear 0x07e9 */
                 G_TLP_STATE_07E9 = 0;
                 /* Check USB status bit 0 */
-                if (REG_USB_STATUS & USB_STATUS_ACTIVE) {
+                if (REG_USB_STATUS & USB_STATUS_DMA_READY) {
                     /* Check 0xc471 bit 0 */
                     if (REG_NVME_QUEUE_BUSY & NVME_QUEUE_BUSY_BIT) {
                         usb_buffer_handler();

@@ -403,9 +403,9 @@ void timer_link_status_handler(void)
 
     /* Polling loop: wait for status bits in link status and timer */
     do {
-        status = REG_USB_EP0_COMPLETE;
+        status = REG_LINK_STATUS_E712;
         /* Check bit 0 - if set, call helper and exit */
-        if (status & 0x01) {
+        if (status & LINK_E712_BUSY) {
             break;
         }
         /* Check bit 1 (from value ANDed with 0x02, shifted right) */
@@ -693,7 +693,7 @@ void reg_timer_clear_bits(void)
 void timer_clear_ctrl_bit1(void)
 {
     uint8_t val = REG_TIMER_CTRL_CC3B;
-    REG_TIMER_CTRL_CC3B = val & ~TIMER_CTRL_START;
+    REG_TIMER_CTRL_CC3B = val & ~TIMER_CTRL_LINK_POWER;
 }
 
 /* timer0_configure and timer0_reset are implemented in pcie.c */

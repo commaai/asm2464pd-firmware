@@ -1535,10 +1535,10 @@ void usb_xfer_ctrl_init(void)
     uint8_t idata_39;
 
     /* Read CE88, mask bits 7-6, OR with IDATA[0x0D], write back */
-    val = REG_XFER_CTRL_CE88;
+    val = REG_BULK_DMA_HANDSHAKE;
     idata_0d = *(__idata uint8_t *)0x0D;
     val = (val & 0xC0) | idata_0d;
-    REG_XFER_CTRL_CE88 = val;
+    REG_BULK_DMA_HANDSHAKE = val;
 
     /* Poll CE89 bit 0 until set */
     do {
@@ -1556,7 +1556,7 @@ void usb_xfer_ctrl_init(void)
     if (idata_39 == 1) {
         /* Check CE89 bit 1 */
         val = REG_USB_DMA_STATE;
-        if (!(val & USB_DMA_STATE_SUCCESS)) {
+        if (!(val & USB_DMA_STATE_CBW)) {
             /* Check 0x0AF8 */
             if (G_POWER_INIT_FLAG != 0) {
                 /* Jump to 0x2DB7 - another handler */
@@ -4320,7 +4320,7 @@ void usb_buffer_dispatch(void)
  *     - REG_USB_PHY_CTRL_91D1 bit 0 is set
  *     - REG_BUF_CFG_9301 bit 6 is set
  *     - REG_BUF_CFG_9301 bit 7 is set
- *     - REG_USB_CTRL_PHASE bit 0 is set AND REG_USB_PHY_STATUS_9105 == 0xFF
+ *     - REG_USB_CTRL_PHASE bit 0 is set AND REG_USB_SETUP_BREQ == 0xFF
  *   0 otherwise
  *
  * Original disassembly:
@@ -4376,7 +4376,7 @@ uint8_t usb_check_phy_status(void)
     /* Check extended interrupt flags and PHY status */
     val = REG_USB_CTRL_PHASE;
     if (val & 0x01) {  /* bit 0 */
-        val = REG_USB_PHY_STATUS_9105;
+        val = REG_USB_SETUP_BREQ;
         if (val == 0xFF) {
             return 1;
         }
@@ -4427,7 +4427,7 @@ void usb_descriptor_helper_a637(void)
  *      - Increment G_SYS_FLAGS_07E8
  *      - If G_USB_STATE_0B41 != 0, call nvme_func_04da(1)
  *   5. Read REG_NVME_CMD_STATUS_C47A to I_WORK_38
- *   6. Write to REG_XFER_CTRL_CE88
+     *   6. Write to REG_BULK_DMA_HANDSHAKE
  *   7. Poll REG_USB_DMA_STATE bit 0 until set
  *   8. Increment and check G_USB_CTRL_000A
  *   9. Modify REG_USB_CTRL_924C based on count
@@ -4471,7 +4471,7 @@ void usb_ep_loop_180d(uint8_t param)
     I_WORK_38 = REG_NVME_CMD_STATUS_C47A;
 
     /* Write to transfer control register (0xCE88) */
-    REG_XFER_CTRL_CE88 = I_WORK_38;
+    REG_BULK_DMA_HANDSHAKE = I_WORK_38;
 
     /* Poll transfer ready (0xCE89) until bit 0 is set */
     while ((REG_USB_DMA_STATE & 0x01) == 0) {
@@ -4687,7 +4687,7 @@ void usb_state_setup_4c98(void)
     }
 
     /* If USB not connected (bit 0 clear), reset state */
-    if ((REG_USB_STATUS & USB_STATUS_ACTIVE) != 0x01) {
+    if ((REG_USB_STATUS & USB_STATUS_DMA_READY) != 0x01) {
         G_USB_ADDR_HI_0056 = 0;
         G_USB_ADDR_LO_0057 = 0;
         G_USB_INIT_STATE_0108 = 1;

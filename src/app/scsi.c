@@ -1864,7 +1864,7 @@ void scsi_state_switch_4784(void)
         cmd_type = G_IO_CMD_TYPE;
         if (cmd_type == 0x03 || cmd_type == 0x00) {
             if (cmd_type == 0x03) {
-                if ((REG_USB_STATUS & USB_STATUS_ACTIVE) == 0) {
+                if ((REG_USB_STATUS & USB_STATUS_DMA_READY) == 0) {
                     usb_ep0_set_bit0();
                 }
             }
@@ -1878,7 +1878,7 @@ void scsi_state_switch_4784(void)
 
 check_usb_status:
     /* Check USB control register bit 0 */
-    if (REG_USB_STATUS & USB_STATUS_ACTIVE) {
+    if (REG_USB_STATUS & USB_STATUS_DMA_READY) {
         queue_idx_get_3291();
         dma_buffer_config();
     } else {
@@ -1987,9 +1987,9 @@ void scsi_dma_config_4a57(void)
 {
     uint8_t val;
 
-    /* Check REG_XFER_CTRL_CE8A */
-    val = REG_XFER_CTRL_CE8A;
-    REG_XFER_CTRL_CE8A = val & 0xFB;  /* Clear bit 2 */
+    /* Check REG_USB_DMA_SECTOR_CTRL */
+    val = REG_USB_DMA_SECTOR_CTRL;
+    REG_USB_DMA_SECTOR_CTRL = val & 0xFB;  /* Clear bit 2 */
 
     /* Get USB parameter and combine with CE01 */
     val = G_USB_PARAM_0B00;
@@ -2038,8 +2038,8 @@ void scsi_queue_setup_4b25(uint8_t param)
     I_WORK_3B = val & 0x3F;
 
     /* Update CE88 with slot value */
-    val = REG_XFER_CTRL_CE88;
-    REG_XFER_CTRL_CE88 = (val & 0xC0) | I_WORK_3B;
+    val = REG_BULK_DMA_HANDSHAKE;
+    REG_BULK_DMA_HANDSHAKE = (val & 0xC0) | I_WORK_3B;
 
     /* Wait for CE89 bit 0 */
     while ((REG_USB_DMA_STATE & 0x01) == 0) {
@@ -2215,8 +2215,8 @@ void scsi_transfer_state_helper(uint8_t param)
     uint8_t val;
 
     /* Clear bit 2 of CE8A */
-    val = REG_XFER_CTRL_CE8A;
-    REG_XFER_CTRL_CE8A = val & 0xFB;
+    val = REG_USB_DMA_SECTOR_CTRL;
+    REG_USB_DMA_SECTOR_CTRL = val & 0xFB;
 
     /* Combine USB param with CE01 */
     val = G_USB_PARAM_0B00;
@@ -2622,7 +2622,7 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
 
         if (val == 0xFF) {
             /* Tag is complete - copy tag value to slot tables */
-            uint8_t tag_val = REG_SCSI_TAG_VALUE;
+            uint8_t tag_val = REG_SCSI_DMA_XFER_CNT;
 
             /* Store to 0x009F + slot */
             ptr = get_addr_from_slot(0x9F);
@@ -2679,7 +2679,7 @@ uint8_t scsi_dma_transfer_process(uint8_t param)
 
             /* Check USB status for slot table update */
             val = REG_USB_STATUS;
-            if (val & USB_STATUS_ACTIVE) {
+            if (val & USB_STATUS_DMA_READY) {
                 ptr = get_slot_addr_71();
                 val = *ptr;
                 if (val == 0xFF) {

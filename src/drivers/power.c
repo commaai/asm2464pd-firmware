@@ -242,7 +242,7 @@ void power_set_state(void)
     USB_CSW->residue3 = *(__idata uint8_t *)0x6F;
 
     /* Set power state active */
-    REG_USB_SIGNAL_90A1 = 1;
+    REG_USB_BULK_DMA_TRIGGER = 1;
 }
 
 /*
@@ -560,7 +560,7 @@ void power_set_phy_bit1_cafb(void)
     uint8_t val;
 
     val = REG_USB_PHY_CTRL_91C0;
-    REG_USB_PHY_CTRL_91C0 = (val & ~USB_PHY_CTRL_BIT1) | USB_PHY_CTRL_BIT1;
+    REG_USB_PHY_CTRL_91C0 = (val & ~USB_PHY_91C0_LINK_UP) | USB_PHY_91C0_LINK_UP;
 }
 
 /*
@@ -1125,5 +1125,5 @@ void power_config_d630(uint8_t param)
 {
     uint8_t val;
     val = REG_POWER_CTRL_B432; val = (val & 0xF8) | 0x07; REG_POWER_CTRL_B432 = val;
-    val = REG_POWER_LANE_B404; val = (val & 0xF0) | (param & 0x0F); REG_POWER_LANE_B404 = val;
+    val = REG_PCIE_LINK_PARAM_B404; val = (val & 0xF0) | (param & 0x0F); REG_PCIE_LINK_PARAM_B404 = val;
 }
