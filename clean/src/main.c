@@ -431,49 +431,50 @@ static void handle_link_event(void) {
 static void handle_91d1_events(void) {
     uint8_t r91d1, t;
 
-    if (!(REG_USB_PERIPH_STATUS & 0x01)) return;
+    if (!(REG_USB_PERIPH_STATUS & USB_PERIPH_BUS_RESET)) return;
     r91d1 = REG_USB_PHY_CTRL_91D1;
 
     /* bit 3: power management (U1/U2). Stock: 0x9b95 */
-    if (r91d1 & 0x08) {
-        REG_USB_PHY_CTRL_91D1 = 0x08;
+    if (r91d1 & USB_91D1_POWER_MGMT) {
+        REG_USB_PHY_CTRL_91D1 = USB_91D1_POWER_MGMT;
         G_USB_TRANSFER_FLAG = 0;
-        t = REG_TIMER_CTRL_CC3B; REG_TIMER_CTRL_CC3B = t & ~0x02;
+        t = REG_TIMER_CTRL_CC3B; REG_TIMER_CTRL_CC3B = t & ~TIMER_CTRL_LINK_POWER;
         G_TLP_BASE_LO = 0x01;
     }
 
     r91d1 = REG_USB_PHY_CTRL_91D1;
 
     /* bit 0: link training. Stock: 0xc465 -> bda4 state reset */
-    if (r91d1 & 0x01) {
-        REG_USB_PHY_CTRL_91D1 = 0x01;
+    if (r91d1 & USB_91D1_LINK_TRAIN) {
+        REG_USB_PHY_CTRL_91D1 = USB_91D1_LINK_TRAIN;
         /* bda4: C6A8 |= 1, 92C8 &= ~3, CD31 reset */
-        t = REG_PHY_CFG_C6A8; REG_PHY_CFG_C6A8 = (t & 0xFE) | 0x01;
-        t = REG_POWER_CTRL_92C8; REG_POWER_CTRL_92C8 = t & ~0x01;
-        t = REG_POWER_CTRL_92C8; REG_POWER_CTRL_92C8 = t & ~0x02;
-        REG_CPU_TIMER_CTRL_CD31 = 0x04; REG_CPU_TIMER_CTRL_CD31 = 0x02;
+        t = REG_PHY_CFG_C6A8; REG_PHY_CFG_C6A8 = (t & 0xFE) | PHY_CFG_C6A8_ENABLE;
+        t = REG_POWER_CTRL_92C8; REG_POWER_CTRL_92C8 = t & ~POWER_CTRL_92C8_BIT0;
+        t = REG_POWER_CTRL_92C8; REG_POWER_CTRL_92C8 = t & ~POWER_CTRL_92C8_BIT1;
+        REG_CPU_TIMER_CTRL_CD31 = CPU_TIMER_CD31_CLEAR;
+        REG_CPU_TIMER_CTRL_CD31 = CPU_TIMER_CD31_START;
         t = REG_USB_PHY_CTRL_91C0;
-        if (!(t & 0x02)) {
-            t = REG_LINK_WIDTH_E710; REG_LINK_WIDTH_E710 = (t & 0xE0) | 0x04;
-            t = REG_TIMER_CTRL_CC3B; REG_TIMER_CTRL_CC3B = t & ~0x02;
+        if (!(t & USB_PHY_91C0_LINK_UP)) {
+            t = REG_LINK_WIDTH_E710; REG_LINK_WIDTH_E710 = (t & LINK_WIDTH_MASK) | LINK_RECOVERY_MODE;
+            t = REG_TIMER_CTRL_CC3B; REG_TIMER_CTRL_CC3B = t & ~TIMER_CTRL_LINK_POWER;
         }
         return;
     }
 
     /* bit 1: simple flag. Stock: 0xe6aa */
-    if (r91d1 & 0x02) {
-        REG_USB_PHY_CTRL_91D1 = 0x02;
+    if (r91d1 & USB_91D1_FLAG) {
+        REG_USB_PHY_CTRL_91D1 = USB_91D1_FLAG;
         G_EP_DISPATCH_VAL3 = 0;
         G_USB_TRANSFER_FLAG = 1;
         return;
     }
 
     /* bit 2: link reset ack. Stock: 0xe682 */
-    if (r91d1 & 0x04) {
-        t = REG_PHY_CFG_C6A8; REG_PHY_CFG_C6A8 = (t & 0xFE) | 0x01;
+    if (r91d1 & USB_91D1_LINK_RESET) {
+        t = REG_PHY_CFG_C6A8; REG_PHY_CFG_C6A8 = (t & 0xFE) | PHY_CFG_C6A8_ENABLE;
         G_USB_TRANSFER_FLAG = 0;
         G_SYS_FLAGS_07E8 = 0;
-        REG_USB_PHY_CTRL_91D1 = 0x04;
+        REG_USB_PHY_CTRL_91D1 = USB_91D1_LINK_RESET;
     }
 }
 
@@ -702,7 +703,7 @@ static void hw_init(void) {
     REG_USB_MSC_CFG = 0x07; REG_USB_MSC_CFG = 0x05;
     REG_USB_MSC_CFG = 0x01; REG_USB_MSC_CFG = 0x00;
     REG_USB_MSC_LENGTH = 0x0D;
-    REG_POWER_ENABLE = 0x87; REG_USB_PHY_CTRL_91D1 = 0x0F;
+    REG_POWER_ENABLE = 0x87; REG_USB_PHY_CTRL_91D1 = USB_91D1_ALL;
     REG_BUF_CFG_9300 = 0x0C; REG_BUF_CFG_9301 = 0xC0;
     REG_BUF_CFG_9302 = 0xBF; REG_USB_CTRL_PHASE = 0x1F;
     REG_USB_EP_CFG1 = 0x0F; REG_USB_PHY_CTRL_91C1 = 0xF0;

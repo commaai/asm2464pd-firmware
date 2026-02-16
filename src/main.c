@@ -555,7 +555,7 @@ check_loop_state:
             usb_status = (usb_status >> 4) & 0x03;
             if (usb_status != 0) {
                 /* Check REG_USB_PHY_CTRL_91C0 bit 1 (0x3031-0x303d) */
-                if (REG_USB_PHY_CTRL_91C0 & USB_PHY_CTRL_BIT1) {
+                if (REG_USB_PHY_CTRL_91C0 & USB_PHY_91C0_LINK_UP) {
                     dispatch_0322();  /* 0x0322 -> system_state_handler */
                 }
             }

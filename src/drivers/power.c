@@ -560,7 +560,7 @@ void power_set_phy_bit1_cafb(void)
     uint8_t val;
 
     val = REG_USB_PHY_CTRL_91C0;
-    REG_USB_PHY_CTRL_91C0 = (val & ~USB_PHY_CTRL_BIT1) | USB_PHY_CTRL_BIT1;
+    REG_USB_PHY_CTRL_91C0 = (val & ~USB_PHY_91C0_LINK_UP) | USB_PHY_91C0_LINK_UP;
 }
 
 /*

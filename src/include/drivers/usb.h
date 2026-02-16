@@ -169,7 +169,7 @@
  *   0xCE88  XFER_CTRL        DMA trigger (write resets CE89 state)
  *   0xCE89  USB_DMA_STATE    USB/DMA status (bits control state transitions)
  *   0xCE6C  XFER_STATUS_6C   USB controller ready (bit 7 must be SET)
- *   0xE712  USB_EP0_COMPLETE EP0 transfer complete (bits 0,1 = done)
+ *   0xE712  LINK_STATUS_E712 Link/EP0 status (bit 0=busy, bit 1=done)
  *
  * ===========================================================================
  * BUFFER REGIONS
