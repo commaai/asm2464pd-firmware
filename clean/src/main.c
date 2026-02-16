@@ -25,7 +25,7 @@ static void desc_copy(__code const uint8_t *src, uint8_t len) {
 void uart_putc(uint8_t ch) { REG_UART_THR = ch; }
 void uart_puts(__code const char *str) { while (*str) uart_putc(*str++); }
 static void uart_puthex(uint8_t val) {
-    const char hex[] = "0123456789ABCDEF";
+    static __code const char hex[] = "0123456789ABCDEF";
     uart_putc(hex[val >> 4]);
     uart_putc(hex[val & 0x0F]);
 }
@@ -533,10 +533,9 @@ void int0_isr(void) __interrupt(0) {
         } else if (bmReq == 0x40 && bReq == 0xE6) {
             /* Vendor write XDATA block via control */
             uint16_t addr = ((uint16_t)wValH << 8) | wValL;
-            uint8_t len = REG_USB_SETUP_WLEN_L;
             uint8_t vi;
             if (is_usb3) {
-                for (vi = 0; vi < len; vi++) XDATA_REG8(addr + vi) = DESC_BUF[vi];
+                for (vi = 0; vi < wLenL; vi++) XDATA_REG8(addr + vi) = DESC_BUF[vi];
             }
             send_zlp_ack();
         } else {
@@ -552,7 +551,7 @@ void int1_isr(void) __interrupt(2) {
     tmp = REG_POWER_EVENT_92E1;
     if (tmp) {
         REG_POWER_EVENT_92E1 = tmp;
-        REG_POWER_STATUS = REG_POWER_STATUS & ~(POWER_STATUS_USB_PATH | 0x80);
+        REG_POWER_STATUS &= ~(POWER_STATUS_USB_PATH | 0x80);
     }
 }
 
@@ -573,30 +572,12 @@ static void hw_init(void) {
     REG_TIMER_ENABLE_B = 0x14; REG_TIMER_ENABLE_A = 0x44;
     REG_CPU_CTRL_CC37 = 0x2C; REG_SYS_CTRL_E780 = 0x00;
     REG_LINK_STATUS_E716 = 0x00; REG_LINK_STATUS_E716 = 0x03;
-    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
-    REG_TIMER0_DIV = 0x12; REG_TIMER0_THRESHOLD_HI = 0x00;
-    REG_TIMER0_THRESHOLD_LO = 0xC8; REG_TIMER0_CSR = 0x01;
-    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
     REG_CPU_CTRL_CC37 = 0x28;
-    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
-    REG_TIMER0_DIV = 0x12; REG_TIMER0_THRESHOLD_HI = 0x00;
-    REG_TIMER0_THRESHOLD_LO = 0x14; REG_TIMER0_CSR = 0x01;
-    REG_TIMER0_CSR = 0x02;
-    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
-    REG_TIMER0_DIV = 0x13; REG_TIMER0_THRESHOLD_HI = 0x00;
-    REG_TIMER0_THRESHOLD_LO = 0x0A; REG_TIMER0_CSR = 0x01;
-    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
     REG_PHY_LINK_CTRL = 0x00;
     REG_PHY_TIMER_CTRL_E764 = 0x14; REG_PHY_TIMER_CTRL_E764 = 0x14;
     REG_PHY_TIMER_CTRL_E764 = 0x14; REG_PHY_TIMER_CTRL_E764 = 0x14;
     REG_SYS_CTRL_E76C = 0x04; REG_SYS_CTRL_E774 = 0x04;
     REG_SYS_CTRL_E77C = 0x04;
-    for (i = 0; i < 4; i++) {
-        REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
-        REG_TIMER0_DIV = 0x12; REG_TIMER0_THRESHOLD_HI = 0x00;
-        REG_TIMER0_THRESHOLD_LO = 0xC7; REG_TIMER0_CSR = 0x01;
-        REG_TIMER0_CSR = 0x02;
-    }
     REG_INT_AUX_STATUS = 0x02; REG_CPU_EXEC_STATUS_3 = 0x00;
     REG_INT_ENABLE = 0x10;
     REG_INT_STATUS_C800 = 0x04; REG_INT_STATUS_C800 = 0x05;
@@ -626,11 +607,6 @@ static void hw_init(void) {
     REG_INT_ENABLE = 0x50; REG_CPU_EXEC_STATUS = 0x00;
     REG_INT_DMA_CTRL = 0x04;
     REG_POWER_CTRL_92C8 = 0x24; REG_POWER_CTRL_92C8 = 0x24;
-    REG_TIMER2_CSR = 0x04; REG_TIMER2_CSR = 0x02;
-    REG_TIMER4_CSR = 0x04; REG_TIMER4_CSR = 0x02;
-    REG_TIMER2_DIV = 0x16; REG_TIMER2_THRESHOLD_LO = 0x00;
-    REG_TIMER2_THRESHOLD_HI = 0x8B; REG_TIMER4_DIV = 0x54;
-    REG_TIMER4_THRESHOLD_LO = 0x00; REG_TIMER4_THRESHOLD_HI = 0xC7;
     REG_DMA_STATUS2 = 0x00; REG_DMA_STATUS2 = 0x00;
     REG_DMA_STATUS2 = 0x00; REG_DMA_CTRL = 0x00;
     REG_DMA_STATUS = 0x00; REG_DMA_STATUS = 0x00;
@@ -678,14 +654,6 @@ static void hw_init(void) {
     REG_USB_DATA_L = 0xFE;
     REG_USB_PHY_CTRL_91C3 = 0x00;
     REG_USB_PHY_CTRL_91C0 = 0x13; REG_USB_PHY_CTRL_91C0 = 0x12;
-    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
-    REG_TIMER0_DIV = 0x14; REG_TIMER0_THRESHOLD_HI = 0x01;
-    REG_TIMER0_THRESHOLD_LO = 0x8F; REG_TIMER0_CSR = 0x01;
-    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
-    REG_TIMER0_CSR = 0x04; REG_TIMER0_CSR = 0x02;
-    REG_TIMER0_DIV = 0x10; REG_TIMER0_THRESHOLD_HI = 0x00;
-    REG_TIMER0_THRESHOLD_LO = 0x09; REG_TIMER0_CSR = 0x01;
-    REG_TIMER0_CSR = 0x02;
     REG_INT_DMA_CTRL = 0x04; REG_INT_DMA_CTRL = 0x84;
     REG_LINK_MODE_CTRL = 0xFF;
     REG_XFER2_DMA_STATUS = 0x04; REG_XFER2_DMA_STATUS = 0x02;
@@ -722,9 +690,9 @@ void main(void) {
 
     hw_init();
 
-    { uint8_t link = REG_USB_LINK_STATUS;
-      is_usb3 = (link >= USB_SPEED_SUPER) ? 1 : 0;
-      uart_puts("[link="); uart_puthex(link); uart_puts("]\n"); }
+    uint8_t link = REG_USB_LINK_STATUS;
+    is_usb3 = (link >= USB_SPEED_SUPER) ? 1 : 0;
+    uart_puts("[link="); uart_puthex(link); uart_puts("]\n");
 
     uart_puts("[GO]\n");
     TCON = 0x04;  /* IT0=0 (level-triggered INT0) */
