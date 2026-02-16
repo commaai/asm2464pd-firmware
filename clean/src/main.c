@@ -103,9 +103,7 @@ static void handle_set_address(void) {
         REG_USB_ADDR_PARAM_2 = 0x00; REG_USB_ADDR_PARAM_3 = 0x0A;
         tmp = REG_USB_ADDR_CTRL; REG_USB_ADDR_CTRL = tmp;
         REG_USB_EP_CTRL_9220 = 0x04;
-        REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
-        while (REG_USB_DMA_TRIGGER & USB_DMA_STATUS_COMPLETE) { }
-        REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STAT_IN;
+        complete_usb3_status();
     } else {
         send_zlp_ack();
     }
@@ -276,12 +274,7 @@ static void send_csw(uint8_t status) {
     EP_BUF(0x08) = 0x00; EP_BUF(0x09) = 0x00;
     EP_BUF(0x0A) = 0x00; EP_BUF(0x0B) = 0x00;
     REG_USB_BULK_DMA_TRIGGER = 0x01;
-    /* Wait for bulk DMA to complete (EP_COMPLETE = bit 5 of 9101) */
-    { uint16_t t;
-      for (t = 0; t < 50000; t++) {
-          if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) break;
-      }
-    }
+    while (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) { }
     REG_USB_MSC_CTRL = 0x01;
     REG_USB_MSC_STATUS &= ~0x01;
 }
@@ -291,8 +284,9 @@ static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
     uint8_t al = addr & 0xFF;
 
     /* Clear stale EP_COMPLETE */
-    { uint8_t st = REG_USB_PERIPH_STATUS;
-      if (st & 0x20) { REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01; } }
+    if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) {
+        REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+    }
 
     REG_USB_MSC_LENGTH = len;
     REG_DMA_CONFIG = DMA_CONFIG_SW_MODE;
@@ -311,14 +305,8 @@ static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
     REG_USB_BULK_DMA_TRIGGER = 0x01;
 
     /* Wait for EP_COMPLETE (9101 bit 5) */
-    { uint16_t t;
-      for (t = 0; t < 60000; t++) {
-          uint8_t st = REG_USB_PERIPH_STATUS;
-          if (st & 0x20) {
-              REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
-              break;
-          }
-      } }
+    while (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) { }
+    REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
 
     REG_DMA_CONFIG = DMA_CONFIG_DISABLE;
     REG_USB_MSC_LENGTH = 0x0D;
@@ -327,16 +315,13 @@ static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
 /*=== CBW Handler ===*/
 static void handle_cbw(void) {
     uint8_t opcode;
-    uint16_t timeout;
 
     if (!(REG_USB_MODE & 0x01)) return;
     REG_USB_MODE = 0x01;
 
     /* CE88/CE89 DMA handshake */
     REG_BULK_DMA_HANDSHAKE = 0x00;
-    for (timeout = 50000; timeout; timeout--) {
-        if (REG_USB_DMA_STATE & USB_DMA_STATE_READY) break;
-    }
+    while (!(REG_USB_DMA_STATE & USB_DMA_STATE_READY)) { }
 
     cbw_tag[0] = REG_CBW_TAG_0; cbw_tag[1] = REG_CBW_TAG_1;
     cbw_tag[2] = REG_CBW_TAG_2; cbw_tag[3] = REG_CBW_TAG_3;
@@ -537,10 +522,9 @@ void int0_isr(void) __interrupt(0) {
         } else if (bmReq == 0xC0 && bReq == 0xE4) {
             /* Vendor read XDATA via control */
             uint16_t addr = ((uint16_t)wValH << 8) | wValL;
-            uint8_t len = REG_USB_SETUP_WLEN_L;
             uint8_t vi;
-            for (vi = 0; vi < len; vi++) DESC_BUF[vi] = XDATA_REG8(addr + vi);
-            send_descriptor_data(len);
+            for (vi = 0; vi < wLenL; vi++) DESC_BUF[vi] = XDATA_REG8(addr + vi);
+            send_descriptor_data(wLenL);
         } else if (bmReq == 0x40 && bReq == 0xE5) {
             /* Vendor write XDATA via control */
             uint16_t addr = ((uint16_t)wValH << 8) | wValL;
@@ -763,14 +747,7 @@ void main(void) {
                 REG_USB_EP_CFG1 = USB_EP_CFG1_ARM_OUT;
                 REG_INT_AUX_STATUS = (REG_INT_AUX_STATUS & 0xF9) | 0x02;
                 REG_BULK_DMA_HANDSHAKE = 0x00;
-                { uint16_t t16;
-                  for (t16 = 50000; t16; t16--) {
-                      if (REG_USB_DMA_STATE & USB_DMA_STATE_READY) break;
-                  } }
-                { uint16_t t16;
-                  for (t16 = 50000; t16; t16--) {
-                      if (REG_SCSI_DMA_XFER_CNT) break;
-                  } }
+                while (!(REG_USB_DMA_STATE & USB_DMA_STATE_READY)) { }
                 { uint8_t ci;
                   for (ci = 0; ci < bulk_out_len; ci++)
                       XDATA_REG8(bulk_out_addr + ci) = XDATA_REG8(0x7000 + ci); }
