@@ -217,52 +217,77 @@ def test_bulk_stress(dev):
         assert verify_match(pattern, data, f"round={r}"), f"Stress round {r} failed"
     return True
 
-def test_pcie_cfg_read(dev):
-    """PCIe config read bus 0 dev 0 — should return VID/PID"""
-    # CfgRd0: fmt_type=0x04, address = (bus<<24)|(dev<<19)|(fn<<16)|byte_addr
-    bus, device, fn, byte_addr = 0, 0, 0, 0  # Read VID/PID at offset 0
+def pcie_cfg_read(dev, bus, device, fn, byte_addr):
+    """PCIe config read — returns 4-byte result or None on timeout/error."""
+    # CfgRd0 for bus 0, CfgRd1 for bus > 0
+    fmt_type = 0x04 if bus == 0 else 0x05
     address = (bus << 24) | (device << 19) | (fn << 16) | (byte_addr & 0xFFF)
 
-    # Write address (big-endian 32-bit to B218-B21B)
     e5_write(dev, 0xB218, (address >> 24) & 0xFF)
     e5_write(dev, 0xB219, (address >> 16) & 0xFF)
     e5_write(dev, 0xB21A, (address >> 8) & 0xFF)
     e5_write(dev, 0xB21B, address & 0xFF)
-    # Address high = 0
     e5_write(dev, 0xB21C, 0x00)
     e5_write(dev, 0xB21D, 0x00)
     e5_write(dev, 0xB21E, 0x00)
     e5_write(dev, 0xB21F, 0x00)
-    # Byte enable = 0x0F (all 4 bytes)
     e5_write(dev, 0xB217, 0x0F)
-    # Format/Type = CfgRd0
-    e5_write(dev, 0xB210, 0x04)
-    # Trigger
+    e5_write(dev, 0xB210, fmt_type)
     e5_write(dev, 0xB254, 0x0F)
     e5_write(dev, 0xB296, 0x04)
 
-    # Poll B296 for completion (bit 1)
     for _ in range(50):
         stat = e4_read(dev, 0xB296, 1)[0]
         if stat & 0x02:
             break
         if stat & 0x01:
-            print(f"  TLP error (B296=0x{stat:02X}), retrying...")
             e5_write(dev, 0xB296, 0x01)
             time.sleep(0.01)
     else:
-        print(f"  TIMEOUT: B296=0x{stat:02X}")
-        return False
+        return None
 
-    # Read result from B220 (4 bytes, big-endian)
-    result_bytes = e4_read(dev, 0xB220, 4)
+    return e4_read(dev, 0xB220, 4)
+
+def test_pcie_cfg_read(dev):
+    """PCIe config read bus 0 dev 0 — should return VID/PID"""
+    result_bytes = pcie_cfg_read(dev, 0, 0, 0, 0)
+    if result_bytes is None:
+        print(f"  TIMEOUT")
+        return False
     result = struct.unpack('>I', result_bytes)[0]
     vid = result & 0xFFFF
     pid = (result >> 16) & 0xFFFF
     print(f"  Bus 0 VID:PID = {vid:04X}:{pid:04X}")
-    # We expect the ASMedia bridge: 1B21:6424 (or similar)
     assert vid != 0xFFFF, f"Got FFFF — no device present or link not up"
     assert vid != 0x0000, f"Got 0000 — TLP completion data invalid"
+    return True
+
+def test_pcie_bus_scan(dev):
+    """Scan PCIe bus 0-4 for devices — diagnostic test"""
+    # Also read some key registers for debug
+    for reg_name, reg_addr in [("B434", 0xB434), ("B450", 0xB450), ("B455", 0xB455),
+                                ("B480", 0xB480), ("B481", 0xB481), ("B2D5", 0xB2D5)]:
+        val = e4_read(dev, reg_addr, 1)[0]
+        print(f"  {reg_name}=0x{val:02X}")
+
+    for bus in range(5):
+        result_bytes = pcie_cfg_read(dev, bus, 0, 0, 0)
+        if result_bytes is None:
+            print(f"  Bus {bus}: TIMEOUT")
+            continue
+        result = struct.unpack('>I', result_bytes)[0]
+        vid = result & 0xFFFF
+        pid = (result >> 16) & 0xFFFF
+        if vid == 0xFFFF:
+            print(f"  Bus {bus}: no device")
+        else:
+            # Read class code at offset 0x08
+            class_bytes = pcie_cfg_read(dev, bus, 0, 0, 0x08)
+            class_code = "????"
+            if class_bytes:
+                cc = struct.unpack('>I', class_bytes)[0]
+                class_code = f"{(cc>>16)&0xFF:02X}{(cc>>8)&0xFF:02X}"
+            print(f"  Bus {bus}: VID:PID={vid:04X}:{pid:04X} class={class_code}")
     return True
 
 # ============================================================
@@ -284,6 +309,7 @@ TESTS = [
     ("Bulk addresses",     test_bulk_addresses),
     ("Bulk stress x20",    test_bulk_stress),
     ("PCIe cfg read",      test_pcie_cfg_read),
+    ("PCIe bus scan",      test_pcie_bus_scan),
 ]
 
 def main():

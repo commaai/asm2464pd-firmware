@@ -9,6 +9,7 @@
 
 __sfr __at(0xA8) IE;
 __sfr __at(0x88) TCON;
+__sfr __at(0x93) BANK_SEL;
 #define IE_EA   0x80
 #define IE_EX1  0x04
 #define IE_ET0  0x02
@@ -37,8 +38,11 @@ static uint8_t cbw_tag[4];
 static volatile uint8_t bulk_out_state;
 static uint16_t bulk_out_addr;
 static uint8_t bulk_out_len;
+static volatile uint8_t pd_power_ready_done;
+static volatile uint8_t usb_configured;
 
 static void poll_bulk_events(void);
+static void phy_event_dispatcher(void);
 
 /*=== USB Control Transfer Helpers ===*/
 
@@ -264,6 +268,7 @@ static void do_bulk_init(void) {
     t = REG_USB_EP_CTRL_905F; REG_USB_EP_CTRL_905F = t;
     REG_USB_EP_STATUS_90E3 = 0x02;
 
+    usb_configured = 1;
     uart_puts("[rdy]\n");
 }
 
@@ -370,6 +375,45 @@ static void handle_cbw(void) {
         return;
     } else if (opcode == 0xE8) {
         send_csw(0x00);
+    } else if (opcode == 0xE9) {
+        /* D92E-style PHY power enable sequence.
+         * Triggered from host after USB is stable.
+         * Returns CSW FIRST, then does the register writes. */
+        uint8_t step = REG_USB_CBWCB_1;
+        send_csw(0x00);
+
+        /* After CSW is sent, do the register writes */
+        if (step == 0) {
+            /* Full D92E sequence with interrupts disabled */
+            IE &= ~IE_EA;
+            REG_POWER_STATUS = (REG_POWER_STATUS & ~0x40) | 0x40;
+            REG_POWER_EVENT_92E1 = 0x10;
+            REG_USB_STATUS = (REG_USB_STATUS & ~0x04) | 0x04;
+            REG_USB_STATUS &= ~0x04;
+            REG_USB_PHY_CTRL_91C0 |= 0x02;
+            REG_USB_INT_MASK_9090 &= ~0x80;
+            REG_BUF_CFG_9300 = 0x04;
+            REG_USB_PHY_CTRL_91D1 = 0x02;
+            REG_BUF_CFG_9301 = 0x40;
+            REG_BUF_CFG_9301 = 0x80;
+            REG_USB_PHY_CTRL_91D1 = 0x08;
+            REG_USB_PHY_CTRL_91D1 = 0x01;
+            IE |= IE_EA;
+            uart_puts("[D92E done]\n");
+        } else if (step == 1) {
+            /* Just 92C2 |= 0x40 */
+            IE &= ~IE_EA;
+            REG_POWER_STATUS = (REG_POWER_STATUS & ~0x40) | 0x40;
+            IE |= IE_EA;
+            uart_puts("[92C2 set]\n");
+        } else if (step == 2) {
+            /* Just 9090 &= ~0x80 */
+            IE &= ~IE_EA;
+            REG_USB_INT_MASK_9090 &= ~0x80;
+            IE |= IE_EA;
+            uart_puts("[9090 clr]\n");
+        }
+        return;
     } else {
         send_csw(0x01);
     }
@@ -546,12 +590,86 @@ void int0_isr(void) __interrupt(0) {
 
 void timer0_isr(void) __interrupt(1) { }
 
+/*
+ * cc_interrupt_ack - Acknowledge CC/PD interrupt sources
+ *
+ * Stock firmware handler at 0xA79C checks CC23, CC81, CC91, CCD9, CCF9
+ * bit 1 (status pending) and writes 0x02 to acknowledge each.
+ * The full handler dispatches to PD state machine, VDM processing, etc.
+ * For now we just ack all pending sources to prevent re-trigger.
+ *
+ * Stock ISR dispatch: INT1 (0x44D7) → C806 bit 0 → 0x0507 → 0xA79C
+ */
+static void cc_interrupt_ack(void) {
+    /* CC23 bit 1: Timer3/CC event (stock: 0xA79C-0xA7AB) */
+    if (REG_TIMER3_CSR & 0x02) {
+        REG_TIMER3_CSR = 0x02;
+    }
+
+    /* CC81 bit 1: CC DMA/interrupt (stock: 0xA7AC-0xA7E0) */
+    if (REG_CPU_INT_CTRL & 0x02) {
+        REG_CPU_INT_CTRL = 0x02;
+    }
+
+    /* CC91 bit 1: PD contract event (stock: 0xA7E1-0xA871)
+     *
+     * Stock firmware reads 0x09F9 bit 6 (PD fully negotiated flag) and if set:
+     *   92C2 |= 0x40 — enable power domain
+     *   92E1 = 0x10  — trigger power event
+     *   9090 &= ~0x80 — unmask PHY interrupts (enables C80A bit 6)
+     *
+     * We skip real PD negotiation but need these writes to enable PHY events.
+     * Gate: only do it once, and only after USB is configured (is_usb3 set). */
+    if (REG_CPU_DMA_INT & 0x02) {
+        REG_CPU_DMA_INT = 0x02;
+    }
+
+    /* CCD9 bit 1: Transfer 2 DMA (stock: 0xA872-0xA87F) */
+    if (REG_XFER2_DMA_STATUS & 0x02) {
+        REG_XFER2_DMA_STATUS = 0x02;
+    }
+
+    /* CCF9 bit 1: CPU extended status (stock: 0xA880-0xA88D) */
+    if (REG_CPU_EXT_STATUS & 0x02) {
+        REG_CPU_EXT_STATUS = 0x02;
+    }
+}
+
 void int1_isr(void) __interrupt(2) {
-    uint8_t tmp;
-    tmp = REG_POWER_EVENT_92E1;
-    if (tmp) {
-        REG_POWER_EVENT_92E1 = tmp;
+    /*
+     * Stock firmware INT1 ISR at 0x44D7-0x4582:
+     *   C806 bit 0 → lcall 0x0507 → 0xA79C (CC/PD interrupt handler)
+     *   CC33 bit 2 → ack timer (write 0x04)
+     *   C80A bit 6 → lcall 0x0516 → 0xAE89 (PHY event dispatcher)
+     *   0x09F9 & 0x83 → additional C80A dispatches (bits 5, 4)
+     */
+
+    /* Power event: ack 92E1 and clear 92C2 power status bits.
+     * Required for USB to work — without this, USB never enumerates.
+     * Note: This clears 92C2 bit 6 which is needed for PCIe PHY power.
+     * TODO: Find a way to keep bit 6 set after USB is established. */
+    { uint8_t pwr = REG_POWER_EVENT_92E1;
+      if (pwr) {
+        REG_POWER_EVENT_92E1 = pwr;
         REG_POWER_STATUS &= ~(POWER_STATUS_USB_PATH | 0x80);
+      }
+    }
+
+    /* CC/PD interrupt: C806 bit 0 → CC interrupt handler
+     * Stock firmware: 0x44F4 checks C806 bit 0 → lcall 0x0507 → 0xA79C */
+    if (REG_INT_SYSTEM & 0x01) {
+        cc_interrupt_ack();
+    }
+
+    /* CC33 bit 2: timer ack (stock: 0x44FE-0x4508) */
+    if (XDATA_REG8(0xCC33) & 0x04) {
+        XDATA_REG8(0xCC33) = 0x04;
+    }
+
+    /* PHY event dispatch: C80A bit 6 → phy_event_dispatcher
+     * Stock firmware: 0x450B checks C80A bit 6 → lcall 0x0516 → 0xAE89 */
+    if (REG_INT_PCIE_NVME & 0x40) {
+        phy_event_dispatcher();
     }
 }
 
@@ -559,34 +677,1437 @@ void timer1_isr(void) __interrupt(3) { }
 void serial_isr(void) __interrupt(4) { }
 void timer2_isr(void) __interrupt(5) { }
 
-/*=== PCIe Tunnel Init (from stock firmware 0xCC83) ===*/
-static void pcie_init(void) {
+static void delay_short(void) {
+    volatile uint16_t i;
+    for (i = 0; i < 1000; i++) { }
+}
+
+static void delay_long(void) {
+    volatile uint16_t i;
+    for (i = 0; i < 10000; i++) { }
+}
+
+/*
+ * phy_poll_registers - PHY poll register update
+ * Address: 0xC0F9-0xC16B (115 bytes)
+ *
+ * Called every main loop iteration by phy_maintenance().
+ * Updates PHY registers C655/C620/C65A based on poll mode,
+ * and C655 bit 3/C623/C65A bit 3 for second-lane if training incomplete.
+ *
+ * Original disassembly:
+ *   c0f9: mov dptr, #0x0b2f  ; read poll mode
+ *   c0fc: movx a, @dptr
+ *   c0fd: mov r7, a
+ *   c0fe: cjne a, #0x02, c10f ; mode 2 -> special path
+ *   ...
+ */
+static void phy_poll_registers(void) {
+    uint8_t mode = G_PHY_POLL_MODE;
     uint8_t tmp;
 
-    /* Clear CPU mode bit 4 (exit NVMe mode) */
-    REG_CPU_MODE_NEXT &= 0xEF;
+    if (mode == 2) {
+        /* Mode 2: C620 = (C620 & 0xE0) | 0x05 */
+        tmp = REG_PHY_EXT_CTRL_C620;
+        REG_PHY_EXT_CTRL_C620 = (tmp & 0xE0) | 0x05;
+        /* Also set bit 3 of CC2A (keepalive) */
+        tmp = REG_CPU_KEEPALIVE;
+        REG_CPU_KEEPALIVE = (tmp & 0xF7) | 0x08;
+    } else {
+        /* Mode 0 or 1 */
+        tmp = REG_PHY_CFG_C655;
+        if (mode == 1) {
+            REG_PHY_CFG_C655 = tmp & 0xFE;           /* Clear bit 0 */
+        } else {
+            REG_PHY_CFG_C655 = (tmp & 0xFE) | 0x01;  /* Set bit 0 */
+        }
 
-    /* Pulse B401 bit 0 (tunnel control enable) */
-    REG_PCIE_TUNNEL_CTRL |= PCIE_TUNNEL_ENABLE;
+        tmp = REG_PHY_EXT_CTRL_C620;
+        REG_PHY_EXT_CTRL_C620 = tmp & 0xE0;           /* Clear bits 0-4 */
 
-    /* B482: set bit 0, then set high nibble 0xF0 */
-    REG_TUNNEL_ADAPTER_MODE |= 0x01;
-    tmp = REG_TUNNEL_ADAPTER_MODE;
-    REG_TUNNEL_ADAPTER_MODE = (tmp & 0x0F) | 0xF0;
+        tmp = REG_PHY_CFG_C65A;
+        REG_PHY_CFG_C65A = (tmp & 0xFE) | 0x01;       /* Set bit 0 */
+    }
 
-    /* Clear B401 bit 0 */
-    REG_PCIE_TUNNEL_CTRL &= ~PCIE_TUNNEL_ENABLE;
+    /* If training not complete, also update second-lane registers */
+    if (G_STATE_FLAG_0AE3 == 0) {
+        uint8_t saved = G_PHY_LANE_POLL_MODE;
 
-    /* SET B480 BIT 0 = PCIe LINK UP */
-    REG_TUNNEL_LINK_CTRL |= TUNNEL_LINK_UP;
+        if (saved == 2) {
+            /* Saved mode 2: C623 = (C623 & 0xE0) | 0x05 */
+            tmp = REG_PHY_EXT_CTRL_C623;
+            REG_PHY_EXT_CTRL_C623 = (tmp & 0xE0) | 0x05;
+        } else {
+            /* Saved mode 0 or 1 */
+            tmp = REG_PHY_CFG_C655;
+            if (saved == 1) {
+                REG_PHY_CFG_C655 = tmp & 0xF7;           /* Clear bit 3 */
+            } else {
+                REG_PHY_CFG_C655 = (tmp & 0xF7) | 0x08;  /* Set bit 3 */
+            }
 
-    /* Clear B430 bit 0 */
-    REG_TUNNEL_LINK_STATE &= ~0x01;
+            tmp = REG_PHY_EXT_CTRL_C623;
+            REG_PHY_EXT_CTRL_C623 = tmp & 0xE0;           /* Clear bits 0-4 */
+        }
 
-    /* Set B298 bit 4 (tunnel enable in TLP config) */
-    REG_PCIE_TUNNEL_CFG |= PCIE_TLP_CTRL_TUNNEL;
+        /* Set bit 3 of C65A */
+        tmp = REG_PHY_CFG_C65A;
+        REG_PHY_CFG_C65A = (tmp & 0xF7) | 0x08;
+    }
+}
 
-    uart_puts("[PCIe]\n");
+/*
+ * phy_maintenance - Continuous PHY maintenance
+ * Address: 0xC5A1-0xC608 (104 bytes)
+ *
+ * Called every main loop iteration. Determines PHY poll mode from CD31
+ * status bits, checks training completion, and calls phy_poll_registers.
+ *
+ * Poll mode determination:
+ *   - If G_USB_TRANSFER_FLAG (0x0B2E) nonzero: mode = 0
+ *   - Else check CD31: bit0=1 AND bit1=0 -> mode=2, else mode=1
+ *
+ * Training check (0xD1C9):
+ *   Returns 0-4 based on 92C2/91C0/9100/92F8 register state.
+ *   If result > 1: save poll_mode to lane_poll_mode, clear poll_mode.
+ *
+ * Original disassembly:
+ *   c5a1: clr EA
+ *   c5a3: mov dptr, #0x09fa
+ *   ...
+ *   c603: lcall 0xc0f9
+ *   c606: setb EA
+ *   c608: ret
+ */
+static void phy_maintenance(void) {
+    uint8_t cd31;
+
+    IE &= ~IE_EA;   /* Disable interrupts (stock: clr EA at c5a1) */
+
+    /* Determine PHY poll mode from CD31 status */
+    if (G_USB_TRANSFER_FLAG != 0) {
+        /* 0x0B2E nonzero -> mode 0 (at c5e4) */
+        G_PHY_POLL_MODE = 0;
+    } else {
+        /* Read CD31 timer/PHY status (at c5c9) */
+        cd31 = REG_CPU_TIMER_CTRL_CD31;
+        if ((cd31 & 0x01) && !(cd31 & 0x02)) {
+            /* bit0=1, bit1=0 -> mode 2 (at c5d4) */
+            G_PHY_POLL_MODE = 2;
+        } else {
+            /* mode 1 (at c5dc) */
+            G_PHY_POLL_MODE = 1;
+        }
+    }
+
+    /* Check if training complete (at c5e9) */
+    if (G_STATE_FLAG_0AE3 == 0) {
+        /*
+         * Training status check (0xD1C9)
+         * Returns: 0=blocked, 1=not L0, 2=partial, 3=lanes partial, 4=fully trained
+         * Check 92C2 bit 6 + 91C0 bit 1: if both set, return 0
+         * Check 9100 & 0x03: if != 0x02, return 1
+         * Check 92F8 bit 5: if clear, return 2
+         * Check 92F8 bits 2-3: if zero, return 3
+         * Check 92F8 bit 4: if clear, return 3, else return 4
+         */
+        uint8_t training_level = 1; /* default: not fully trained */
+        if ((REG_POWER_STATUS & 0x40) && (REG_USB_PHY_CTRL_91C0 & 0x02)) {
+            training_level = 0;
+        } else if ((REG_USB_LINK_STATUS & 0x03) != 0x02) {
+            training_level = 1;
+        } else {
+            uint8_t r92f8 = REG_POWER_STATUS_92F8;
+            if (!(r92f8 & 0x20)) {
+                training_level = 2;
+            } else if (!(r92f8 & 0x0C)) {
+                training_level = 3;
+            } else if (r92f8 & 0x10) {
+                training_level = 4;
+            } else {
+                training_level = 3;
+            }
+        }
+
+        /* If training level > 1: save poll mode, clear it (at c5f8)
+         * NOTE: This forces mode=0 which SETs C655 bit 0.
+         * Mode 1 (CLEARs C655 bit 0) was what gave B450=0x01 previously. */
+        if (training_level > 1) {
+            G_PHY_LANE_POLL_MODE = G_PHY_POLL_MODE;
+            G_PHY_POLL_MODE = 0;
+        }
+    }
+
+    /* Call PHY poll register update (at c603) */
+    phy_poll_registers();
+
+    IE |= IE_EA;    /* Re-enable interrupts (stock: setb EA at c606) */
+}
+
+/*
+ * timer_stop - Stop and reset hardware timer 0
+ * Address: 0xE642-0xE64B (10 bytes)
+ *
+ * Stops timer by writing 0x04, then clears by writing 0x02 to CC11.
+ *
+ * Original disassembly:
+ *   e642: mov dptr, #0xcc11
+ *   e645: mov a, #0x04
+ *   e647: movx @dptr, a       ; stop timer
+ *   e648: mov a, #0x02
+ *   e64a: movx @dptr, a       ; clear/reset timer
+ *   e64b: ret
+ */
+static void timer_stop(void) {
+    REG_TIMER0_CSR = TIMER_CSR_CLEAR;    /* 0x04 = stop */
+    REG_TIMER0_CSR = TIMER_CSR_EXPIRED;  /* 0x02 = clear/ack */
+}
+
+/*
+ * hw_timer_delay - Hardware timer-based delay
+ * Address: 0xE581-0xE591 (17 bytes) + timer_setup at 0xE292-0xE2AD (28 bytes)
+ *
+ * Uses hardware timer 0 (CC10-CC13) for precise delays.
+ * Stock firmware calls this via dispatch 0x0502.
+ *
+ * Parameters:
+ *   prescaler: bits 0-2 of CC10 (timer clock divider)
+ *   count_hi:  CC12 (timer count high byte)
+ *   count_lo:  CC13 (timer count low byte)
+ *
+ * Original disassembly (timer_setup at 0xE292):
+ *   e292: lcall 0xe642          ; timer_stop()
+ *   e295: mov dptr, #0xcc10
+ *   e298: movx a, @dptr         ; read CC10
+ *   e299: anl a, #0xf8          ; clear bits 0-2
+ *   e29b: orl a, r7             ; set prescaler bits
+ *   e29c: movx @dptr, a         ; write CC10
+ *   e29d-e2a6: write count to CC12:CC13
+ *   e2a7: mov dptr, #0xcc11
+ *   e2aa: mov a, #0x01
+ *   e2ac: movx @dptr, a         ; start timer
+ *
+ * Original disassembly (hw_timer_delay at 0xE581):
+ *   e581: lcall 0xe292          ; timer_setup
+ *   e584: mov dptr, #0xcc11
+ *   e587: movx a, @dptr         ; read CC11
+ *   e588: jnb 0xe0.1, 0xe584   ; loop until bit 1 set (timer expired)
+ *   e58b: mov dptr, #0xcc11
+ *   e58e: mov a, #0x02
+ *   e590: movx @dptr, a         ; ack timer (write 0x02)
+ *   e591: ret
+ */
+static void hw_timer_delay(uint8_t prescaler, uint8_t count_hi, uint8_t count_lo) {
+    /* timer_setup (0xE292): stop, configure, start */
+    timer_stop();
+    REG_TIMER0_DIV = (REG_TIMER0_DIV & 0xF8) | (prescaler & 0x07);
+    REG_TIMER0_THRESHOLD_HI = count_hi;
+    REG_TIMER0_THRESHOLD_LO = count_lo;
+    REG_TIMER0_CSR = TIMER_CSR_ENABLE;  /* 0x01 = start timer */
+
+    /* hw_timer_delay (0xE581): poll until expired */
+    while (!(REG_TIMER0_CSR & TIMER_CSR_EXPIRED)) { }
+    REG_TIMER0_CSR = TIMER_CSR_EXPIRED;  /* 0x02 = ack completion */
+}
+
+/*
+ * phy_rst_rxpll - Reset RXPLL (receiver PLL) for PCIe link recovery
+ * Bank 1 Address: 0xE989-0xE9BA (50 bytes) [actual addr: 0x168F4]
+ *
+ * Resets the downstream PCIe receiver PLL to allow re-lock.
+ * Called during link speed changes, PHY recovery, and CDR timeout.
+ *
+ * Sequence:
+ *   1. Set bit 2 of CC37 (RXPLL reset mode enable)
+ *   2. Write 0xFF to C20E (assert RXPLL reset)
+ *   3. hw_timer_delay(prescaler=1, count=0x0014)
+ *   4. Write 0x00 to C20E (de-assert RXPLL reset)
+ *   5. hw_timer_delay(prescaler=2, count=0x0028)
+ *   6. Clear bit 2 of CC37 (exit reset mode)
+ *
+ * Original disassembly:
+ *   e989: mov r3, #0xff         ; string bank
+ *   e98b-e98f: lcall uart_puts("\r\n[RstRxpll...]")
+ *   e992: lcall 0x9877          ; a = CC37 & 0xFB
+ *   e995: orl a, #0x04          ; set bit 2
+ *   e997: movx @dptr, a         ; CC37 |= 0x04
+ *   e998: mov dptr, #0xc20e
+ *   e99b: lcall 0x9a48          ; C20E = 0xFF, set delay params (R5=0x14,R4=0,R7=1)
+ *   e99e: lcall 0x0502          ; hw_timer_delay(1, 0x00, 0x14)
+ *   e9a1: mov dptr, #0xc20e
+ *   e9a4: clr a
+ *   e9a5: movx @dptr, a         ; C20E = 0x00
+ *   e9a6: mov r5, #0x28
+ *   e9a8: mov r4, a             ; R4 = 0
+ *   e9a9: mov r7, #0x02
+ *   e9ab: lcall 0x0502          ; hw_timer_delay(2, 0x00, 0x28)
+ *   e9ae: lcall 0x9877          ; a = CC37 & 0xFB
+ *   e9b1: movx @dptr, a         ; CC37 &= ~0x04
+ *   e9b2-e9b8: ljmp uart_puts("[Done]")
+ */
+static void phy_rst_rxpll(void) {
+    uart_puts("\r\n[RstRxpll...]");
+
+    /* Enter RXPLL reset mode: CC37 |= 0x04 (set bit 2) */
+    REG_CPU_CTRL_CC37 = (REG_CPU_CTRL_CC37 & ~CPU_CTRL_CC37_RXPLL_MODE) | CPU_CTRL_CC37_RXPLL_MODE;
+
+    /* Assert RXPLL reset */
+    REG_PHY_RXPLL_RESET = 0xFF;
+
+    /* Wait: prescaler=1, count=0x0014 (20 ticks) */
+    hw_timer_delay(0x01, 0x00, 0x14);
+
+    /* De-assert RXPLL reset */
+    REG_PHY_RXPLL_RESET = 0x00;
+
+    /* Wait for PLL re-lock: prescaler=2, count=0x0028 (40 ticks) */
+    hw_timer_delay(0x02, 0x00, 0x28);
+
+    /* Exit RXPLL reset mode: CC37 &= ~0x04 (clear bit 2) */
+    REG_CPU_CTRL_CC37 &= ~CPU_CTRL_CC37_RXPLL_MODE;
+
+    uart_puts("[Done]");
+}
+
+/*
+ * ltssm_transition - LTSSM state machine manipulation for link training
+ * Bank 1 Address: 0xCCDD-0xCD26 (74 bytes) [actual addr: 0x14C48]
+ *
+ * Steps through LTSSM states by manipulating CC3F bits 1,2,5,6
+ * with hardware timer waits between each step. Also clears CC3D bit 7.
+ *
+ * Original disassembly:
+ *   ccdd: mov dptr, #0xcc3f
+ *   cce0: movx a, @dptr
+ *   cce1: anl a, #0xdf          ; clear bit 5
+ *   cce3: movx @dptr, a
+ *   cce4: movx a, @dptr
+ *   cce5: anl a, #0xbf          ; clear bit 6
+ *   cce7: movx @dptr, a
+ *   cce8: hw_timer_delay(0, 0x00, 0x09)
+ *   ccf1: movx a, @dptr
+ *   ccf5: anl a, #0xfd          ; clear bit 1
+ *   ccf7: helper: write, delay(0, 0x00, 0xF9), re-read
+ *   ccfa: anl a, #0xdf          ; clear bit 5
+ *   ccfc: orl a, #0x20          ; set bit 5
+ *   ccfe: movx @dptr, a
+ *   ccff: hw_timer_delay(1, 0x01, 0x67)
+ *   cd08: movx a, @dptr
+ *   cd0c: anl a, #0xfb          ; clear bit 2
+ *   cd0e: helper: write, delay(0, 0x00, 0xF9), re-read
+ *   cd11: anl a, #0xbf          ; clear bit 6
+ *   cd13: orl a, #0x40          ; set bit 6
+ *   cd15: movx @dptr, a
+ *   cd16: hw_timer_delay(0, 0x00, 0xF9)
+ *   cd1f: mov dptr, #0xcc3d
+ *   cd22: movx a, @dptr
+ *   cd23: anl a, #0x7f          ; clear bit 7
+ *   cd25: movx @dptr, a
+ *   cd26: ret
+ */
+static void ltssm_transition(void) {
+    uint8_t val;
+
+    /* Phase 1: Clear LTSSM override bits 5,6 */
+    val = REG_LTSSM_CTRL;
+    REG_LTSSM_CTRL = val & ~LTSSM_CTRL_OVERRIDE_EN;   /* clear bit 5 */
+    val = REG_LTSSM_CTRL;
+    REG_LTSSM_CTRL = val & ~LTSSM_CTRL_FORCE_STATE;   /* clear bit 6 */
+
+    /* Phase 2: Short delay (~9 ticks) */
+    hw_timer_delay(0x00, 0x00, 0x09);
+
+    /* Phase 3: Clear bit 1 (write trigger), delay, re-read */
+    val = REG_LTSSM_CTRL;
+    REG_LTSSM_CTRL = val & ~LTSSM_CTRL_WRITE_TRIG;    /* clear bit 1 */
+    hw_timer_delay(0x00, 0x00, 0xF9);                  /* ~249 ticks */
+    val = REG_LTSSM_CTRL;                              /* re-read after delay */
+
+    /* Phase 4: Set bit 5 (LTSSM override enable) */
+    val = (val & ~LTSSM_CTRL_OVERRIDE_EN) | LTSSM_CTRL_OVERRIDE_EN;
+    REG_LTSSM_CTRL = val;
+
+    /* Phase 5: Longer delay */
+    hw_timer_delay(0x01, 0x01, 0x67);                  /* prescaler=1, count=0x0167 (~359 ticks) */
+
+    /* Phase 6: Clear bit 2 (state change trigger), delay, re-read */
+    val = REG_LTSSM_CTRL;
+    REG_LTSSM_CTRL = val & ~LTSSM_CTRL_STATE_TRIG;    /* clear bit 2 */
+    hw_timer_delay(0x00, 0x00, 0xF9);                  /* ~249 ticks */
+    val = REG_LTSSM_CTRL;                              /* re-read after delay */
+
+    /* Phase 7: Set bit 6 (force LTSSM state) */
+    val = (val & ~LTSSM_CTRL_FORCE_STATE) | LTSSM_CTRL_FORCE_STATE;
+    REG_LTSSM_CTRL = val;
+
+    /* Phase 8: Delay */
+    hw_timer_delay(0x00, 0x00, 0xF9);                  /* ~249 ticks */
+
+    /* Phase 9: Clear CC3D bit 7 (force/lock bit) */
+    REG_LTSSM_STATE &= ~LTSSM_STATE_FORCE;
+}
+
+/*
+ * phy_rxpll_config - Configure RXPLL settings before reset
+ * Bank 1 Address: 0xE957-0xE988 (50 bytes) [actual addr: 0x168C2]
+ *
+ * Called before RstRxpll in PHY maintenance/recovery paths.
+ * Configures E760/E761 PHY PLL registers and triggers E763 events.
+ * Also sets C808 bit 1 to enable RXPLL reconfiguration.
+ *
+ * Original disassembly:
+ *   e957: mov dptr, #0xc808
+ *   e95a: lcall 0xd59d          ; @dptr = (@dptr & 0xFD) | 0x02 (set bit 1)
+ *   e95d: mov dptr, #0xe761
+ *   e960: mov a, #0xff
+ *   e962: movx @dptr, a         ; E761 = 0xFF
+ *   e963: mov dptr, #0xe760
+ *   e966: movx a, @dptr
+ *   e967: anl a, #0xfb          ; clear bit 2
+ *   e969: orl a, #0x04          ; set bit 2
+ *   e96b: movx @dptr, a         ; E760 bit 2 toggled (clear+set = no-op on bit 2)
+ *   e96c: inc dptr              ; E761
+ *   e96d: movx a, @dptr
+ *   e96e: anl a, #0xfb          ; clear bit 2
+ *   e970: movx @dptr, a         ; E761 &= ~0x04
+ *   e971: mov dptr, #0xe760
+ *   e974: movx a, @dptr
+ *   e975: anl a, #0xf7          ; clear bit 3
+ *   e977: orl a, #0x08          ; set bit 3
+ *   e979: movx @dptr, a         ; E760 bit 3 toggled
+ *   e97a: inc dptr              ; E761
+ *   e97b: movx a, @dptr
+ *   e97c: anl a, #0xf7          ; clear bit 3
+ *   e97e: movx @dptr, a         ; E761 &= ~0x08
+ *   e97f: mov dptr, #0xe763
+ *   e982: mov a, #0x04
+ *   e984: movx @dptr, a         ; E763 = 0x04 (trigger)
+ *   e985: mov a, #0x08
+ *   e987: movx @dptr, a         ; E763 = 0x08 (trigger)
+ *   e988: ret
+ */
+static void phy_rxpll_config(void) {
+    uint8_t val;
+
+    /* C808: set bit 1 (RXPLL config trigger) */
+    REG_PHY_RXPLL_CFG_TRIG = (REG_PHY_RXPLL_CFG_TRIG & ~PHY_RXPLL_CFG_TRIG_BIT1) | PHY_RXPLL_CFG_TRIG_BIT1;
+
+    /* E761 = 0xFF */
+    REG_PHY_RXPLL_CFG_B = 0xFF;
+
+    /* E760: toggle bit 2 (clear then set = ensures bit 2 is set) */
+    val = REG_PHY_RXPLL_CFG_A;
+    REG_PHY_RXPLL_CFG_A = (val & ~0x04) | 0x04;
+
+    /* E761: clear bit 2 */
+    val = REG_PHY_RXPLL_CFG_B;
+    REG_PHY_RXPLL_CFG_B = val & ~0x04;
+
+    /* E760: toggle bit 3 */
+    val = REG_PHY_RXPLL_CFG_A;
+    REG_PHY_RXPLL_CFG_A = (val & ~0x08) | 0x08;
+
+    /* E761: clear bit 3 */
+    val = REG_PHY_RXPLL_CFG_B;
+    REG_PHY_RXPLL_CFG_B = val & ~0x08;
+
+    /* Trigger PLL reconfiguration events */
+    REG_PHY_RXPLL_TRIGGER = 0x04;
+    REG_PHY_RXPLL_TRIGGER = 0x08;
+}
+
+/*
+ * pd_state_init - Initialize PHY/PD command engine state
+ * Address: 0xB806-0xB8A8 (163 bytes)
+ *
+ * Clears command engine globals needed for PHY event processing.
+ * Stock firmware calls this during major reset, speed change, and CDR recovery.
+ *
+ * Original disassembly:
+ *   b80f: clr a
+ *   b810: mov dptr, #0x07b4    ; clear 07B4, 07B5
+ *   ...
+ *   b816: mov dptr, #0x07c0    ; clear 07C0, 07C1
+ *   ...
+ *   b830: mov dptr, #0x07ba    ; 07BA = 1
+ *   ...
+ *   b835: E400 bit 6 -> 07D2 = 0x10 or 0x01
+ *   b85b: clear 07DB, 07DC, 07B6-07B9, 07C5, 07BB
+ *   b887: lcall 0xe0d6, 0xe6cf
+ *   b890: 07DD = 5, 07DE = 0, 07DF = 0
+ *   b898: 07D7 = 1, 07D8 = 0x2C, 07D9 = 0, 07DA = 0x64
+ */
+static void pd_state_init(void) {
+    uint8_t val;
+
+    /* Clear command engine state (stock: 0xB80F-0xB82F) */
+    G_PD_STATE_07B4 = 0;
+    G_PD_STATE_07B5 = 0;
+    G_CMD_ADDR_LO = 0;       /* 07C0: command slot counter */
+    G_CMD_SLOT_C1 = 0;       /* 07C1: command slot value */
+    G_CMD_STATUS = 0;        /* 07C4 */
+    G_CMD_WORK_C2 = 0;       /* 07C2 */
+    G_CMD_ADDR_HI = 0;       /* 07BF */
+    G_PD_STATE_07BE = 0;
+    G_PD_STATE_07E0 = 0;
+
+    /* Set init flag (stock: 0xB830) */
+    G_PD_INIT_07BA = 1;
+
+    /* E400 bit 6 determines PD mode (stock: 0xB835-0xB84D) */
+    val = REG_CMD_CTRL_E400;
+    if (val & 0x40) {
+        G_PD_MODE_07D2 = 0x10;
+    } else {
+        G_PD_MODE_07D2 = 0x01;
+    }
+
+    /* If 07DB was 0, set 07C7=2 (stock: 0xB851-0xB859) */
+    if (G_PD_COUNTER_07DB == 0) {
+        G_CMD_WORK_C7 = 0x02;
+    }
+
+    /* Clear remaining state (stock: 0xB85A-0xB886) */
+    G_PD_COUNTER_07DB = 0;
+    G_PD_COUNTER_07DC = 0;
+    G_PD_FLAG_07B6 = 0;
+    G_CMD_ENGINE_SLOT = 0;   /* 07B7 */
+    G_CMD_WORK_C5 = 0;       /* 07C5 */
+    G_CMD_PENDING_07BB = 0;
+    G_VENDOR_CTRL_07B9 = 0;
+    G_FLASH_CMD_FLAG = 0;    /* 07B8 */
+
+    /* Command parameters (stock: 0xB88D-0xB8A8) */
+    G_CMD_LBA_3 = 0x05;     /* 07DD */
+    G_CMD_FLAG_07DE = 0;
+    G_PCIE_COMPLETE_07DF = 0;
+}
+
+/*
+ * phy_clear_events - Clear all PHY events and disable event generation
+ * Address: 0x947C-0x94AB (48 bytes)
+ *
+ * Writes 0xFF to E40F and E410 (W1C clear all), clears E40B bits 1-3,
+ * configures CC88 timer, and writes CC89=1 to trigger reset.
+ *
+ * Original disassembly:
+ *   947c: mov dptr, #0xe40f
+ *   947f: mov a, #0xff
+ *   9481: movx @dptr, a         ; E40F = 0xFF
+ *   9482: inc dptr
+ *   9483: movx @dptr, a         ; E410 = 0xFF
+ *   9484: E40B: clear bits 1,2,3
+ *   9493: CC88 = (CC88 & 0xF8) | 0x02
+ *   949c: CC8A = 0x00, CC8B = 0xC7
+ *   94a5: CC89 = 0x01
+ */
+static void phy_clear_events(void) {
+    REG_PHY_EVENT_E40F = 0xFF;
+    REG_PHY_INT_STATUS_E410 = 0xFF;
+
+    REG_CMD_CONFIG &= ~0x02;   /* E40B: clear bit 1 */
+    REG_CMD_CONFIG &= ~0x04;   /* E40B: clear bit 2 */
+    REG_CMD_CONFIG &= ~0x08;   /* E40B: clear bit 3 */
+
+    REG_XFER_DMA_CTRL = (REG_XFER_DMA_CTRL & 0xF8) | 0x02;  /* CC88 */
+    REG_XFER_DMA_ADDR_LO = 0x00;                              /* CC8A */
+    REG_XFER_DMA_ADDR_HI = 0xC7;                              /* CC8B */
+    REG_XFER_DMA_CMD = 0x01;                                  /* CC89 */
+}
+
+/*
+ * phy_enable_events - Enable PHY event generation
+ * Address: 0x94EA-0x9505 (28 bytes)
+ *
+ * Sets CC89=2 (enable event timer), then sets E40B bits 1,2,3
+ * to enable link change, speed change, and CDR events.
+ *
+ * Original disassembly:
+ *   94ea: mov dptr, #0xcc89
+ *   94ed: mov a, #0x02
+ *   94ef: movx @dptr, a         ; CC89 = 2
+ *   94f0: E40B: set bit 1, then bit 2, then bit 3
+ */
+static void phy_enable_events(void) {
+    REG_XFER_DMA_CMD = 0x02;                                  /* CC89 = 2 */
+
+    REG_CMD_CONFIG = (REG_CMD_CONFIG & ~0x02) | 0x02;  /* E40B: set bit 1 */
+    REG_CMD_CONFIG = (REG_CMD_CONFIG & ~0x04) | 0x04;  /* E40B: set bit 2 */
+    REG_CMD_CONFIG = (REG_CMD_CONFIG & ~0x08) | 0x08;  /* E40B: set bit 3 */
+}
+
+/*
+ * phy_poll_cmd_ready - Check if PHY command engine is idle
+ * Address: 0xDE5A-0xDE86 (45 bytes)
+ *
+ * Returns 0 if command engine ready, 1 if busy.
+ * Checks E402 bits 1,2,3 and E41C bit 0.
+ *
+ * Original disassembly:
+ *   de5a: E402 bit 1 -> return 1
+ *   de64: E41C bit 0 -> return 1
+ *   de6b: E402 bit 2 -> return 1
+ *   de77: E402 bit 3 -> return 1
+ *   de84: return 0
+ */
+static uint8_t phy_poll_cmd_ready(void) {
+    uint8_t val;
+
+    val = REG_CMD_STATUS_E402;
+    if (val & 0x02) return 1;
+
+    if (REG_CMD_BUSY_STATUS & CMD_BUSY_STATUS_BUSY) return 1;
+
+    val = REG_CMD_STATUS_E402;
+    if (val & 0x04) return 1;
+
+    val = REG_CMD_STATUS_E402;
+    if (val & 0x08) return 1;
+
+    return 0;
+}
+
+/*
+ * phy_command_submit - Submit PHY command and wait for completion
+ * Address: 0xDFD6-0xDFFD (40 bytes)
+ *
+ * Polls until idle, writes G_CMD_SLOT_C1 to E403, triggers via E41C,
+ * polls completion, advances slot counter.
+ *
+ * Original disassembly:
+ *   dfd6: lcall 0xde5a         ; poll until ready
+ *   dfdc: E403 = G_CMD_SLOT_C1
+ *   dfe4: E41C |= 0x01         ; trigger
+ *   dfe7: poll E41C bit 0 until clear
+ *   dfee: G_CMD_ADDR_LO = (G_CMD_ADDR_LO + 1) & 0x07
+ *   dff6: G_PD_STATE_07B4 = 0
+ */
+static void phy_command_submit(void) {
+    /* Poll until command engine idle */
+    while (phy_poll_cmd_ready()) { }
+
+    /* Write command slot value to E403 */
+    REG_CMD_CTRL_E403 = G_CMD_SLOT_C1;
+
+    /* Trigger: set E41C bit 0 */
+    REG_CMD_BUSY_STATUS = (REG_CMD_BUSY_STATUS & ~CMD_BUSY_STATUS_BUSY) | CMD_BUSY_STATUS_BUSY;
+
+    /* Poll until E41C bit 0 clears (command complete) */
+    while (REG_CMD_BUSY_STATUS & CMD_BUSY_STATUS_BUSY) { }
+
+    /* Advance slot counter (mod 8) */
+    G_CMD_ADDR_LO = (G_CMD_ADDR_LO + 1) & 0x07;
+
+    /* Clear state */
+    G_PD_STATE_07B4 = 0;
+}
+
+/*
+ * phy_event_link_training - Handle link training event (E410 bit 6)
+ * Bank 1 Address: 0xE1BE-0xE1DD (32 bytes) [actual addr: 0x16129]
+ *
+ * Each E410 bit 6 event advances the PCIe link training state machine
+ * by one step. Decrements slot counter, merges into E421, submits command.
+ *
+ * Original disassembly:
+ *   e1be: mov dptr, #0x07c0    ; G_CMD_ADDR_LO
+ *   e1c1: movx a, @dptr
+ *   e1c2: dec a
+ *   e1c3: anl a, #0x07         ; wrap to 0-7
+ *   e1c5: movx @dptr, a
+ *   e1c6: read E421, save in r7
+ *   e1cf: lcall 0x9643         ; a = 2 * G_CMD_ADDR_LO
+ *   e1d4: orl a, r7            ; merge
+ *   e1d9: write back to E421
+ *   e1da: lcall 0xdfd6         ; phy_command_submit
+ */
+static void phy_event_link_training(void) {
+    uint8_t slot, cmd_mode, slot_bits;
+
+    /* Decrement and wrap command slot counter */
+    slot = G_CMD_ADDR_LO;
+    slot = (slot - 1) & 0x07;
+    G_CMD_ADDR_LO = slot;
+
+    /* Read command mode register */
+    cmd_mode = REG_CMD_MODE_E421;
+
+    /* Compute doubled slot index (0x9643: a = XDATA[07C0]; add a, acc) */
+    slot_bits = G_CMD_ADDR_LO;
+    slot_bits = slot_bits + slot_bits;
+
+    /* Merge and write back */
+    REG_CMD_MODE_E421 = cmd_mode | slot_bits;
+
+    /* Submit command */
+    phy_command_submit();
+}
+
+/*
+ * phy_event_cdr_recovery - Handle CDR recovery event (E410 bit 5)
+ * Bank 1 Address: 0xE5DF-0xE5EB (13 bytes) [actual addr: 0x1654A]
+ *
+ * Dispatches to full (0xDA52) or quick (0xBCA1) recovery based on
+ * G_PD_COUNTER_07DB.
+ *
+ * Full recovery (DA52): clear events, poll CC89, re-enable, submit cmd.
+ * Quick recovery (BCA1): check E302 lane count, partial reset E403-E405.
+ *
+ * Original disassembly:
+ *   e5df: mov dptr, #0x07db
+ *   e5e2: movx a, @dptr
+ *   e5e3: jnz $e5e8           ; quick path if nonzero
+ *   e5e5: ljmp 0xda52          ; full recovery
+ *   e5e8: lcall 0xbca1         ; quick recovery
+ */
+static void phy_event_cdr_recovery(void) {
+    if (G_PD_COUNTER_07DB == 0) {
+        /* Full CDR recovery (stock: 0xDA52) */
+        uart_puts("[CDR:F]");
+        G_PD_COUNTER_07DB = 1;
+        pd_state_init();
+        phy_clear_events();
+        while (!(REG_XFER_DMA_CMD & 0x02)) { }  /* poll CC89 bit 1 */
+        phy_enable_events();
+        G_PD_COUNTER_07DB = 1;
+    } else {
+        /* Quick CDR recovery (stock: 0xBCA1) */
+        uint8_t lane_count = (REG_PHY_MODE_E302 & 0x30) >> 4;
+        uart_puts("[CDR:Q]");
+        if (lane_count != 3) {
+            pd_state_init();
+            phy_clear_events();
+            while (!(REG_XFER_DMA_CMD & 0x02)) { }  /* poll CC89 bit 1 */
+            phy_enable_events();
+
+            REG_CMD_CTRL_E403 = 0x00;
+            REG_CMD_CFG_E404 = 0x40;
+            REG_CMD_CFG_E405 = (REG_CMD_CFG_E405 & 0xF8) | 0x05;
+            REG_CMD_STATUS_E402 = (REG_CMD_STATUS_E402 & 0x1F) | 0x20;
+
+            while (phy_poll_cmd_ready()) { }
+            REG_CMD_BUSY_STATUS = (REG_CMD_BUSY_STATUS & ~CMD_BUSY_STATUS_BUSY) | CMD_BUSY_STATUS_BUSY;
+            while (REG_CMD_BUSY_STATUS & CMD_BUSY_STATUS_BUSY) { }
+
+            G_PD_COUNTER_07DC = 1;
+        }
+    }
+}
+
+/*
+ * phy_event_major_handler - Handle E40F major events
+ *
+ * Simplified handler for E40F bit 7 (major reset), bit 0 (link change),
+ * and bit 5 (speed change). All three paths clear events, poll CC89,
+ * and re-enable events.
+ *
+ * Stock firmware addresses:
+ *   bit 7: 0xDD9C (phy_event_major_reset)
+ *   bit 0: 0x83D6 (phy_event_link_change)
+ *   bit 5: 0xE19E (phy_event_speed_change)
+ */
+static void phy_event_major_handler(uint8_t event_bit) {
+    uart_puts("[E40F:");
+    uart_puthex(event_bit);
+    uart_puts("]\n");
+
+    /* NOTE: Stock firmware does pd_state_init + phy_clear_events + phy_enable_events
+     * here, but this was causing USB resets. For now, just set the counter
+     * and let the event system naturally re-arm. The key insight is that
+     * these events ARE firing (CC controller enabled them), but the full
+     * reset sequence was too disruptive during USB operation. */
+    G_PD_COUNTER_07DB = 1;
+}
+
+/*
+ * phy_event_dispatcher - PHY/PCIe event dispatcher
+ * Address: 0xAE89-0xAF5B (211 bytes)
+ *
+ * Called from main loop when C80A bit 6 is set. Reads E40F and E410,
+ * dispatches to handlers based on individual bits (priority order).
+ * Also checks E314 and E661 for completion events.
+ *
+ * Gating condition (from caller at 0x9332):
+ *   C80A bit 6 must be set (INT_PCIE_NVME_STATUS)
+ *
+ * Priority: E40F bit 7 > 0 > 5, then E410 bit 0 > 3 > 4 > 5 > 6 > 7
+ *
+ * Original disassembly:
+ *   ae89-ae9a: UART debug output (CR/LF, debug prefix)
+ *   ae9b: read E40F, display hex
+ *   aea9: read E410, display hex
+ *   aeb7: E40F bit 7 -> phy_event_major_reset (0xDD9C)
+ *   aec6: E40F bit 0 -> ack, phy_event_link_change (0x83D6)
+ *   aed5: E40F bit 5 -> ack, phy_event_speed_change (0xE19E)
+ *   aee4: E410 bit 0 -> ack only
+ *   aef0: E410 bit 3 -> ack only
+ *   aefc: E410 bit 4 -> ack only
+ *   af08: E410 bit 5 -> ack, phy_event_cdr_recovery (0xE5DF)
+ *   af17: E410 bit 6 -> ack, phy_event_link_training (0xE1BE)
+ *   af26: E410 bit 7 -> ack only
+ *   af30: E314 bits 0,1,2 -> ack; E661 bit 7 -> ack
+ */
+static void phy_event_dispatcher(void) {
+    uint8_t e40f, e410;
+
+    /* Gate check: C80A bit 6 (stock: 0x9357)
+     * NOTE: On stock firmware this is set by PCIe hardware when link active.
+     * We skip the gate check since our link isn't trained yet — we need
+     * events to CAUSE training, not wait for training to enable events. */
+
+    /* Read event registers */
+    e40f = REG_PHY_EVENT_E40F;
+    e410 = REG_PHY_INT_STATUS_E410;
+
+    /* Skip if no events pending */
+    if (!e40f && !e410) return;
+
+    /* === E40F dispatch (higher priority) === */
+
+    /* E40F bit 7: Major PHY event (stock: -> 0xDD9C) */
+    if (REG_PHY_EVENT_E40F & PHY_EVENT_MAJOR) {
+        phy_event_major_handler(0x80);
+        REG_PHY_INT_STATUS_E410 = PHY_INT_MAJOR_ERROR;  /* ack E410 bit 7 */
+        goto end_checks;
+    }
+
+    /* E40F bit 0: Link state change (stock: -> 0x83D6) */
+    if (REG_PHY_EVENT_E40F & PHY_EVENT_LINK_CHANGE) {
+        REG_PHY_EVENT_E40F = PHY_EVENT_LINK_CHANGE;     /* W1C ack */
+        phy_event_major_handler(0x01);
+        goto end_checks;
+    }
+
+    /* E40F bit 5: Speed change (stock: -> 0xE19E) */
+    if (REG_PHY_EVENT_E40F & PHY_EVENT_SPEED_CHANGE) {
+        REG_PHY_EVENT_E40F = PHY_EVENT_SPEED_CHANGE;    /* W1C ack */
+        phy_event_major_handler(0x20);
+        goto end_checks;
+    }
+
+    /* === E410 dispatch (lower priority) === */
+
+    /* E410 bit 0: Minor event (ack only) */
+    if (REG_PHY_INT_STATUS_E410 & PHY_INT_MINOR_EVENT) {
+        REG_PHY_INT_STATUS_E410 = PHY_INT_MINOR_EVENT;
+        goto end_checks;
+    }
+
+    /* E410 bit 3: CDR timeout (ack only) */
+    if (REG_PHY_INT_STATUS_E410 & PHY_INT_CDR_TIMEOUT) {
+        REG_PHY_INT_STATUS_E410 = PHY_INT_CDR_TIMEOUT;
+        goto end_checks;
+    }
+
+    /* E410 bit 4: PLL event (ack only) */
+    if (REG_PHY_INT_STATUS_E410 & PHY_INT_PLL_EVENT) {
+        REG_PHY_INT_STATUS_E410 = PHY_INT_PLL_EVENT;
+        goto end_checks;
+    }
+
+    /* E410 bit 5: CDR recovery needed (stock: -> 0xE5DF) */
+    if (REG_PHY_INT_STATUS_E410 & PHY_INT_CDR_RECOVERY) {
+        REG_PHY_INT_STATUS_E410 = PHY_INT_CDR_RECOVERY;
+        phy_event_cdr_recovery();
+        goto end_checks;
+    }
+
+    /* E410 bit 6: Link training event (stock: -> 0xE1BE) */
+    if (REG_PHY_INT_STATUS_E410 & PHY_INT_LINK_TRAINING) {
+        REG_PHY_INT_STATUS_E410 = PHY_INT_LINK_TRAINING;
+        phy_event_link_training();
+        goto end_checks;
+    }
+
+    /* E410 bit 7: Major error (ack only) */
+    if (REG_PHY_INT_STATUS_E410 & PHY_INT_MAJOR_ERROR) {
+        REG_PHY_INT_STATUS_E410 = PHY_INT_MAJOR_ERROR;
+    }
+
+end_checks:
+    /* Final: ack E314 and E661 pending events (stock: 0xAF30-0xAF5B) */
+    if (REG_DEBUG_STATUS_E314 & 0x01) { REG_DEBUG_STATUS_E314 = 0x01; return; }
+    if (REG_DEBUG_STATUS_E314 & 0x02) { REG_DEBUG_STATUS_E314 = 0x02; return; }
+    if (REG_DEBUG_STATUS_E314 & 0x04) { REG_DEBUG_STATUS_E314 = 0x04; return; }
+    if (REG_DEBUG_INT_E661 & DEBUG_INT_E661_FLAG) {
+        REG_DEBUG_INT_E661 = DEBUG_INT_E661_FLAG;
+    }
+}
+
+/*
+ * cc_analog_config - Configure CC pin analog front-end for USB-C detection
+ * Address: 0xD7FD-0xD83A (62 bytes)
+ *
+ * Configures E401, E406, E407, E408 registers for CC1/CC2 pin detection.
+ * Sets voltage references, bias currents, and termination resistors.
+ * Only performs configuration if E40B bit 7 reads back as set (CC hardware present).
+ *
+ * Original disassembly:
+ *   d7fd: mov dptr, #0xe40b
+ *   d800: movx a, @dptr
+ *   d801: anl a, #0x7f         ; clear bit 7
+ *   d803: orl a, #0x80         ; set bit 7
+ *   d805: movx @dptr, a        ; E40B |= 0x80
+ *   d806: movx a, @dptr        ; re-read
+ *   d807: anl a, #0x80         ; isolate bit 7
+ *   d80c: jz 0xd83a            ; skip if bit 7 clear (no CC hardware)
+ *   d80e-d81c: E401 config (bits 0-2 = 0x04, bits 3-7 = 0xB0)
+ *   d81d-d82b: E406 config (bits 0-3 = 0x06, bits 4-7 = 0xA0)
+ *   d82c-d832: E407 = (E407 & 0xE0) | 0x15
+ *   d833-d839: E408 = (E408 & 0xE0) | 0x1C
+ *   d83a: ret
+ */
+static void cc_analog_config(void) {
+    uint8_t val;
+
+    /* E40B: set bit 7 (enable CC analog) */
+    val = REG_CMD_CONFIG;
+    REG_CMD_CONFIG = (val & 0x7F) | 0x80;
+
+    /* Re-read: check if bit 7 stuck (CC hardware present) */
+    val = REG_CMD_CONFIG;
+    if (!(val & 0x80)) return;  /* No CC hardware, skip */
+
+    /* E401: CC1 detect mode + voltage reference */
+    val = XDATA_REG8(0xE401);
+    XDATA_REG8(0xE401) = (val & 0xF8) | 0x04;   /* bits 0-2 = 4 */
+    val = XDATA_REG8(0xE401);
+    XDATA_REG8(0xE401) = (val & 0x07) | 0xB0;   /* bits 3-7 = 0xB0 */
+
+    /* E406: CC2 detect mode + voltage reference */
+    val = XDATA_REG8(0xE406);
+    XDATA_REG8(0xE406) = (val & 0xF0) | 0x06;   /* bits 0-3 = 6 */
+    val = XDATA_REG8(0xE406);
+    XDATA_REG8(0xE406) = (val & 0x0F) | 0xA0;   /* bits 4-7 = 0xA0 */
+
+    /* E407: CC bias current */
+    val = XDATA_REG8(0xE407);
+    XDATA_REG8(0xE407) = (val & 0xE0) | 0x15;
+
+    /* E408: CC termination resistor */
+    val = XDATA_REG8(0xE408);
+    XDATA_REG8(0xE408) = (val & 0xE0) | 0x1C;
+}
+
+/*
+ * pd_cc_controller_init - Initialize CC controller for USB-C PD detection
+ * Address: 0xB02F-0xB0FD (207 bytes)
+ *
+ * Full CC controller initialization sequence that enables CC pin detection.
+ * Must be called before reading E302 bits[5:4] for CC state.
+ * Configures the E400-E413 command engine for CC detection, sets up
+ * the CC analog front-end, and polls E302 bits[7:6] until CC is detected.
+ *
+ * Register writes (in order):
+ *   E40B |= 0x40 (set bit 6)
+ *   E40A = 0x0F
+ *   E413: clear bits 0,1
+ *   E400: clear bit 7
+ *   CC88 &= 0xF8, CC8A = 0 (clear CC DMA)
+ *   CC8B = 0x0A, CC89 = 0x01 (trigger), poll CC89 bit 1, CC89 = 0x02 (ack)
+ *   E40B |= 0x01 (set bit 0)
+ *   CC88 &= 0xF8, CC8A = 0 (clear again)
+ *   CC8B = 0x3C, CC89 = 0x01 (trigger), poll CC89 bit 1, CC89 = 0x02 (ack)
+ *   Poll E402 bit 3 until clear
+ *   E409: clear bit 0, set bit 6
+ *   E420 = 0x40, E409 = (E409 & 0xF1) | 0x06
+ *   E400 |= 0x40 (set bit 6)
+ *   E411 = 0xA1, E412 = 0x79
+ *   E400 = (E400 & 0xC3) | 0x3C (set bits 2-5)
+ *   E409: clear bit 7
+ *   C809 |= 0x20 (CC interrupt enable)
+ *   cc_analog_config() — E401, E406, E407, E408
+ *   E40E = 0x8A
+ *   Poll E302 bits[7:6] until nonzero
+ *   E400 |= 0x80 (enable CC)
+ *   E40B: clear bit 0
+ *   E66A: clear bit 4
+ *   E40D = 0x28
+ *   E413 = (E413 & 0x8F) | 0x60 (set bits 5,6)
+ *
+ * Original disassembly:
+ *   b02f: mov dptr, #0xe40b
+ *   b032: lcall 0x967c         ; E40B |= 0x40
+ *   ...
+ *   b0fd: ret
+ */
+static void pd_cc_controller_init(void) {
+    uint8_t val;
+
+    /* E40B: set bit 6 */
+    val = REG_CMD_CONFIG;
+    REG_CMD_CONFIG = (val & ~0x40) | 0x40;
+
+    /* E40A = 0x0F */
+    REG_CMD_CFG_E40A = 0x0F;
+
+    /* E413: clear bits 0,1 */
+    val = XDATA_REG8(0xE413);
+    XDATA_REG8(0xE413) = val & 0xFE;
+    val = XDATA_REG8(0xE413);
+    XDATA_REG8(0xE413) = val & 0xFD;
+
+    /* E400: clear bit 7 (disable CC before reconfiguring) */
+    val = REG_CMD_CTRL_E400;
+    REG_CMD_CTRL_E400 = val & 0x7F;
+
+    /* CC DMA clear: CC88 &= 0xF8, CC8A = 0 */
+    REG_XFER_DMA_CTRL = REG_XFER_DMA_CTRL & 0xF8;
+    REG_XFER_DMA_ADDR_LO = 0x00;
+
+    /* Write 0x0A to CC8B (inc dptr from CC8A), trigger CC89=1, poll bit 1, ack */
+    REG_XFER_DMA_ADDR_HI = 0x0A;   /* CC8B = 0x0A */
+    REG_XFER_DMA_CMD = 0x01;       /* CC89 = 1 (trigger) */
+    while (!(REG_XFER_DMA_CMD & 0x02)) { }  /* poll CC89 bit 1 */
+    REG_XFER_DMA_CMD = 0x02;       /* CC89 = 2 (ack) */
+
+    /* E40B: set bit 0 */
+    val = REG_CMD_CONFIG;
+    REG_CMD_CONFIG = (val & 0xFE) | 0x01;
+
+    /* CC DMA clear again */
+    REG_XFER_DMA_CTRL = REG_XFER_DMA_CTRL & 0xF8;
+    REG_XFER_DMA_ADDR_LO = 0x00;
+
+    /* Write 0x3C to CC8B, trigger, poll, ack */
+    REG_XFER_DMA_ADDR_HI = 0x3C;   /* CC8B = 0x3C */
+    REG_XFER_DMA_CMD = 0x01;       /* CC89 = 1 (trigger) */
+    while (!(REG_XFER_DMA_CMD & 0x02)) { }  /* poll CC89 bit 1 */
+    REG_XFER_DMA_CMD = 0x02;       /* CC89 = 2 (ack) */
+
+    /* Poll E402 bit 3 until clear */
+    while (REG_CMD_STATUS_E402 & 0x08) { }
+
+    /* E409: clear bit 0, then set bit 6 */
+    val = XDATA_REG8(0xE409);
+    XDATA_REG8(0xE409) = val & 0xFE;
+    val = XDATA_REG8(0xE409);
+    XDATA_REG8(0xE409) = (val & ~0x40) | 0x40;
+
+    /* E420 = 0x40, E409 = (E409 & 0xF1) | 0x06 */
+    XDATA_REG8(0xE420) = 0x40;
+    val = XDATA_REG8(0xE409);
+    XDATA_REG8(0xE409) = (val & 0xF1) | 0x06;
+
+    /* E400: set bit 6 */
+    val = REG_CMD_CTRL_E400;
+    REG_CMD_CTRL_E400 = (val & ~0x40) | 0x40;
+
+    /* E411 = 0xA1, E412 = 0x79 — CC comparison thresholds */
+    XDATA_REG8(0xE411) = 0xA1;
+    XDATA_REG8(0xE412) = 0x79;
+
+    /* E400: set bits 2-5 (CC mode selection) */
+    val = REG_CMD_CTRL_E400;
+    REG_CMD_CTRL_E400 = (val & 0xC3) | 0x3C;
+
+    /* E409: clear bit 7 */
+    val = XDATA_REG8(0xE409);
+    XDATA_REG8(0xE409) = val & 0x7F;
+
+    /* C809: set bit 5 (CC interrupt enable)
+     * Enables CC/PD interrupt on INT1 (checked via C806 bit 0).
+     * int1_isr must ack CC23/CC81/CC91/CCD9/CCF9 to prevent re-trigger. */
+    REG_INT_CTRL = (REG_INT_CTRL & ~0x20) | 0x20;
+
+    /* Configure CC analog front-end: E401, E406, E407, E408 */
+    cc_analog_config();
+
+    /* E40E = 0x8A (CC detection timing) */
+    XDATA_REG8(0xE40E) = 0x8A;
+
+    /* Poll E302 bits[7:6] until nonzero (CC detected)
+     * Stock firmware does an infinite poll here (no timeout).
+     * We use a very long timeout to match. */
+    uart_puts("[CC poll]\n");
+    while (1) {
+        val = REG_PHY_MODE_E302;
+        if ((val & 0xC0) != 0) break;
+    }
+    uart_puts("[E302=");
+    uart_puthex(val);
+    uart_puts("]\n");
+
+    /* E400: set bit 7 (enable CC) */
+    val = REG_CMD_CTRL_E400;
+    REG_CMD_CTRL_E400 = (val & 0x7F) | 0x80;
+
+    /* E40B: clear bit 0 */
+    val = REG_CMD_CONFIG;
+    REG_CMD_CONFIG = val & 0xFE;
+
+    /* E66A: clear bit 4 */
+    REG_PD_CTRL_E66A = REG_PD_CTRL_E66A & ~PD_CTRL_E66A_BIT4;
+
+    /* E40D = 0x28 */
+    REG_CMD_CFG_E40D = 0x28;
+
+    /* E413: set bits 5,6 */
+    val = XDATA_REG8(0xE413);
+    XDATA_REG8(0xE413) = (val & 0x8F) | 0x60;
+}
+
+/*
+ * pd_cc_clear_registers - Clear PD command parameter area E420-E43F
+ * Address: 0xE4A0-0xE4B3 (20 bytes)
+ *
+ * Zeros 32 bytes from 0xE420 to 0xE43F to reset the command parameter area
+ * before setting up a new PD command. Called from Drive_HardRst sequence.
+ *
+ * Original disassembly:
+ *   e4a0: clr a
+ *   e4a1: mov r7, a            ; R7 = 0
+ *   e4a2: mov a, #0x20
+ *   e4a4: add a, r7            ; A = 0x20 + R7
+ *   e4a5: mov 0x82, a          ; DPL = A
+ *   e4a7: clr a
+ *   e4a8: addc a, #0xe4        ; DPH = 0xE4
+ *   e4aa: mov 0x83, a
+ *   e4ac: clr a
+ *   e4ad: movx @dptr, a        ; XDATA[0xE420+R7] = 0
+ *   e4ae: inc r7
+ *   e4af: mov a, r7
+ *   e4b0: cjne a, #0x20, 0xe4a2
+ *   e4b3: ret
+ */
+static void pd_cc_clear_registers(void) {
+    uint8_t i;
+    for (i = 0; i < 0x20; i++) {
+        XDATA_REG8(0xE420 + i) = 0x00;
+    }
+}
+
+/*
+ * pd_cc_state_check - Check CC state and drive hard reset if needed
+ * Address: 0xBCA1-0xBD10 (112 bytes)
+ *
+ * Reads E302 bits [5:4] for CC state:
+ *   - If CC state == 3 (CC pins open): skip hard reset (device not connected)
+ *   - Otherwise: perform full PD CC hard reset sequence
+ *
+ * The hard reset sequence:
+ *   1. Clear command parameter area (E420-E43F)
+ *   2. Re-init PD state variables
+ *   3. Clear PHY events, wait for CC89 ready, enable events
+ *   4. Set E403=0x00, E404=0x40, E405=(E405&0xF8)|0x05 — CC hard reset signal config
+ *   5. Set E402 bit 5 — trigger CC signaling
+ *   6. Wait for command engine idle, trigger E41C, wait completion
+ *   7. Set G_PD_COUNTER_07DC = 1
+ *
+ * Original disassembly:
+ *   bca1: mov dptr, #0xe302
+ *   bca4: movx a, @dptr
+ *   bca5: anl a, #0x30         ; mask bits 4-5
+ *   bca7: mov r7, a
+ *   bca8: swap a
+ *   bca9: anl a, #0x0f         ; CC state = bits[5:4] as 0-3
+ *   bcab: xrl a, #0x03         ; check if == 3
+ *   bcad: jz 0xbd01            ; if CC_state==3, skip (CCOpen)
+ *   bcbe: lcall 0xe4a0         ; pd_cc_clear_registers
+ *   bcc1: lcall 0xb806         ; pd_state_init
+ *   bcc4: lcall 0x947c         ; phy_clear_events
+ *   bcc7: poll CC89 bit 1
+ *   bcce: lcall 0x94ea         ; phy_enable_events
+ *   bcd1: E403 = 0x00
+ *   bcd7: E404 = 0x40
+ *   bcdb: E405 = (E405 & 0xF8) | 0x05
+ *   bce1: E402 = (E402 & 0x1F) | 0x20
+ *   bcea: poll phy_poll_cmd_ready until idle
+ *   bcf0: lcall 0x9558 (E41C |= 0x01 trigger)
+ *   bcf3: poll E41C bit 0 until clear
+ *   bcfa: G_PD_COUNTER_07DC = 1
+ *   bd00: ret
+ */
+static void pd_cc_state_check(void) {
+    uint8_t cc_raw, cc_state;
+
+    /* Read CC state from E302 bits [5:4] */
+    cc_raw = REG_PHY_MODE_E302 & 0x30;
+    cc_state = (cc_raw >> 4) & 0x0F;
+
+    uart_puts("[CC=");
+    uart_puthex(cc_state);
+
+    if (cc_state == 3) {
+        /* CC pins open — no device connected, skip hard reset */
+        uart_puts(":open]\n");
+        return;
+    }
+
+    /* CC connected — perform PD hard reset */
+    uart_puts(":HardRst]\n");
+
+    /* Step 1: Clear command parameter area (0xE4A0) */
+    pd_cc_clear_registers();
+
+    /* Step 2: Re-init PD state (0xB806) */
+    pd_state_init();
+
+    /* Step 3: Clear events, wait ready, enable events */
+    phy_clear_events();
+    while (!(REG_XFER_DMA_CMD & 0x02)) { }  /* poll CC89 bit 1 */
+    phy_enable_events();
+
+    /* Step 4: Configure CC hard reset signal (0xBCD1-0xBCE9) */
+    REG_CMD_CTRL_E403 = 0x00;
+    REG_CMD_CFG_E404 = 0x40;
+    REG_CMD_CFG_E405 = (REG_CMD_CFG_E405 & 0xF8) | 0x05;
+
+    /* Step 5: Trigger CC signaling — set E402 bit 5 */
+    REG_CMD_STATUS_E402 = (REG_CMD_STATUS_E402 & 0x1F) | 0x20;
+
+    /* Step 6: Wait for command engine idle, then trigger */
+    while (phy_poll_cmd_ready()) { }
+
+    /* Trigger: E41C |= 0x01 (stock: cmd_start_trigger at 0x9558) */
+    REG_CMD_BUSY_STATUS = (REG_CMD_BUSY_STATUS & ~CMD_BUSY_STATUS_BUSY) | CMD_BUSY_STATUS_BUSY;
+
+    /* Wait for E41C bit 0 to clear (command complete) */
+    while (REG_CMD_BUSY_STATUS & CMD_BUSY_STATUS_BUSY) { }
+
+    /* Step 7: Set done flag */
+    G_PD_COUNTER_07DC = 1;
+
+    uart_puts("[HardRst done]\n");
+}
+
+/*
+ * pcie_tunnel_adapter_config - Configure tunnel adapter parameters
+ * From stock firmware emulator trace (cycles 75040-75189 / 75892-76041)
+ *
+ * Writes VID/PID-like config to B41x/B42x tunnel registers.
+ * Called twice by stock firmware: once before and once after link up attempt.
+ */
+static void pcie_tunnel_adapter_config(void) {
+    /* Path A: VID=0x1B21, credits=0x2464 */
+    REG_TUNNEL_CFG_A_LO   = 0x1B;
+    REG_TUNNEL_CFG_A_HI   = 0x21;
+    REG_TUNNEL_DATA_LO    = 0x1B;
+    REG_TUNNEL_DATA_HI    = 0x21;
+    REG_TUNNEL_CREDITS     = 0x24;
+    REG_TUNNEL_CFG_MODE    = 0x64;
+    REG_TUNNEL_STATUS_0    = 0x24;
+    REG_TUNNEL_STATUS_1    = 0x64;
+    REG_TUNNEL_CAP_0       = 0x06;
+    REG_TUNNEL_CAP_1       = 0x04;
+    REG_TUNNEL_CAP_2       = 0x00;
+    REG_TUNNEL_CAP2_0      = 0x06;
+    REG_TUNNEL_CAP2_1      = 0x04;
+    REG_TUNNEL_CAP2_2      = 0x00;
+
+    /* Path B: link config */
+    REG_TUNNEL_LINK_CFG_LO = 0x1B;
+    REG_TUNNEL_LINK_CFG_HI = 0x21;
+    REG_TUNNEL_AUX_CFG_LO  = 0x1B;
+    REG_TUNNEL_AUX_CFG_HI  = 0x21;
+    REG_TUNNEL_PATH_CREDITS = 0x24;
+    REG_TUNNEL_PATH_MODE    = 0x64;
+    REG_TUNNEL_PATH2_CRED   = 0x24;
+    REG_TUNNEL_PATH2_MODE   = 0x64;
+}
+
+/*
+ * pcie_link_up_attempt - Perform one link-up sequence
+ * From stock firmware proxy trace on real hardware (cycles 86088-86142 / 86940-86994)
+ *
+ * Sequence: B401=1, B482=F1, B482=F1, B401=0, B480=1, B430=4, B298=0x11
+ */
+static void pcie_link_up_attempt(void) {
+    REG_PCIE_TUNNEL_CTRL = 0x01;          /* B401 = 0x01 */
+    REG_TUNNEL_ADAPTER_MODE = 0xF1;       /* B482 = 0xF1 */
+    REG_TUNNEL_ADAPTER_MODE = 0xF1;       /* B482 = 0xF1 (written twice) */
+    REG_PCIE_TUNNEL_CTRL = 0x00;          /* B401 = 0x00 */
+    REG_TUNNEL_LINK_CTRL = 0x01;          /* B480 = 0x01 */
+    REG_TUNNEL_LINK_STATE = 0x04;         /* B430 = 0x04 */
+    REG_PCIE_TUNNEL_CFG = 0x11;           /* B298 = 0x11 */
+}
+
+/*
+ * pcie_init - PCIe downstream link initialization
+ *
+ * Exact sequence captured from stock firmware emulator trace.
+ * Phases:
+ *   1. Clear/configure base registers (E7E3, B402, B432, B404)
+ *   2. Progressive lane enable (B434: 0x01→0x03→0x07→0x0F with delays)
+ *   3. Lane config (B436)
+ *   4. PHY config (C65B, C656, C62D)
+ *   5. PHY init (CD31, CD30-CD33, C655, C620, C65A)
+ *   6. Tunnel adapter config (B41x/B42x)
+ *   7. Link up attempt #1 (B401/B482/B480)
+ *   8. DMA engine config (B264-B281, CEEFx)
+ *   9. Link up attempt #2
+ */
+static void pcie_init(void) {
+    uart_puts("[PCIe init]\n");
+
+    /* Phase 1: Clear/configure base registers
+     * Proxy trace shows B402 is RMW: reads 0x03, writes 0x01 (sets bit 0, clears bit 1).
+     * E764 reads back 0x14 on real HW and is written back unchanged.
+     * E76C/E774/E77C read 0x14, written to 0x04 (clear bit 4). */
+    REG_PHY_LINK_CTRL = 0x00;             /* E7E3 = 0x00 */
+    REG_PCIE_CTRL_B402 = 0x01;            /* B402 = 0x01 (proxy: RMW 0x03->0x01) */
+    REG_PCIE_LANE_CTRL_C659 = 0x00;       /* C659 = 0x00 */
+    REG_POWER_CTRL_B432 = 0x07;           /* B432 = 0x07 */
+    REG_PCIE_LINK_PARAM_B404 = 0x01;      /* B404 = 0x01 */
+    REG_PCIE_CTRL_B402 = 0x01;            /* B402 = 0x01 (again) */
+
+    /* Phase 2: Progressive lane enable with delays
+     * Stock firmware enables one lane at a time with ~475 cycle delays.
+     * B434 bit mask: bit0=lane0, bit1=lane1, bit2=lane2, bit3=lane3 */
+    REG_PCIE_LINK_STATE = 0x01;            /* B434 = 0x01 (lane 0) */
+    delay_short();
+    REG_PCIE_LINK_STATE = 0x03;            /* B434 = 0x03 (lanes 0-1) */
+    delay_short();
+    REG_PCIE_LINK_STATE = 0x07;            /* B434 = 0x07 (lanes 0-2) */
+    delay_short();
+    REG_PCIE_LINK_STATE = 0x0F;            /* B434 = 0x0F (all 4 lanes) */
+    delay_short();
+
+    /* Phase 3: Lane configuration */
+    REG_PCIE_LANE_CONFIG = 0x0E;           /* B436 = 0x0E */
+    REG_PCIE_LANE_CONFIG = 0xEE;           /* B436 = 0xEE */
+
+    /* Phase 4: PHY configuration (cycle 30066-30089) */
+    REG_PHY_EXT_5B = 0x28;                /* C65B = 0x28 (proxy: both writes are 0x28) */
+    REG_PHY_EXT_56 = 0x00;                /* C656 = 0x00 */
+    REG_PHY_EXT_5B = 0x28;                /* C65B = 0x28 */
+    REG_PHY_EXT_2D = 0x07;                /* C62D = 0x07 */
+
+    /* Wait for PHY to settle (stock firmware has long gap here: flash reads, etc.)
+     * On real hardware, between cycle 30K-85K the stock firmware reads flash,
+     * does EEPROM/I2C init, timer setup, etc. We just need a long delay. */
+    delay_long();
+    delay_long();
+    delay_long();
+
+    /* Phase 5: PHY init — timer + DMA sequence
+     * Proxy trace: CD31=4/2, CD30=0x15, CD32=0, CD33=0xC7
+     * Note: CD30=0x15 on real HW (not 0x05 as emulator showed) */
+    REG_CPU_TIMER_CTRL_CD31 = 0x04;       /* CD31 = 0x04 (clear) */
+    REG_CPU_TIMER_CTRL_CD31 = 0x02;       /* CD31 = 0x02 (start) */
+    REG_PHY_DMA_CMD_CD30 = 0x15;          /* CD30 = 0x15 (proxy: real HW value) */
+    REG_PHY_DMA_ADDR_LO = 0x00;           /* CD32 = 0x00 */
+    REG_PHY_DMA_ADDR_HI = 0xC7;           /* CD33 = 0xC7 */
+
+    /* PHY final config
+     * Proxy trace: C655=0x01, C620=0x00 (no C65A write on real HW) */
+    REG_PHY_CFG_C655 = 0x01;              /* C655 = 0x01 (proxy: real HW value) */
+    REG_PHY_EXT_CTRL_C620 = 0x00;         /* C620 = 0x00 */
+
+    /* Phase 6: Tunnel adapter config */
+    pcie_tunnel_adapter_config();
+
+    /* Phase 7: First link-up attempt */
+    uart_puts("[LU1]\n");
+    pcie_link_up_attempt();
+
+    /* Phase 8: DMA engine config (cycle 75458-75540) */
+    REG_PCIE_DMA_SIZE_A = 0x08;           /* B264 = 0x08 */
+    REG_PCIE_DMA_SIZE_B = 0x00;           /* B265 = 0x00 */
+    REG_PCIE_DMA_SIZE_C = 0x08;           /* B266 = 0x08 */
+    REG_PCIE_DMA_SIZE_D = 0x08;           /* B267 = 0x08 */
+    REG_PCIE_DMA_BUF_A = 0x08;            /* B26C = 0x08 */
+    REG_PCIE_DMA_BUF_B = 0x20;            /* B26D = 0x20 */
+    REG_PCIE_DMA_BUF_C = 0x08;            /* B26E = 0x08 */
+    REG_PCIE_DMA_BUF_D = 0x28;            /* B26F = 0x28 */
+    REG_PCIE_DMA_CFG_50 = 0x00;           /* B250 = 0x00 */
+    REG_PCIE_DMA_CFG_51 = 0x00;           /* B251 = 0x00 */
+
+    /* CPU link control
+     * Proxy trace: CEF0=0xF7, CEEF=0x7F (not 0x00 as emulator showed) */
+    REG_CPU_LINK_CEF3 = 0x08;             /* CEF3 = 0x08 */
+    REG_CPU_LINK_CEF2 = 0x80;             /* CEF2 = 0x80 */
+    REG_CPU_LINK_CEF0 = 0xF7;             /* CEF0 = 0xF7 (proxy: real HW value) */
+    REG_CPU_LINK_CEEF = 0x7F;             /* CEEF = 0x7F (proxy: real HW value) */
+    REG_PCIE_DMA_CTRL_B281 = 0x10;        /* B281 = 0x10 */
+
+    /* PHY link enable */
+    REG_PHY_CFG_C6A8 = 0x01;              /* C6A8 = 0x01 */
+
+    /* Reset timer (cycle 75694) */
+    REG_CPU_TIMER_CTRL_CD31 = 0x04;       /* CD31 = 0x04 (clear) */
+    REG_CPU_TIMER_CTRL_CD31 = 0x02;       /* CD31 = 0x02 (start) */
+
+    /* Phase 9: Second link-up with reconfigured adapter */
+    REG_PCIE_TUNNEL_CTRL = 0x01;           /* B401 = 0x01 */
+    REG_PCIE_TUNNEL_CTRL = 0x00;           /* B401 = 0x00 */
+
+    /* Re-apply adapter config */
+    pcie_tunnel_adapter_config();
+
+    /* Second link-up attempt */
+    uart_puts("[LU2]\n");
+    pcie_link_up_attempt();
+
+    /* Final: set link active + clean up
+     * Proxy trace: B480=1, C659=0, B402=0x01 (not 0x00!), B436=0xEE twice */
+    REG_TUNNEL_LINK_CTRL = 0x01;           /* B480 = 0x01 */
+    REG_PCIE_LANE_CTRL_C659 = 0x00;       /* C659 = 0x00 */
+    REG_PCIE_CTRL_B402 = 0x01;            /* B402 = 0x01 (proxy: keeps bit 0 set) */
+    REG_PCIE_LANE_CONFIG = 0xEE;           /* B436 = 0xEE */
+    REG_PCIE_LANE_CONFIG = 0xEE;           /* B436 = 0xEE */
+
+    /*
+     * PD CC Hard Reset + Link Training sequence.
+     *
+     * Stock firmware UART trace shows this order:
+     *   [InternalPD_StateInit][CC_state=00][Drive_HardRst][InternalPD_StateInit]
+     *   [PD_int:01:00][Source_Cap]
+     *   [PD_int:01:00][Accept]
+     *   [PD_int:01:00][PS_RDY][5V3A]
+     *   [PD_int:01:00][VDM][Discover_ID]
+     *   [PD_int:01:00][VDM][Discover_SIDs][1 sec time out]
+     *   [RstRxpll...][Done]
+     *   [CDRV ok]
+     *
+     * The Drive_HardRst on CC pins triggers the host to restart PD negotiation.
+     * This generates E40F/E410 events needed for link training to proceed.
+     * Without PD CC signaling, E40F/E410 stay at 0x00.
+     */
+
+    /*
+     * PD CC Hard Reset was already done in main() before hw_init().
+     * Now do LTSSM + RXPLL to attempt link training.
+     */
+    /* LTSSM transition + RXPLL reset for link training.
+     * Note: PCIe link won't fully train until D92E sequence runs
+     * (requires 92C2 bit 6 + 9090 bit 7 clear) which conflicts with
+     * current USB3 setup. Stock firmware resolves this via PD negotiation
+     * (Source_Cap → PS_RDY → D92E → PHY events → CDRV ok). */
+    uart_puts("[LTSSM]\n");
+    ltssm_transition();
+
+    uart_puts("[RXPLL]\n");
+    phy_rxpll_config();
+    phy_rst_rxpll();
+
+    /* Suppress events generated by LTSSM/RXPLL */
+    XDATA_REG8(0xE40F) = 0xFF;
+    XDATA_REG8(0xE410) = 0xFF;
+
+    /* Restore PHY init state (C655=0x01 from Phase 5) after RXPLL reset */
+    REG_PHY_CFG_C655 = 0x01;
+
+    /* Step 6: Monitor B450 for link training progress */
+    { uint16_t poll;
+    uint8_t last_b450 = 0xFF;
+    for (poll = 0; poll < 50000U; poll++) {
+        uint8_t b450 = XDATA_REG8(0xB450);
+        if (b450 != last_b450) {
+            uart_puts("[B450="); uart_puthex(b450); uart_puts("]\n");
+            last_b450 = b450;
+            if (b450 >= 0x10) break;
+        }
+        phy_event_dispatcher();
+    } }
+
+    /* Print link status for debug */
+    uart_puts("[B434="); uart_puthex(REG_PCIE_LINK_STATE); uart_puts("]\n");
+    uart_puts("[B480="); uart_puthex(REG_TUNNEL_LINK_CTRL); uart_puts("]\n");
+    uart_puts("[B450="); uart_puthex(XDATA_REG8(0xB450)); uart_puts("]\n");
+    uart_puts("[B455="); uart_puthex(XDATA_REG8(0xB455)); uart_puts("]\n");
+    uart_puts("[B481="); uart_puthex(XDATA_REG8(0xB481)); uart_puts("]\n");
+    uart_puts("[PCIe done]\n");
 }
 
 /*=== Hardware Init (from stock firmware trace) ===*/
@@ -715,11 +2236,68 @@ static void hw_init(void) {
 void main(void) {
     IE = 0;
     is_usb3 = 0; need_bulk_init = 0; bulk_out_state = 0;
+    pd_power_ready_done = 0;
+    usb_configured = 0;
+
+    /* Initialize XDATA globals — stock firmware's flash_phy_calib_load_new (0x8FCF)
+     * sets these defaults even when flash calibration fails (no valid marker).
+     * G_STATE_FLAG_0AE3=1 is CRITICAL: prevents phy_poll_registers from
+     * writing C655 bit 3 / C623 / C65A bit 3 which interferes with link training. */
+    G_STATE_FLAG_0AE3 = 1;           /* Stock: set to 1 at 0x8FDD */
+    G_SYSTEM_STATE_0AE2 = 1;         /* Stock: set to 1 at 0x8FD9 */
+    G_TLP_INIT_FLAG_0AE5 = 1;        /* Stock: set to 1 at 0x8FE7 */
+    G_USB_TRANSFER_FLAG = 0;
+    G_PHY_POLL_MODE = 0;
+    G_PHY_LANE_POLL_MODE = 0;
+    G_LINK_EVENT_0B2D = 0;
+    G_STATE_0AE8 = 0x0F;             /* Stock: set to 0x0F at 0x8FED */
+    G_FLASH_CFG_0AF0 = 0x00;         /* Stock: set to 0 when 0AE5=1 at 0x91DD */
+
+    /* Post-calibration register writes from flash_phy_calib_load_new (0x8FCF).
+     * Stock firmware does these after setting globals, before pcie_init:
+     *   CC35 &= ~0x04  (clear bit 2 of CPU exec status 3)
+     *   C65A &= ~0x08  (clear bit 3 of PHY config)
+     *   905F &= ~0x10  (clear bit 4 of USB EP control) */
+    REG_CPU_EXEC_STATUS_3 &= ~0x04;
+    REG_PHY_CFG_C65A &= ~PHY_CFG_C65A_BIT3;
+    REG_USB_EP_CTRL_905F &= ~USB_EP_CTRL_905F_BIT4;
+
     REG_UART_LCR &= 0xF7;
     uart_puts("\n[BOOT]\n");
 
+    /* Ack any pending PHY events from previous boot.
+     * Only do W1C acks — don't modify config registers that affect USB3 link. */
+    XDATA_REG8(0xE40F) = 0xFF;           /* W1C ack all E40F events */
+    XDATA_REG8(0xE410) = 0xFF;           /* W1C ack all E410 events */
+
+    /*
+     * PD CC initialization and hard reset — BEFORE hw_init.
+     * Stock firmware UART trace shows this order:
+     *   [InternalPD_StateInit][CC_state=00][Drive_HardRst]
+     *   → PD negotiation (Source_Cap → Accept → PS_RDY)
+     *   → USB enumeration
+     *   → [RstRxpll...][Done][CDRV ok]
+     *
+     * The hard reset must happen before USB comes up because it
+     * causes the host to restart PD negotiation on the CC pins.
+     * If done after USB enumeration, the host resets the USB connection.
+     */
+    /* CC init BEFORE hw_init — enables CC pin detection for USB-C.
+     * Previous USB2 fallback was caused by aggressive boot-time suppression
+     * (92C2/E40B/C80A writes), not CC init itself. */
+    uart_puts("[CC init]\n");
+    pd_cc_controller_init();
+
+    /* Suppress PHY events generated by CC init */
+    XDATA_REG8(0xE40F) = 0xFF;
+    XDATA_REG8(0xE410) = 0xFF;
+
     hw_init();
     pcie_init();
+
+    /* Suppress PHY events generated by pcie_init (link-up attempts) */
+    XDATA_REG8(0xE40F) = 0xFF;
+    XDATA_REG8(0xE410) = 0xFF;
 
     uint8_t link = REG_USB_LINK_STATUS;
     is_usb3 = (link >= USB_SPEED_SUPER) ? 1 : 0;
@@ -735,6 +2313,18 @@ void main(void) {
 
         if (need_bulk_init) { need_bulk_init = 0; do_bulk_init(); }
         if (need_cbw_process) { need_cbw_process = 0; handle_cbw(); }
+
+        if (usb_configured && !pd_power_ready_done) {
+            pd_power_ready_done = 1;
+            uart_puts("[PD:rdy]\n");
+        }
+
+        /* Continuous PHY maintenance — stock firmware calls this every iteration
+         * via lcall 0x04f3 -> 0xC5A1 (phy_maintenance). */
+        phy_maintenance();
+
+        /* PHY event dispatch */
+        phy_event_dispatcher();
 
         if (bulk_out_state == 1) {
             REG_USB_EP_CFG1 = USB_EP_CFG1_ARM_OUT;

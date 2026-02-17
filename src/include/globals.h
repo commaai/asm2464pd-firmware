@@ -482,8 +482,10 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_PCIE_WORK_0B12        XDATA_VAR8(0x0B12)  /* PCIe work variable */
 /* NOTE: G_TLP_PENDING_0B21 removed - use G_DMA_WORK_0B21 (same address) */
 #define G_LINK_EVENT_0B2D       XDATA_VAR8(0x0B2D)  /* Link event flag (cleared in bda4 reset) */
-#define G_USB_TRANSFER_FLAG     XDATA_VAR8(0x0B2E)  /* USB transfer flag */
-#define G_INTERFACE_READY_0B2F  XDATA_VAR8(0x0B2F)  /* Interface ready flag */
+#define G_USB_TRANSFER_FLAG     XDATA_VAR8(0x0B2E)  /* USB transfer flag (set by 91D1 bit 1 handler) */
+#define G_PHY_POLL_MODE         XDATA_VAR8(0x0B2F)  /* PHY poll mode: 0=set, 1=clear, 2=special */
+#define G_INTERFACE_READY_0B2F  G_PHY_POLL_MODE      /* Legacy alias */
+#define G_PHY_LANE_POLL_MODE    XDATA_VAR8(0x0B30)  /* PHY lane poll mode (saved from 0x0B2F) */
 #define G_STATE_0B39            XDATA_VAR8(0x0B39)  /* State control 0x0B39 */
 #define G_STATE_0B3A            XDATA_VAR8(0x0B3A)  /* State control 0x0B3A */
 #define G_TRANSFER_BUSY_0B3B    XDATA_VAR8(0x0B3B)  /* Transfer busy flag */
