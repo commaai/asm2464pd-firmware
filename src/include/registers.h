@@ -648,10 +648,17 @@
  * Power Management Registers (0x92C0-0x92E0)
  * Control power domains, clocks, and device power state.
  *
- * REG_POWER_STATUS (0x92C2) is particularly important for USB:
- *   Bit 6 controls ISR vs main loop execution paths.
- *   When CLEAR: ISR calls 0xBDA4 for descriptor init
- *   When SET: Main loop calls 0x0322 for transfer
+ * REG_POWER_STATUS (0x92C2):
+ *   Bit 6: PCIe PHY power domain enable.
+ *     Stock firmware D92E sets this BEFORE USB enumeration (92C2 |= 0x40).
+ *     ISR clears it when power event fires (92C2 &= 0x3F).
+ *     Both stock and custom firmware read 0x07 when stable (bit 6 cleared).
+ *     The brief pulse activates the PHY power domain which stays latched.
+ *   Bit 7: Additional power status, cleared by ISR along with bit 6.
+ *
+ * REG_POWER_EVENT_92E1 (0x92E1):
+ *   Power event status, write-to-clear. ISR reads and acks this.
+ *   Stock trained value: 0x20 (bit 5 set = pending event).
  */
 #define REG_POWER_ENABLE        XDATA_REG8(0x92C0)
 #define   POWER_ENABLE_BIT        0x01  // Bit 0: Main power enable
@@ -759,7 +766,14 @@
 #define REG_PCIE_ADDR_3         XDATA_REG8(0xB21B)
 #define REG_PCIE_ADDR_HIGH      XDATA_REG8(0xB21C)
 #define REG_PCIE_DATA           XDATA_REG8(0xB220)
-#define REG_PCIE_EXT_STATUS     XDATA_REG8(0xB223)   // PCIe extended status (bit 0 = ready)
+/*
+ * PCIe Extended Status (0xB223)
+ * Bit 0: PLL lock / CDR lock indicator.
+ * After phy_rst_rxpll_core returns 0 (success), stock firmware checks
+ * bit 0 of B223 — if set, CDR lock confirmed (returns 0x13 = "[CDRV ok]").
+ */
+#define REG_PCIE_EXT_STATUS     XDATA_REG8(0xB223)
+#define   PCIE_EXT_STATUS_PLL_LOCK 0x01  // Bit 0: PLL/CDR lock confirmed
 #define REG_PCIE_TLP_CPL_HEADER XDATA_REG32(0xB224)
 #define REG_PCIE_LINK_STATUS    XDATA_REG16(0xB22A)
 #define REG_PCIE_CPL_STATUS     XDATA_REG8(0xB22B)
@@ -783,8 +797,20 @@
 #define REG_PCIE_EXT_STATUS_RD3 XDATA_REG8(0xB243)   // Extended status read 3
 #define REG_PCIE_EXT_STATUS_ALT XDATA_REG8(0xB24E)   // Extended status alternate
 
+// PCIe DMA Config (0xB250-0xB281)
 #define REG_PCIE_NVME_DOORBELL  XDATA_REG32(0xB250)
+#define REG_PCIE_DMA_CFG_50     XDATA_REG8(0xB250)   // DMA config byte 0
+#define REG_PCIE_DMA_CFG_51     XDATA_REG8(0xB251)   // DMA config byte 1
 #define REG_PCIE_DOORBELL_CMD   XDATA_REG8(0xB251)   // Byte 1 of doorbell - command byte
+#define REG_PCIE_DMA_SIZE_A     XDATA_REG8(0xB264)   // DMA size config A
+#define REG_PCIE_DMA_SIZE_B     XDATA_REG8(0xB265)   // DMA size config B
+#define REG_PCIE_DMA_SIZE_C     XDATA_REG8(0xB266)   // DMA size config C
+#define REG_PCIE_DMA_SIZE_D     XDATA_REG8(0xB267)   // DMA size config D
+#define REG_PCIE_DMA_BUF_A      XDATA_REG8(0xB26C)   // DMA buffer config A
+#define REG_PCIE_DMA_BUF_B      XDATA_REG8(0xB26D)   // DMA buffer config B
+#define REG_PCIE_DMA_BUF_C      XDATA_REG8(0xB26E)   // DMA buffer config C
+#define REG_PCIE_DMA_BUF_D      XDATA_REG8(0xB26F)   // DMA buffer config D
+#define REG_PCIE_DMA_CTRL_B281  XDATA_REG8(0xB281)   // DMA control
 #define REG_PCIE_TRIGGER        XDATA_REG8(0xB254)
 #define REG_PCIE_PM_ENTER       XDATA_REG8(0xB255)
 #define REG_PCIE_COMPL_STATUS   XDATA_REG8(0xB284)
@@ -836,14 +862,44 @@
 
 // Adapter Link State (0xB430-0xB4C8)
 #define REG_TUNNEL_LINK_STATE   XDATA_REG8(0xB430)  // Tunnel link state (bit 0 = up)
-#define REG_POWER_CTRL_B432     XDATA_REG8(0xB432)  // Power control for lanes
-#define REG_PCIE_LINK_STATE     XDATA_REG8(0xB434)  // PCIe link state (low nibble = lane mask)
-#define REG_POWER_CTRL_B455     XDATA_REG8(0xB455)  /* Power control */
-
+#define REG_TUNNEL_LINK_STATUS  XDATA_REG8(0xB431)  // Tunnel link training status (stock=0x0C when trained)
+#define REG_POWER_CTRL_B432     XDATA_REG8(0xB432)  // Power control for lanes (low 3 bits = link width)
+#define REG_TUNNEL_CTRL_B403    XDATA_REG8(0xB403)  // Tunnel control (stock=0x01 when trained, set by PHY events)
+#define REG_PCIE_LINK_STATE     XDATA_REG8(0xB434)  // PCIe link state (low nibble = lane enable mask)
 #define   PCIE_LINK_STATE_MASK    0x0F  // Bits 0-3: PCIe link state/lane mask
+
+/*
+ * LTSSM State Register (0xB450)
+ * Reports current PCIe LTSSM (Link Training and Status State Machine) state.
+ * Read-only hardware status register.
+ *
+ * Key values observed:
+ *   0x00 = Detect.Quiet (idle, no activity)
+ *   0x01 = Detect.Active (checking for receiver impedance)
+ *   0x10+ = Polling (TS1/TS2 exchange started)
+ *   0x48 = L0 (link trained, normal operation) — observed on ASMedia 174C:2463 stock
+ *   0x78 = L0 (link trained) — observed on tinygrad ADD1:0001 stock
+ *
+ * B450 oscillating between 0x00 and 0x01 means the PHY detects receiver
+ * impedance (GPU present) but cannot advance to Polling. This indicates
+ * a PHY configuration or power issue, not a missing device.
+ */
+#define REG_PCIE_LTSSM_STATE    XDATA_REG8(0xB450)
+#define   LTSSM_DETECT_QUIET      0x00
+#define   LTSSM_DETECT_ACTIVE     0x01
+#define   LTSSM_POLLING_MIN       0x10  // >= 0x10 means Polling started
+#define   LTSSM_L0                0x48  // Link trained (varies by FW version)
+
+#define REG_PCIE_LTSSM_B451     XDATA_REG8(0xB451)  // LTSSM sub-state (stock=0x01)
+#define REG_PCIE_LTSSM_B452     XDATA_REG8(0xB452)  // LTSSM sub-state (stock=0x01)
+#define REG_PCIE_LTSSM_B453     XDATA_REG8(0xB453)  // LTSSM sub-state (stock=0x01)
+#define REG_PCIE_LTSSM_B454     XDATA_REG8(0xB454)  // LTSSM config (stock=0x1F)
+#define REG_PCIE_LTSSM_B455     XDATA_REG8(0xB455)  // LTSSM link speed (stock=0x19 trained, 0x10 untrained)
+
 #define REG_PCIE_LANE_CONFIG    XDATA_REG8(0xB436)  // PCIe lane configuration
 #define   PCIE_LANE_CFG_LO_MASK   0x0F  // Bits 0-3: Low config
 #define   PCIE_LANE_CFG_HI_MASK   0xF0  // Bits 4-7: High config
+#define REG_PCIE_LINK_TRAIN     XDATA_REG8(0xB438)  // PCIe link training pattern
 
 /*
  * PCIe Tunnel Link Status (0xB480-0xB482)
@@ -908,12 +964,25 @@
 // Link/PHY Control Registers (0xC200-0xC2FF)
 //=============================================================================
 #define REG_LINK_CTRL           XDATA_REG8(0xC202)
+#define   LINK_CTRL_BIT3          0x08  /* Bit 3: link controller enable (set by DAC8 init) */
 #define REG_LINK_CONFIG         XDATA_REG8(0xC203)
 #define REG_LINK_STATUS         XDATA_REG8(0xC204)
 #define REG_PHY_CTRL            XDATA_REG8(0xC205)
 #define REG_PHY_LINK_CTRL_C208  XDATA_REG8(0xC208)
+#define REG_PHY_LINK_CTRL_C20B  XDATA_REG8(0xC20B)  /* PHY link control (bit 7 cleared by DAC8 init) */
 #define REG_PHY_LINK_CONFIG_C20C XDATA_REG8(0xC20C)
+/*
+ * PHY RXPLL Reset Register (0xC20E)
+ * Controls the downstream PCIe receiver PLL reset.
+ * Used in phy_rst_rxpll (bank1 0xE989):
+ *   Write 0xFF = assert RXPLL reset
+ *   Write 0x00 = de-assert RXPLL reset (PLL begins re-lock)
+ * Must bracket writes with CC37 bit 2 set/clear (RXPLL reset mode).
+ */
+#define REG_PHY_RXPLL_RESET     XDATA_REG8(0xC20E)
 #define REG_PHY_CTRL_C20F       XDATA_REG8(0xC20F)  /* PHY control (cleared during U1/U2 entry, restored to 0xC8) */
+#define REG_PHY_LINK_CTRL_C21B  XDATA_REG8(0xC21B)  /* PHY link control (bits 7:6 set by DAC8 init) */
+#define REG_PHY_SERDES_C22F     XDATA_REG8(0xC22F)  /* SerDes config (bit 2 set, bit 6 cleared by DAC8 init) */
 #define REG_PHY_CONFIG          XDATA_REG8(0xC233)
 #define   PHY_CONFIG_MODE_MASK    0x03  // Bits 0-1: PHY config mode
 #define REG_PHY_STATUS          XDATA_REG8(0xC284)
@@ -1094,12 +1163,28 @@
 //=============================================================================
 // PHY Extended Registers (0xC600-0xC6FF)
 //=============================================================================
+#define REG_PHY_EXT_CTRL_C620   XDATA_REG8(0xC620)  /* PHY extended control (bits 0-4 cleared in poll) */
+#define REG_PHY_EXT_CTRL_C623   XDATA_REG8(0xC623)  /* PHY extended control lane 2 (bits 0-4 cleared in poll) */
 #define REG_PHY_EXT_2D          XDATA_REG8(0xC62D)
 #define   PHY_EXT_LANE_MASK       0x07  // Bits 0-2: Lane configuration
 #define REG_PHY_CFG_C655        XDATA_REG8(0xC655)  /* PHY config (bit 3 set by flash_set_bit3) */
-#define REG_PHY_EXT_56          XDATA_REG8(0xC656)
-#define   PHY_EXT_SIGNAL_CFG      0x20  // Bit 5: Signal config
-#define REG_PCIE_LANE_CTRL_C659 XDATA_REG8(0xC659)  /* PCIe lane control */
+/*
+ * PHY Extended Signal Status (0xC656)
+ * Bit 5: PHY signal detect ready. Stock firmware phy_recovery_handler (0x46DE)
+ * checks this bit — if not set, returns error (PHY signal not ready).
+ */
+#define REG_PHY_EXT_SIGNAL      XDATA_REG8(0xC656)
+#define REG_PHY_EXT_56          REG_PHY_EXT_SIGNAL   // Legacy alias
+#define   PHY_EXT_SIGNAL_READY    0x20  // Bit 5: PHY signal detect ready
+#define   PHY_EXT_SIGNAL_CFG      PHY_EXT_SIGNAL_READY // Legacy alias
+/*
+ * PCIe Lane Control (0xC659)
+ * Bit 0: Lane enable control.
+ *   Stock firmware clears it during init (E612 with r7 bit 0 set).
+ *   Gets SET back during link training by PHY event handlers.
+ *   Stock trained value: 0x01. Custom untrained value: 0x00.
+ */
+#define REG_PCIE_LANE_CTRL_C659 XDATA_REG8(0xC659)
 #define REG_PHY_CFG_C65A        XDATA_REG8(0xC65A)  /* PHY config (bit 3 set by flash_set_bit3) */
 #define   PHY_CFG_C65A_BIT3       0x08  // Bit 3: PHY config flag
 #define REG_PHY_EXT_5B          XDATA_REG8(0xC65B)
@@ -1121,6 +1206,18 @@
 //=============================================================================
 // Interrupt Controller (0xC800-0xC80F)
 //=============================================================================
+/*
+ * PHY RXPLL Config Trigger (0xC808)
+ * Bit 1 set at start of phy_rxpll_config (bank1 0xE957) via set_bit1 helper.
+ * Enables RXPLL reconfiguration sequence on E760/E761/E763.
+ *
+ * Stock trained value: 0x00. If phy_rxpll_config is called, bit 1 gets set
+ * but should be cleared by hardware after PLL locks, or should not be set
+ * if phy_rxpll_config is not needed (stock only calls phy_rst_rxpll, not
+ * phy_rxpll_config, during the VDM timeout → RstRxpll sequence).
+ */
+#define REG_PHY_RXPLL_CFG_TRIG  XDATA_REG8(0xC808)
+#define   PHY_RXPLL_CFG_TRIG_BIT1 0x02  // Bit 1: RXPLL config trigger enable
 #define REG_INT_STATUS_C800     XDATA_REG8(0xC800)  /* Interrupt status register */
 #define   INT_STATUS_PCIE         0x04  // Bit 2: PCIe interrupt status
 #define REG_INT_ENABLE          XDATA_REG8(0xC801)  /* Interrupt enable register */
@@ -1250,7 +1347,14 @@
 #define REG_CPU_CTRL_CA2E       XDATA_REG8(0xCA2E)  /* CPU control */
 #define REG_CPU_CTRL_CA60       XDATA_REG8(0xCA60)  /* CPU control CA60 */
 #define REG_CPU_CTRL_CA70       XDATA_REG8(0xCA70)  /* CPU control */
-#define REG_CPU_CTRL_CA81       XDATA_REG8(0xCA81)  /* CPU control CA81 - PCIe init */
+/*
+ * CPU Control (0xCA81)
+ * Bit 0: PCIe PHY clock enable. Stock firmware sets this in C020 after E764 config.
+ *   Stock trained value: 0x0E (bit 0 CLEAR).
+ *   Custom value: 0x0F (bit 0 SET from our hw_init CA81 |= 0x01).
+ *   pcie_config_init_a3f5 in stock clears bit 0 (CA81 &= 0xFE) during PCIe setup.
+ */
+#define REG_CPU_CTRL_CA81       XDATA_REG8(0xCA81)
 
 //=============================================================================
 // Timer Registers (0xCC10-0xCC24)
@@ -1274,6 +1378,7 @@
 #define REG_TIMER3_DIV          XDATA_REG8(0xCC22)
 #define REG_TIMER3_CSR          XDATA_REG8(0xCC23)
 #define REG_TIMER3_IDLE_TIMEOUT XDATA_REG8(0xCC24)
+#define REG_TIMER3_THRESHOLD_HI XDATA_REG8(0xCC25)  /* Timer 3 threshold high byte */
 
 //=============================================================================
 // CPU Control Extended (0xCC30-0xCCFF)
@@ -1297,7 +1402,14 @@
 #define   CPU_EXEC_STATUS_3_BIT0  0x01  // Bit 0: Exec active flag
 #define   CPU_EXEC_STATUS_3_BIT2  0x04  // Bit 2: Exec status flag
 #define REG_CPU_CTRL_CC36       XDATA_REG8(0xCC36)  /* CPU control */
-#define REG_CPU_CTRL_CC37       XDATA_REG8(0xCC37)  /* CPU control */
+/*
+ * CPU Control CC37 — RXPLL reset mode control
+ * Bit 2 must be set before asserting RXPLL reset (C20E=0xFF),
+ * and cleared after de-asserting (C20E=0x00) and PLL re-lock delay.
+ * Stock firmware helper at bank1 0x9877 reads CC37 & 0xFB (bit 2 cleared).
+ */
+#define REG_CPU_CTRL_CC37       XDATA_REG8(0xCC37)
+#define   CPU_CTRL_CC37_RXPLL_MODE 0x04  // Bit 2: RXPLL reset mode enable
 // Timer enable/disable control registers
 #define REG_TIMER_ENABLE_A      XDATA_REG8(0xCC38)  /* Timer enable control A */
 #define   TIMER_ENABLE_A_BIT      0x02              /* Bit 1: Timer enable */
@@ -1323,9 +1435,30 @@
 #define REG_CPU_KEEPALIVE       XDATA_REG8(0xCC2A)  /* Write 0x0C in main loop */
 #define REG_CPU_KEEPALIVE_CC2C  XDATA_REG8(0xCC2C)  /* Keepalive param (init: 0xC7) */
 #define REG_CPU_KEEPALIVE_CC2D  XDATA_REG8(0xCC2D)  /* Keepalive param (init: 0xC7) */
-#define REG_CPU_CTRL_CC3D       XDATA_REG8(0xCC3D)
+/*
+ * LTSSM State Register (0xCC3D)
+ * Link Training and Status State Machine state control.
+ * Bit 7 cleared at end of LTSSM manipulation sequence (bank1 0xCCDD-0xCD26).
+ */
+#define REG_LTSSM_STATE         XDATA_REG8(0xCC3D)
+#define REG_CPU_CTRL_CC3D       REG_LTSSM_STATE      // Legacy alias
+#define   LTSSM_STATE_FORCE       0x80  // Bit 7: Force/lock LTSSM state
 #define REG_CPU_CTRL_CC3E       XDATA_REG8(0xCC3E)
-#define REG_CPU_CTRL_CC3F       XDATA_REG8(0xCC3F)
+/*
+ * LTSSM Control Register (0xCC3F)
+ * Controls Link Training and Status State Machine transitions.
+ * Stock firmware LTSSM manipulation at bank1 0xCCDD-0xCD26:
+ *   Phase 1: Clear bits 5,6 (disable override + force)
+ *   Phase 2: Clear bit 1, write, delay, set bit 5 (enable override)
+ *   Phase 3: Delay, clear bit 2, write, delay, set bit 6 (force state)
+ *   Phase 4: Delay, clear CC3D bit 7
+ */
+#define REG_LTSSM_CTRL          XDATA_REG8(0xCC3F)
+#define REG_CPU_CTRL_CC3F       REG_LTSSM_CTRL       // Legacy alias
+#define   LTSSM_CTRL_WRITE_TRIG   0x02  // Bit 1: Write trigger
+#define   LTSSM_CTRL_STATE_TRIG   0x04  // Bit 2: State change trigger
+#define   LTSSM_CTRL_OVERRIDE_EN  0x20  // Bit 5: LTSSM override enable
+#define   LTSSM_CTRL_FORCE_STATE  0x40  // Bit 6: Force LTSSM state
 #define REG_CPU_CLK_CFG         XDATA_REG8(0xCC43)  /* CPU clock config */
 
 // Timer 4 Registers (0xCC5C-0xCC5F)
@@ -1385,8 +1518,11 @@
  * Written in bda4 state reset (91D1 bit 0 handler): 0x04 then 0x02.
  * This sequence resets the link timer state machine.
  */
+#define REG_PHY_DMA_CMD_CD30    XDATA_REG8(0xCD30)   // PHY DMA command
 #define REG_CPU_TIMER_CTRL_CD31 XDATA_REG8(0xCD31)
 #define   CPU_TIMER_CD31_CLEAR    0x04  // Write first: clear/reset timer
+#define REG_PHY_DMA_ADDR_LO    XDATA_REG8(0xCD32)   // PHY DMA address low
+#define REG_PHY_DMA_ADDR_HI    XDATA_REG8(0xCD33)   // PHY DMA address high
 #define   CPU_TIMER_CD31_START    0x02  // Write second: restart timer
 
 //=============================================================================
@@ -1492,6 +1628,8 @@
 //=============================================================================
 // CPU Link Control (0xCEF0-0xCEFF)
 //=============================================================================
+#define REG_CPU_LINK_CEEF       XDATA_REG8(0xCEEF)   // CPU link control low
+#define REG_CPU_LINK_CEF0       XDATA_REG8(0xCEF0)   // CPU link status
 #define REG_CPU_LINK_CEF2       XDATA_REG8(0xCEF2)
 #define   CPU_LINK_CEF2_READY     0x80  // Bit 7: Link ready
 #define REG_CPU_LINK_CEF3       XDATA_REG8(0xCEF3)
@@ -1569,8 +1707,29 @@
 #define REG_CMD_CONFIG          XDATA_REG8(0xE40B)  /* Command config (bit 0 = flag) */
 #define REG_CMD_CFG_E40D        XDATA_REG8(0xE40D)  /* Command config - write 0x28 */
 #define REG_CMD_CFG_E40E        XDATA_REG8(0xE40E)  /* Command config - write 0x8A */
-#define REG_CMD_CTRL_E40F       XDATA_REG8(0xE40F)
-#define REG_CMD_CTRL_E410       XDATA_REG8(0xE410)
+/*
+ * PHY Event Register (0xE40F) — Write-1-to-clear
+ * Stock firmware PHY maintenance dispatcher at bank1 0xAE9B reads this
+ * and dispatches on individual bits in priority order: bit 7 > 0 > 5.
+ */
+#define REG_PHY_EVENT_E40F      XDATA_REG8(0xE40F)
+#define REG_CMD_CTRL_E40F       REG_PHY_EVENT_E40F   // Legacy alias
+#define   PHY_EVENT_LINK_CHANGE   0x01  // Bit 0: Link state change (→ 0x83D6)
+#define   PHY_EVENT_SPEED_CHANGE  0x20  // Bit 5: Speed change (→ 0xE19E)
+#define   PHY_EVENT_MAJOR         0x80  // Bit 7: Major PHY event / reset (→ 0xDD9C)
+/*
+ * PHY Interrupt Status (0xE410) — Write-1-to-clear
+ * Checked after E40F events. Dispatches CDR and link training events.
+ * Stock firmware at bank1 0xAEE4 checks individual bits.
+ */
+#define REG_PHY_INT_STATUS_E410 XDATA_REG8(0xE410)
+#define REG_CMD_CTRL_E410       REG_PHY_INT_STATUS_E410  // Legacy alias
+#define   PHY_INT_MINOR_EVENT     0x01  // Bit 0: Minor event (ack only)
+#define   PHY_INT_CDR_TIMEOUT     0x08  // Bit 3: CDR timeout
+#define   PHY_INT_PLL_EVENT       0x10  // Bit 4: PLL event
+#define   PHY_INT_CDR_RECOVERY    0x20  // Bit 5: CDR recovery needed (→ 0xE5DF)
+#define   PHY_INT_LINK_TRAINING   0x40  // Bit 6: Link training event (→ 0xE1BE)
+#define   PHY_INT_MAJOR_ERROR     0x80  // Bit 7: Major PHY error
 #define REG_CMD_CFG_E411        XDATA_REG8(0xE411)  /* Command config - write 0xA1 */
 #define REG_CMD_CFG_E412        XDATA_REG8(0xE412)  /* Command config - write 0x79 */
 #define REG_CMD_CFG_E413        XDATA_REG8(0xE413)  /* Command config (bits 0,1,4,5,6 = flags) */
@@ -1651,10 +1810,32 @@
 #define REG_PHY_PLL_CTRL        XDATA_REG8(0xE741)  /* PHY PLL control */
 #define REG_PHY_PLL_CFG         XDATA_REG8(0xE742)  /* PHY PLL config */
 #define REG_PHY_POLL_E750       XDATA_REG8(0xE750)  /* PHY poll (read during reset 91D1 wait) */
-#define REG_SYS_CTRL_E760       XDATA_REG8(0xE760)
-#define REG_SYS_CTRL_E761       XDATA_REG8(0xE761)
-#define REG_SYS_CTRL_E763       XDATA_REG8(0xE763)
-#define REG_PHY_TIMER_CTRL_E764 XDATA_REG8(0xE764)  /* PHY timer control */
+/*
+ * PHY RXPLL Configuration (0xE760-0xE763)
+ * Used in phy_rxpll_config (bank1 0xE957) to configure RXPLL before reset.
+ * E760: PHY PLL config A — bits 2,3 toggled (clear then set = no-op on those bits)
+ * E761: PHY PLL config B — bits 2,3 cleared after E760 sets them
+ * E763: PHY PLL event trigger — write 0x04 then 0x08 to trigger PLL reconfiguration
+ *
+ * Stock firmware trained values: E760=0x00, E761=0x00, E763=0x00
+ * These should be CLEAR after training. If phy_rxpll_config() is called,
+ * it sets E760/E761 bits but they should be cleared by the hardware PLL
+ * lock process or by explicit cleanup afterward.
+ */
+#define REG_PHY_RXPLL_CFG_A     XDATA_REG8(0xE760)
+#define REG_SYS_CTRL_E760       REG_PHY_RXPLL_CFG_A  // Legacy alias
+#define REG_PHY_RXPLL_CFG_B     XDATA_REG8(0xE761)
+#define REG_SYS_CTRL_E761       REG_PHY_RXPLL_CFG_B  // Legacy alias
+#define REG_PHY_RXPLL_TRIGGER   XDATA_REG8(0xE763)
+#define REG_SYS_CTRL_E763       REG_PHY_RXPLL_TRIGGER // Legacy alias
+/*
+ * PHY Timer Control (0xE764)
+ * Configured during hw_init (written 0x14 four times).
+ * Stock firmware E2E6 clears bits 0,1,3 and sets bit 2 (from 0x14 → 0x14, no-op).
+ * Stock trained value: 0x19 (bits 0,3,4 set) — bits 0,3 get set during link training.
+ * Custom untrained value: 0x14 (bit 2,4 set).
+ */
+#define REG_PHY_TIMER_CTRL_E764 XDATA_REG8(0xE764)
 #define REG_SYS_CTRL_E765       XDATA_REG8(0xE765)  /* System control E765 */
 #define REG_SYS_CTRL_E76C       XDATA_REG8(0xE76C)  /* System control */
 #define REG_SYS_CTRL_E774       XDATA_REG8(0xE774)  /* System control */

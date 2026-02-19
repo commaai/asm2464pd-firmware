@@ -237,10 +237,13 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
  * Used by E4/E5 command processing to track current command slot.
  */
 #define G_CMD_SLOT_INDEX        XDATA_VAR8(0x05A3)  /* Current command slot index (0-9) */
+#define G_CMD_WORK_05A4         XDATA_VAR8(0x05A4)  /* Command work byte (cleared in C24C reinit) */
 #define G_CMD_INDEX_SRC         XDATA_VAR8(0x05A5)  /* Command index source/copy */
 #define G_PCIE_TXN_COUNT_LO     XDATA_VAR8(0x05A6)  /* PCIe transaction count low */
 #define G_PCIE_TXN_COUNT_HI     XDATA_VAR8(0x05A7)  /* PCIe transaction count high */
 #define G_EP_CONFIG_05A8        XDATA_VAR8(0x05A8)  /* EP config 0x05A8 */
+#define G_PCIE_WORK_05A9        XDATA_VAR8(0x05A9)  /* PCIe work byte (cleared in C24C reinit) */
+#define G_PCIE_WORK_05AA        XDATA_VAR8(0x05AA)  /* PCIe work byte (cleared in C24C reinit) */
 #define G_PCIE_DIRECTION        XDATA_VAR8(0x05AE)  /* PCIe direction (bit 0: 0=read, 1=write) */
 #define G_PCIE_ADDR_0           XDATA_VAR8(0x05AF)  /* PCIe target address byte 0 */
 #define G_PCIE_ADDR_1           XDATA_VAR8(0x05B0)  /* PCIe target address byte 1 */
@@ -279,7 +282,9 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_MAX_LOG_ENTRIES       XDATA_VAR8(0x06E5)  /* Max error log entries */
 #define G_QUEUE_COUNT_06E5      G_MAX_LOG_ENTRIES   /* Alias - queue count */
 #define G_STATE_FLAG_06E6       XDATA_VAR8(0x06E6)  /* Processing complete flag / error flag */
+#define G_USB_STATE_06E2        XDATA_VAR8(0x06E2)  /* USB state (cleared in C24C reinit) */
 #define G_USB_STATE_CLEAR_06E3  XDATA_VAR8(0x06E3)  /* USB state clear flag */
+#define G_USB_STATE_06E4        XDATA_VAR8(0x06E4)  /* USB state (set to 1 in C24C reinit) */
 #define G_SCSI_STATUS_06CB      XDATA_VAR8(0x06CB)  /* SCSI status byte */
 #define G_WORK_06E7             XDATA_VAR8(0x06E7)  /* Work variable 0x06E7 */
 #define G_WORK_06E8             XDATA_VAR8(0x06E8)  /* Work variable 0x06E8 */
@@ -305,6 +310,8 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_VENDOR_MODE_07CF      XDATA_VAR8(0x07CF)  /* Vendor mode state 2 */
 #define G_FLASH_CMD_TYPE        XDATA_VAR8(0x07BC)  /* Flash command type (1,2,3) */
 #define G_FLASH_OP_COUNTER      XDATA_VAR8(0x07BD)  /* Flash operation counter */
+#define G_SERDES_EQ_PARAM       XDATA_VAR8(0x0736)  /* SerDes equalization parameter (from init tables) */
+#define G_SERDES_EQ_MULT       XDATA_VAR8(0x0746)  /* SerDes equalization multiplier (from init tables) */
 #define G_SYS_FLAGS_BASE        XDATA_VAR8(0x07E4)  /* Flags base */
 #define G_TRANSFER_ACTIVE       XDATA_VAR8(0x07E5)  /* Transfer active flag */
 #define G_USB_CTRL_STATE_07E1   XDATA_VAR8(0x07E1)  /* USB control transfer state (5=ready to send) */
@@ -482,8 +489,10 @@ __idata __at(0x72) uint8_t I_BUF_CTRL_GLOBAL; /* Buffer control global */
 #define G_PCIE_WORK_0B12        XDATA_VAR8(0x0B12)  /* PCIe work variable */
 /* NOTE: G_TLP_PENDING_0B21 removed - use G_DMA_WORK_0B21 (same address) */
 #define G_LINK_EVENT_0B2D       XDATA_VAR8(0x0B2D)  /* Link event flag (cleared in bda4 reset) */
-#define G_USB_TRANSFER_FLAG     XDATA_VAR8(0x0B2E)  /* USB transfer flag */
-#define G_INTERFACE_READY_0B2F  XDATA_VAR8(0x0B2F)  /* Interface ready flag */
+#define G_USB_TRANSFER_FLAG     XDATA_VAR8(0x0B2E)  /* USB transfer flag (set by 91D1 bit 1 handler) */
+#define G_PHY_POLL_MODE         XDATA_VAR8(0x0B2F)  /* PHY poll mode: 0=set, 1=clear, 2=special */
+#define G_INTERFACE_READY_0B2F  G_PHY_POLL_MODE      /* Legacy alias */
+#define G_PHY_LANE_POLL_MODE    XDATA_VAR8(0x0B30)  /* PHY lane poll mode (saved from 0x0B2F) */
 #define G_STATE_0B39            XDATA_VAR8(0x0B39)  /* State control 0x0B39 */
 #define G_STATE_0B3A            XDATA_VAR8(0x0B3A)  /* State control 0x0B3A */
 #define G_TRANSFER_BUSY_0B3B    XDATA_VAR8(0x0B3B)  /* Transfer busy flag */

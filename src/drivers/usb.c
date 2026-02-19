@@ -5109,8 +5109,8 @@ void pcie_vendor_handler_35b7(uint8_t param)
     vendor_clear_enum_flag();
 
     /* 35e2-35f6: DMA trigger sequence */
-    REG_POWER_CTRL_B455 = 0x02;
-    REG_POWER_CTRL_B455 = 0x04;
+    REG_PCIE_LTSSM_B455 = 0x02;
+    REG_PCIE_LTSSM_B455 = 0x04;
     REG_PCIE_CTRL_B2D5 = 0x01;
     REG_PCIE_STATUS = 0x08;  /* Triggers DMA */
 
@@ -5138,13 +5138,13 @@ void pcie_vendor_handler_35b7(uint8_t param)
     /* Multiple banked calls and register setup */
 
     /* 3634-3647: DMA polling loop */
-    /* Poll REG_POWER_CTRL_B455 bit 1 */
-    while ((REG_POWER_CTRL_B455 & 0x02) == 0) {
+    /* Poll REG_PCIE_LTSSM_B455 bit 1 */
+    while ((REG_PCIE_LTSSM_B455 & 0x02) == 0) {
         /* Wait for DMA complete */
     }
 
     /* 3675-367a: Clear DMA status */
-    REG_POWER_CTRL_B455 = 0x02;
+    REG_PCIE_LTSSM_B455 = 0x02;
 
     /* 367b-3688: Check handler state for completion type */
     if (G_VENDOR_HANDLER_STATE == 0x03) {
