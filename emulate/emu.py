@@ -92,9 +92,19 @@ class Emulator:
         self._proxy_isr_pending_acks = []
 
     def load_firmware(self, path: str):
-        """Load firmware binary."""
+        """Load firmware binary, auto-stripping ASM header if present."""
         with open(path, 'rb') as f:
             data = f.read()
+        
+        # Check for ASM2464 wrapped firmware format:
+        # 4-byte little-endian length + body + 6-byte footer (magic + checksum + crc32)
+        # The first 4 bytes should equal len(data) - 10 (4 header + 6 footer)
+        if len(data) >= 10:
+            header_len = int.from_bytes(data[:4], 'little')
+            if header_len == len(data) - 10:
+                print(f"Detected ASM2464 wrapped firmware, stripping 4-byte header and 6-byte footer")
+                data = data[4:-6]
+        
         print(f"Loaded {len(data)} bytes from {path}")
         self.memory.load_firmware(data)
         # Load USB3 config descriptor from ROM and fix wTotalLength
@@ -644,6 +654,8 @@ Examples:
                         help='Debug level: 1=interrupts, 2=+xdata, 3=+sfr (default: 0=off, bare flag=2)')
     parser.add_argument('--proxy-mask', type=str, action='append', default=[],
                         help='MMIO range to emulate instead of proxy (e.g. 0x9000-0x9100 or 0x9000). Can repeat.')
+    parser.add_argument('--vidpid', type=str, default=None,
+                        help='Override USB VID:PID in descriptor (e.g. ADD1:0001)')
 
     args = parser.parse_args()
 
@@ -702,6 +714,12 @@ Examples:
     emu = Emulator(trace=args.trace, log_hw=args.log_hw,
                    log_uart=not args.no_uart_log, usb_delay=args.usb_delay,
                    proxy=proxy, proxy_mask=proxy_mask)
+
+    # Set VID/PID override
+    if args.vidpid:
+        vid_str, pid_str = args.vidpid.split(':')
+        emu.hw.vidpid_override = (int(vid_str, 16), int(pid_str, 16))
+        print(f"VID/PID override: {vid_str.upper()}:{pid_str.upper()}")
 
     # Load firmware
     emu.load_firmware(str(fw_path))

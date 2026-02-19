@@ -807,6 +807,10 @@ class HardwareState:
     # Real hardware handles everything, we just proxy MMIO
     proxy_mode: bool = False
 
+    # VID/PID override - intercept firmware USB descriptor writes to patch VID/PID
+    # Format: (vid, pid) or None for no override
+    vidpid_override: tuple = None
+
     # Reference to memory system (set by Emulator during init)
     # Used for reading XDATA (e.g., USB descriptors)
     _memory: 'Memory' = None
@@ -3114,17 +3118,23 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
 
     def make_proxy_write_hook(proxy_ref, hw_ref):
         """Create a write hook that proxies to real hardware."""
+        # Shadow 0x9E00 buffer header to detect device descriptor
+        ep0_shadow = {}
         def hook(addr, value):
-            # Patch VID/PID in USB descriptor response
-            # Only when PC=0xB495 (descriptor write loop) with original values
-            pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
-            """
-            if pc == 0xB495:
-                if addr == 0x9E08 and value == 0x4C: value = 0xBB    # VID low
-                elif addr == 0x9E09 and value == 0x17: value = 0xAA  # VID high
-                elif addr == 0x9E0A and value == 0x63: value = 0xDD  # PID low
-                elif addr == 0x9E0B and value == 0x24: value = 0xCC  # PID high
-            """
+            # Track writes to USB EP0 buffer header bytes
+            if 0x9E00 <= addr <= 0x9E01:
+                ep0_shadow[addr] = value
+
+            # Patch VID/PID only when buffer contains a device descriptor
+            # Device descriptor: bLength=0x12 at 0x9E00, bDescriptorType=0x01 at 0x9E01
+            # Bytes 8-9 = idVendor (LE), bytes 10-11 = idProduct (LE)
+            if hw_ref.vidpid_override is not None and 0x9E08 <= addr <= 0x9E0B:
+                if ep0_shadow.get(0x9E00) == 0x12 and ep0_shadow.get(0x9E01) == 0x01:
+                    vid, pid = hw_ref.vidpid_override
+                    if addr == 0x9E08: value = vid & 0xFF
+                    elif addr == 0x9E09: value = (vid >> 8) & 0xFF
+                    elif addr == 0x9E0A: value = pid & 0xFF
+                    elif addr == 0x9E0B: value = (pid >> 8) & 0xFF
             
             proxy_ref.write(addr, value)
             if proxy_ref.debug >= 2:
