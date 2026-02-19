@@ -40,6 +40,8 @@ static uint16_t bulk_out_addr;
 static uint8_t bulk_out_len;
 static volatile uint8_t pd_power_ready_done;
 static volatile uint8_t usb_configured;
+static volatile uint8_t phy_unmask_pending;
+static volatile uint16_t phy_unmask_counter;
 
 static void poll_bulk_events(void);
 static void phy_event_dispatcher(void);
@@ -94,7 +96,10 @@ static void arm_msc(void) {
 
 static void handle_set_address(void) {
     uint8_t tmp;
-    REG_USB_INT_MASK_9090 = 0x01;
+    /* Stock firmware at BB19: 9090 = (9090 & 0x80) | r6
+     * Preserves bit 7 (PHY event mask) while setting address bits.
+     * r6 comes from XDATA[0x0AD0] — the USB device address/config value. */
+    REG_USB_INT_MASK_9090 = (REG_USB_INT_MASK_9090 & 0x80) | 0x01;
     REG_USB_EP_CTRL_91D0 = 0x02;
 
     if (is_usb3) {
@@ -412,6 +417,26 @@ static void handle_cbw(void) {
             REG_USB_INT_MASK_9090 &= ~0x80;
             IE |= IE_EA;
             uart_puts("[9090 clr]\n");
+        } else if (step == 3) {
+            /* Just unmask 9090 bit 7 — no 9000 pulse.
+             * 9090 bit 7 masks PHY events (C80A bit 6).
+             * Stock firmware clears via CC27 but the 9000 pulse kills USB3. */
+            IE &= ~IE_EA;
+            REG_USB_INT_MASK_9090 &= 0x7F;
+            IE |= IE_EA;
+            uart_puts("[9090 unmask]\n");
+        } else if (step == 4) {
+            /* Full CC27 + CA51 with interrupts disabled */
+            IE &= ~IE_EA;
+            REG_USB_INT_MASK_9090 &= 0x7F;
+            { uint8_t s = REG_USB_LINK_STATUS;
+            REG_USB_LINK_STATUS = (s & 0xFB) | 0x04;
+            s = REG_USB_LINK_STATUS;
+            REG_USB_LINK_STATUS = s & 0xFB; }
+            REG_POWER_EVENT_92E1 = (REG_POWER_EVENT_92E1 & 0xBF) | 0x40;
+            REG_POWER_STATUS &= 0xBF;
+            IE |= IE_EA;
+            uart_puts("[CA51 done]\n");
         }
         return;
     } else {
@@ -644,14 +669,17 @@ void int1_isr(void) __interrupt(2) {
      *   0x09F9 & 0x83 → additional C80A dispatches (bits 5, 4)
      */
 
-    /* Power event: ack 92E1 and clear 92C2 power status bits.
-     * Required for USB to work — without this, USB never enumerates.
-     * Note: This clears 92C2 bit 6 which is needed for PCIe PHY power.
-     * TODO: Find a way to keep bit 6 set after USB is established. */
+    /* Power event: ack 92E1 and handle 92C2.
+     * NOTE: The stock firmware does NOT have this in the ISR, but our firmware
+     * needs the 92C2 write for USB to enumerate. Clear both bits 6+7 for USB,
+     * but ONLY before USB is configured. After USB config, preserve bit 6
+     * which is needed for PCIe PHY power domain. */
     { uint8_t pwr = REG_POWER_EVENT_92E1;
       if (pwr) {
         REG_POWER_EVENT_92E1 = pwr;
-        REG_POWER_STATUS &= ~(POWER_STATUS_USB_PATH | 0x80);
+        if (!usb_configured) {
+            REG_POWER_STATUS &= ~(POWER_STATUS_USB_PATH | 0x80);
+        }
       }
     }
 
@@ -667,9 +695,17 @@ void int1_isr(void) __interrupt(2) {
     }
 
     /* PHY event dispatch: C80A bit 6 → phy_event_dispatcher
-     * Stock firmware: 0x450B checks C80A bit 6 → lcall 0x0516 → 0xAE89 */
+     * Stock firmware: 0x450B checks C80A bit 6 → lcall 0x0516 → 0xAE89
+     * Must gate on usb_configured: E40F events fire right after boot and
+     * if dispatched during enumeration, the handler disrupts USB.
+     * Silently ack events until USB is stable. */
     if (REG_INT_PCIE_NVME & 0x40) {
-        phy_event_dispatcher();
+        if (usb_configured) {
+            phy_event_dispatcher();
+        } else {
+            REG_PHY_EVENT_E40F = 0xFF;
+            REG_PHY_INT_STATUS_E410 = 0xFF;
+        }
     }
 }
 
@@ -686,6 +722,61 @@ static void delay_long(void) {
     volatile uint16_t i;
     for (i = 0; i < 10000; i++) { }
 }
+
+/*
+ * xdata_ext_rmw - Read-modify-write XDATA with extended page via SFR 0x93
+ * Address: 0x0A99-0x0AC8 (stock firmware helpers)
+ *
+ * The ASM2464PD uses SFR 0x93 (BANK_SEL) as an extended XDATA page register.
+ * For page N (N>=2), actual SFR value = (N-1) & 0x7F.
+ * After access, SFR 0x93 is reset to 0.
+ *
+ * Stock firmware at D9BD-D9DC uses this for PHY SerDes config:
+ *   Page 2 (SFR 0x93=1), addr 0x7041: clear bit 6
+ *   Page 2 (SFR 0x93=1), addr 0x1507: set bits 1,2
+ */
+/*
+ * Extended XDATA page access via SFR 0x93 (BANK_SEL)
+ *
+ * WARNING: SDCC --model-large stores params/locals in XDATA.
+ * BANK_SEL must be set ONLY around the actual movx instruction,
+ * not around any other XDATA access (params, locals, etc).
+ * Using __naked functions with inline asm to control this precisely.
+ *
+ * Stock firmware: 0x0A99 (ext_read), 0x0AB4 (ext_write)
+ */
+static uint8_t xdata_ext_read(uint16_t addr) __naked {
+    (void)addr;
+    __asm
+        ; dptr already has addr (first param in model-large passed in dptr)
+        ; Set page, read, clear page
+        mov  0x93, #0x01
+        movx a, @dptr
+        mov  0x93, #0x00
+        mov  dpl, a
+        ret
+    __endasm;
+}
+
+static void xdata_ext_write(uint16_t addr, uint8_t val) __naked {
+    (void)addr; (void)val;
+    __asm
+        ; dptr has addr, val is in XDATA at _xdata_ext_write_PARM_2
+        ; Must read val BEFORE setting BANK_SEL
+        push dpl
+        push dph
+        mov  dptr, #_xdata_ext_write_PARM_2
+        movx a, @dptr             ; a = val (read from page 0)
+        pop  dph
+        pop  dpl
+        ; Now set page, write, clear page
+        mov  0x93, #0x01
+        movx @dptr, a
+        mov  0x93, #0x00
+        ret
+    __endasm;
+}
+
 
 /*
  * phy_poll_registers - PHY poll register update
@@ -967,6 +1058,135 @@ static void phy_rst_rxpll(void) {
     REG_CPU_CTRL_CC37 &= ~CPU_CTRL_CC37_RXPLL_MODE;
 
     uart_puts("[Done]");
+}
+
+/* Forward declarations for functions used before definition */
+static void pcie_tunnel_adapter_config(void);
+
+/*
+ * phy_power_enable - PHY power-on and clock configuration for PCIe
+ * Bank 1 Address: 0xD92E-0xD968 (59 bytes) [actual addr: 0x15899]
+ *
+ * Called by PD event handler to enable PHY power before link training.
+ * Sequence:
+ *   1. CC3D: 92C2 |= 0x40 (set bit 6 — PHY power enable)
+ *   2. CC2D: 92E1 = 0x10, 9000 pulse bit 2 (PHY clock gate toggle)
+ *   3. CC4C: 91C0 |= 0x02 (PHY interface enable)
+ *   4. 9090 &= 0x7F (clear USB interference bit)
+ *   5. Timer delay (if with_delay)
+ *   6. 9300 = 0x04 (SerDes mode select)
+ *   7. 91D1 sequence: 0x02 → 9301=0x40/0x80 → 91D1=0x08/0x01
+ *
+ * Original disassembly:
+ *   d92e: lcall 0xcc3d           ; 92C2 |= 0x40, set dptr=92E1, a=0x10
+ *   d931: lcall 0xcc2d           ; 92E1 = 0x10, 9000 pulse bit 2
+ *   d934: lcall 0xcc4c           ; 91C0 |= 0x02
+ *   d937: mov dptr, #0x9090
+ *   d93a: movx a, @dptr
+ *   d93b: anl a, #0x7f
+ *   d93d: movx @dptr, a          ; 9090 &= 0x7F
+ *   d93e: mov a, r7
+ *   d93f: jz 0xd94a              ; skip delay if r7==0
+ *   d941: hw_timer_delay(2, 0x57, 0x05)
+ *   d94a: 9300 = 0x04
+ *   d94f: 91D1 = 0x02
+ *   d956: 9301 = 0x40
+ *   d95c: 9301 = 0x80
+ *   d95f: 91D1 = 0x08
+ *   d964: 91D1 = 0x01
+ *   d968: ret
+ */
+static void phy_power_enable(uint8_t with_delay) {
+    /* CC3D sub: 92C2 |= 0x40 — PHY power enable */
+    XDATA_REG8(0x92C2) = (XDATA_REG8(0x92C2) & 0xBF) | 0x40;
+
+    /* CC2D sub: 92E1 = 0x10, then 9000 pulse bit 2 */
+    XDATA_REG8(0x92E1) = 0x10;
+    XDATA_REG8(0x9000) = (XDATA_REG8(0x9000) & 0xFB) | 0x04;
+    XDATA_REG8(0x9000) &= 0xFB;
+
+    /* CC4C sub: 91C0 |= 0x02 — PHY interface enable */
+    REG_USB_PHY_CTRL_91C0 = (REG_USB_PHY_CTRL_91C0 & 0xFD) | 0x02;
+
+    /* 9090 &= 0x7F — clear bit 7 */
+    XDATA_REG8(0x9090) &= 0x7F;
+
+    /* Optional delay (~600 ticks) */
+    if (with_delay) {
+        hw_timer_delay(0x02, 0x57, 0x05);
+    }
+
+    /* SerDes mode select */
+    XDATA_REG8(0x9300) = 0x04;
+
+    /* 91D1 PHY sequence */
+    XDATA_REG8(0x91D1) = 0x02;
+    XDATA_REG8(0x9301) = 0x40;
+    XDATA_REG8(0x9301) = 0x80;
+    XDATA_REG8(0x91D1) = 0x08;
+    XDATA_REG8(0x91D1) = 0x01;
+}
+
+/*
+ * pcie_full_link_setup - Complete PCIe link setup with ext page config
+ * Bank 1 Address: 0xCC83-0xCCDC (90 bytes) [actual addr: 0x14BEE]
+ *
+ * Full CC83 function: configures CA06, reloads tunnel adapter,
+ * writes ext page SerDes equalization, performs B4xx link-up dance,
+ * then configures ext page downstream port settings.
+ *
+ * Original disassembly:
+ *   cc83: CA06 &= 0xEF           ; clear bit 4
+ *   cc8a: lcall C6D7             ; tunnel adapter reload from globals
+ *   cc8d-cc9a: ext[4084]=0x22, ext[5084]=0x22  ; SerDes EQ
+ *   cc9d: B401 |= 0x01           ; via 9941 helper
+ *   cca3: B482 |= 0x01           ; via 9941 helper
+ *   cca9: B482 = (B482 & 0x0F) | 0xF0
+ *   ccaf: B401 &= 0xFE, B480 |= 0x01  ; via 993D helper
+ *   ccb8: B430 &= 0xFE
+ *   ccbf: B298 = (B298 & 0xEF) | 0x10
+ *   ccc8: ext[6043] = 0x70       ; downstream port config
+ *   ccd3: ext[2543] = (ext[2543] & 0x7F) | 0x80
+ *   ccda: ljmp 0x0bbe            ; tail-call ext write
+ */
+static void pcie_full_link_setup(void) {
+    /* CA06: clear bit 4 */
+    XDATA_REG8(0xCA06) &= 0xEF;
+
+    /* Reload tunnel adapter config (C6D7 equivalent) */
+    pcie_tunnel_adapter_config();
+
+    /* ext[0x4084] = 0x22 — SerDes equalization, lane 0 */
+    xdata_ext_write(0x4084, 0x22);
+
+    /* ext[0x5084] = 0x22 — SerDes equalization, lane 1 */
+    xdata_ext_write(0x5084, 0x22);
+
+    /* B401 |= 0x01 — link request */
+    XDATA_REG8(0xB401) |= 0x01;
+
+    /* B482 |= 0x01 — port enable */
+    XDATA_REG8(0xB482) |= 0x01;
+
+    /* B482 = (B482 & 0x0F) | 0xF0 — set high nibble */
+    XDATA_REG8(0xB482) = (XDATA_REG8(0xB482) & 0x0F) | 0xF0;
+
+    /* B401 &= 0xFE — clear request, then B480 |= 0x01 (via 993D) */
+    XDATA_REG8(0xB401) &= 0xFE;
+    XDATA_REG8(0xB480) |= 0x01;
+
+    /* B430 &= 0xFE — clear lane lock */
+    XDATA_REG8(0xB430) &= 0xFE;
+
+    /* B298 = (B298 & 0xEF) | 0x10 — set bit 4 */
+    XDATA_REG8(0xB298) = (XDATA_REG8(0xB298) & 0xEF) | 0x10;
+
+    /* ext[0x6043] = 0x70 — downstream port config */
+    xdata_ext_write(0x6043, 0x70);
+
+    /* ext[0x2543] |= 0x80 — set bit 7 */
+    { uint8_t tmp = xdata_ext_read(0x2543);
+    xdata_ext_write(0x2543, (tmp & 0x7F) | 0x80); }
 }
 
 /*
@@ -1872,8 +2092,193 @@ static void pd_cc_state_check(void) {
 }
 
 /*
- * pcie_tunnel_adapter_config - Configure tunnel adapter parameters
- * From stock firmware emulator trace (cycles 75040-75189 / 75892-76041)
+ * pcie_serdes_lane_enable - Per-lane SerDes PHY bit 7 configuration
+ * Address: 0xD530-0xD573 (68 bytes)
+ *
+ * For each lane (bits 0-3 of lane_mask), sets or clears bit 7 of
+ * page2 register (0x78+lane)*256 + 0xAF. Bit 7 enables the lane
+ * for PCIe link training.
+ *
+ * Original disassembly:
+ *   d530: lcall 0xcaee        ; read page2:0x78AF
+ *   d533: lcall 0xcaf7        ; a = a & 0x7F, r6 = result, load r7 for bit test
+ *   d536: jnb acc.0, d53b     ; if lane 0 enabled → r5 = 1
+ *   ...                       ; repeat for lanes 1, 2, 3
+ *   d571: ljmp 0x0bbe         ; write page2:0x7BAF
+ */
+static void pcie_serdes_lane_enable(uint8_t lane_mask) {
+    uint8_t i, val;
+    static __code const uint8_t lane_pages[4] = {0x78, 0x79, 0x7A, 0x7B};
+
+    for (i = 0; i < 4; i++) {
+        uint16_t addr = ((uint16_t)lane_pages[i] << 8) | 0xAF;
+        val = xdata_ext_read(addr);
+        if (lane_mask & (1 << i))
+            val = (val & 0x7F) | 0x80;  /* set bit 7 (enable lane) */
+        else
+            val = val & 0x7F;           /* clear bit 7 (disable lane) */
+        xdata_ext_write(addr, val);
+    }
+}
+
+/*
+ * pcie_progressive_lane_enable - Progressive lane enable with PHY config
+ * Address: 0xBEA0-0xBF1B (BEA0 loop) + 0xC7A4-0xC808 (C7A4 wrapper)
+ *
+ * BEA0: Enables lanes one at a time, calling D530 (per-lane PHY config)
+ *       and a hardware timer delay between each step.
+ * C7A4: Wrapper that saves/restores B402 bit 1, calls BEA0, configures B436.
+ *
+ * BEA0 original disassembly:
+ *   bea0: XDATA[0x0aa9] = r7        ; target mask
+ *         XDATA[0x0aac] = 0x01      ; shift register
+ *         XDATA[0x0aab] = B434 & 0x0F ; current lane state
+ *         XDATA[0x0aaa] = 0          ; iteration counter
+ *   beba: (loop) merge shift into state, write B434, call D530, delay(E581), shift<<=1, iter++
+ *         if iter < 4: loop
+ *
+ * C7A4 original disassembly:
+ *   c7a4: [0x0aa7] = r7; [0x0aa8] = B402 & 0x02; B402 &= 0xFD
+ *   c7c8: lcall BEA0
+ *   c7e8: B436 = (B436 & 0xF0) | (r7 & 0x0E)
+ *         B436 = (B436 & 0x0F) | ((~B404 & 0x0F) << 4)
+ */
+static void pcie_progressive_lane_enable(uint8_t target_mask) {
+    uint8_t saved_b402_bit1;
+    uint8_t current_mask, shift, iter;
+
+    /* C7A4: save B402 bit 1, then clear it */
+    saved_b402_bit1 = REG_PCIE_CTRL_B402 & 0x02;
+    REG_PCIE_CTRL_B402 &= 0xFD;
+
+    /* BEA0: progressive lane enable loop */
+    current_mask = REG_PCIE_LINK_STATE & 0x0F;
+    shift = 0x01;
+
+    for (iter = 0; iter < 4; iter++) {
+        if (current_mask == target_mask) break;
+
+        /* Add next lane: merge shift bit into current mask */
+        current_mask = (current_mask | shift) & target_mask;
+
+        /* Write new lane mask to B434 (preserve high nibble) */
+        REG_PCIE_LINK_STATE = (REG_PCIE_LINK_STATE & 0xF0) | current_mask;
+
+        /* D530: configure PHY bit 7 for each enabled lane */
+        pcie_serdes_lane_enable(current_mask);
+
+        /* E581: hardware timer delay (prescaler=2, count=0x00C7 = 199 ticks) */
+        hw_timer_delay(0x02, 0x00, 0xC7);
+
+        /* Shift to next lane */
+        shift += shift;  /* shift <<= 1 */
+    }
+
+    /* C7A4: restore B402 bit 1 if it was set */
+    if (saved_b402_bit1)
+        REG_PCIE_CTRL_B402 |= 0x02;
+
+    /* C7A4: configure B436 with final lane state */
+    REG_PCIE_LANE_CONFIG = (REG_PCIE_LANE_CONFIG & 0xF0) | (target_mask & 0x0E);
+    { uint8_t inv = ((REG_PCIE_LINK_PARAM_B404 & 0x0F) ^ 0x0F) << 4;
+    REG_PCIE_LANE_CONFIG = (REG_PCIE_LANE_CONFIG & 0x0F) | (inv & 0xF0); }
+}
+
+/*
+ * pcie_phy_e764_config - Configure E764 PHY timer control
+ * Address: 0xE2E6-0xE2FF (26 bytes)
+ *
+ * Sequential RMW operations on E764: clear bits 0,1,3; set bit 2.
+ * Re-reads between writes ensure hardware register ordering.
+ *
+ * Original disassembly:
+ *   e2e6: mov a, r7             ; r7 = lane mask (0x0F)
+ *   e2e7: jnb 0xe0.0, 0xe2ff   ; skip if bit 0 not set
+ *   e2ea: mov dptr, #0xe764
+ *   e2ed: movx a, @dptr         ; read E764
+ *   e2ee: anl a, #0xfd          ; clear bit 1
+ *   e2f0: movx @dptr, a
+ *   e2f1: movx a, @dptr         ; re-read
+ *   e2f2: anl a, #0xfe          ; clear bit 0
+ *   e2f4: movx @dptr, a
+ *   e2f5: movx a, @dptr         ; re-read
+ *   e2f6: anl a, #0xf7          ; clear bit 3
+ *   e2f8: movx @dptr, a
+ *   e2f9: movx a, @dptr         ; re-read
+ *   e2fa: anl a, #0xfb          ; clear bit 2
+ *   e2fc: orl a, #0x04          ; set bit 2
+ *   e2fe: movx @dptr, a
+ *   e2ff: ret
+ */
+static void pcie_phy_e764_config(void) {
+    uint8_t val;
+    val = REG_PHY_TIMER_CTRL_E764; val &= 0xFD; REG_PHY_TIMER_CTRL_E764 = val;
+    val = REG_PHY_TIMER_CTRL_E764; val &= 0xFE; REG_PHY_TIMER_CTRL_E764 = val;
+    val = REG_PHY_TIMER_CTRL_E764; val &= 0xF7; REG_PHY_TIMER_CTRL_E764 = val;
+    val = REG_PHY_TIMER_CTRL_E764; val = (val & 0xFB) | 0x04; REG_PHY_TIMER_CTRL_E764 = val;
+}
+
+/*
+ * pcie_link_width_config - Configure PCIe link width and per-lane SerDes
+ * Address: 0xD45E-0xD4A3 (70 bytes)
+ *
+ * Sets B432 link width, B404 lane param, and per-lane E76C/E774/E77C bit 4.
+ * When lane_param=1, only lane 0 is primary (bits 1,2,3 of param are 0),
+ * so E76C/E774/E77C bit 4 are all cleared.
+ *
+ * Original disassembly:
+ *   d45e: B432 = (B432 & 0xF8) | 0x07
+ *   d467: B404 = (B404 & 0xF0) | r7
+ *   d472: if r7 != 1: return
+ *   d474-d4a2: per-lane E76C/E774/E77C bit 4 based on r7 bits 1-3
+ *   d4a3: ret
+ */
+static void pcie_link_width_config(uint8_t lane_param) {
+    REG_POWER_CTRL_B432 = (REG_POWER_CTRL_B432 & 0xF8) | 0x07;
+    REG_PCIE_LINK_PARAM_B404 = (REG_PCIE_LINK_PARAM_B404 & 0xF0) | lane_param;
+
+    if (lane_param != 0x01) return;
+
+    /* Per-lane SerDes bit 4 config based on lane_param bits 1-3.
+     * With lane_param=1, bits 1,2,3 are all 0 → clear bit 4 on all. */
+    { uint8_t val;
+    val = REG_SYS_CTRL_E76C; val = (val & 0xEF) | ((lane_param & 0x02) ? 0x10 : 0x00); REG_SYS_CTRL_E76C = val;
+    val = REG_SYS_CTRL_E774; val = (val & 0xEF) | ((lane_param & 0x04) ? 0x10 : 0x00); REG_SYS_CTRL_E774 = val;
+    val = REG_SYS_CTRL_E77C; val = (val & 0xEF) | ((lane_param & 0x08) ? 0x10 : 0x00); REG_SYS_CTRL_E77C = val;
+    }
+}
+
+/*
+ * pcie_serdes_full_config - Full SerDes lane configuration
+ * Address: 0xE049-0xE06A (34 bytes)
+ *
+ * Calls D530(0x0F) to set bit 7 on all 4 lanes, then sets bit 6 on all 4 lanes.
+ * Net effect: bits 6 and 7 of page2:0x78AF-0x7BAF are all set.
+ *
+ * Original disassembly:
+ *   e049: mov r7, #0x0f; lcall D530  ; enable all lanes bit 7
+ *   e04e: lcall caee                 ; read page2:0x78AF
+ *   e051-e06a: (a & 0xBF) | 0x40 → write each lane, auto-increment
+ */
+static void pcie_serdes_full_config(void) {
+    uint8_t i, val;
+    static __code const uint8_t lane_pages[4] = {0x78, 0x79, 0x7A, 0x7B};
+
+    /* D530: set bit 7 on all 4 lanes */
+    pcie_serdes_lane_enable(0x0F);
+
+    /* Set bit 6 on all 4 lanes */
+    for (i = 0; i < 4; i++) {
+        uint16_t addr = ((uint16_t)lane_pages[i] << 8) | 0xAF;
+        val = xdata_ext_read(addr);
+        val = (val & 0xBF) | 0x40;  /* clear bit 6, then set bit 6 (match stock) */
+        xdata_ext_write(addr, val);
+    }
+}
+
+/*
+ * pcie_tunnel_adapter_config - Configure tunnel adapter registers
+ * Address: D9A4 area - tunnel config sub-sequence
  *
  * Writes VID/PID-like config to B41x/B42x tunnel registers.
  * Called twice by stock firmware: once before and once after link up attempt.
@@ -1912,14 +2317,21 @@ static void pcie_tunnel_adapter_config(void) {
  *
  * Sequence: B401=1, B482=F1, B482=F1, B401=0, B480=1, B430=4, B298=0x11
  */
+/*
+ * pcie_link_up_attempt - Perform one link-up sequence
+ * Stock firmware CC83 at 0xCC9B-0xCCC0:
+ *   B401 |= 0x01, B482 |= 0x01, B482 = (B482 & 0x0F) | 0xF0,
+ *   B401 &= 0xFE (via helper 993E), B480 |= 0x01, B430 &= 0xFE,
+ *   B298 = (B298 & 0xEF) | 0x10
+ */
 static void pcie_link_up_attempt(void) {
-    REG_PCIE_TUNNEL_CTRL = 0x01;          /* B401 = 0x01 */
-    REG_TUNNEL_ADAPTER_MODE = 0xF1;       /* B482 = 0xF1 */
-    REG_TUNNEL_ADAPTER_MODE = 0xF1;       /* B482 = 0xF1 (written twice) */
-    REG_PCIE_TUNNEL_CTRL = 0x00;          /* B401 = 0x00 */
-    REG_TUNNEL_LINK_CTRL = 0x01;          /* B480 = 0x01 */
-    REG_TUNNEL_LINK_STATE = 0x04;         /* B430 = 0x04 */
-    REG_PCIE_TUNNEL_CFG = 0x11;           /* B298 = 0x11 */
+    XDATA_REG8(0xB401) |= 0x01;
+    XDATA_REG8(0xB482) |= 0x01;
+    XDATA_REG8(0xB482) = (XDATA_REG8(0xB482) & 0x0F) | 0xF0;
+    XDATA_REG8(0xB401) &= 0xFE;
+    XDATA_REG8(0xB480) |= 0x01;
+    XDATA_REG8(0xB430) &= 0xFE;
+    XDATA_REG8(0xB298) = (XDATA_REG8(0xB298) & 0xEF) | 0x10;
 }
 
 /*
@@ -1941,173 +2353,733 @@ static void pcie_init(void) {
     uart_puts("[PCIe init]\n");
 
     /* Phase 1: Clear/configure base registers
-     * Proxy trace shows B402 is RMW: reads 0x03, writes 0x01 (sets bit 0, clears bit 1).
-     * E764 reads back 0x14 on real HW and is written back unchanged.
-     * E76C/E774/E77C read 0x14, written to 0x04 (clear bit 4). */
+     * Stock firmware (emulator trace cycles 27096-27175):
+     *   E7E3=0x00, B402=0x00, C659=0x00, B432=0x07, B404=0x01, B402=0x00
+     * NOTE: B402=0x00 in stock, NOT 0x01. Bit 0 must stay clear. */
     REG_PHY_LINK_CTRL = 0x00;             /* E7E3 = 0x00 */
-    REG_PCIE_CTRL_B402 = 0x01;            /* B402 = 0x01 (proxy: RMW 0x03->0x01) */
     REG_PCIE_LANE_CTRL_C659 = 0x00;       /* C659 = 0x00 */
     REG_POWER_CTRL_B432 = 0x07;           /* B432 = 0x07 */
     REG_PCIE_LINK_PARAM_B404 = 0x01;      /* B404 = 0x01 */
-    REG_PCIE_CTRL_B402 = 0x01;            /* B402 = 0x01 (again) */
 
-    /* Phase 2: Progressive lane enable with delays
-     * Stock firmware enables one lane at a time with ~475 cycle delays.
-     * B434 bit mask: bit0=lane0, bit1=lane1, bit2=lane2, bit3=lane3 */
-    REG_PCIE_LINK_STATE = 0x01;            /* B434 = 0x01 (lane 0) */
+    /* Phase 2: Progressive lane enable with delays */
+    REG_PCIE_LINK_STATE = 0x01;
     delay_short();
-    REG_PCIE_LINK_STATE = 0x03;            /* B434 = 0x03 (lanes 0-1) */
+    REG_PCIE_LINK_STATE = 0x03;
     delay_short();
-    REG_PCIE_LINK_STATE = 0x07;            /* B434 = 0x07 (lanes 0-2) */
+    REG_PCIE_LINK_STATE = 0x07;
     delay_short();
-    REG_PCIE_LINK_STATE = 0x0F;            /* B434 = 0x0F (all 4 lanes) */
+    REG_PCIE_LINK_STATE = 0x0F;
     delay_short();
 
     /* Phase 3: Lane configuration */
-    REG_PCIE_LANE_CONFIG = 0x0E;           /* B436 = 0x0E */
-    REG_PCIE_LANE_CONFIG = 0xEE;           /* B436 = 0xEE */
+    REG_PCIE_LANE_CONFIG = 0x0E;
+    REG_PCIE_LANE_CONFIG = 0xEE;
 
-    /* Phase 4: PHY configuration (cycle 30066-30089) */
-    REG_PHY_EXT_5B = 0x28;                /* C65B = 0x28 (proxy: both writes are 0x28) */
-    REG_PHY_EXT_56 = 0x00;                /* C656 = 0x00 */
-    REG_PHY_EXT_5B = 0x28;                /* C65B = 0x28 */
-    REG_PHY_EXT_2D = 0x07;                /* C62D = 0x07 */
+    /* Phase 4: PHY configuration */
+    REG_PHY_EXT_5B = 0x28;
+    REG_PHY_EXT_56 = 0x00;
+    REG_PHY_EXT_5B = 0x28;
+    REG_PHY_EXT_2D = 0x07;
 
-    /* Wait for PHY to settle (stock firmware has long gap here: flash reads, etc.)
-     * On real hardware, between cycle 30K-85K the stock firmware reads flash,
-     * does EEPROM/I2C init, timer setup, etc. We just need a long delay. */
     delay_long();
     delay_long();
     delay_long();
 
     /* Phase 5: PHY init — timer + DMA sequence
-     * Proxy trace: CD31=4/2, CD30=0x15, CD32=0, CD33=0xC7
-     * Note: CD30=0x15 on real HW (not 0x05 as emulator showed) */
-    REG_CPU_TIMER_CTRL_CD31 = 0x04;       /* CD31 = 0x04 (clear) */
-    REG_CPU_TIMER_CTRL_CD31 = 0x02;       /* CD31 = 0x02 (start) */
-    REG_PHY_DMA_CMD_CD30 = 0x15;          /* CD30 = 0x15 (proxy: real HW value) */
-    REG_PHY_DMA_ADDR_LO = 0x00;           /* CD32 = 0x00 */
-    REG_PHY_DMA_ADDR_HI = 0xC7;           /* CD33 = 0xC7 */
-
-    /* PHY final config
-     * Proxy trace: C655=0x01, C620=0x00 (no C65A write on real HW) */
-    REG_PHY_CFG_C655 = 0x01;              /* C655 = 0x01 (proxy: real HW value) */
-    REG_PHY_EXT_CTRL_C620 = 0x00;         /* C620 = 0x00 */
+     * Stock trace (cycles ~65-74k): CD31, CD30=0x05, CD33=0xC7,
+     * CC2A=0x04, CC2C/CC2D=0xC7, C655=0x09, C620=0x00, C65A=0x01 */
+    REG_CPU_TIMER_CTRL_CD31 = 0x04;
+    REG_CPU_TIMER_CTRL_CD31 = 0x02;
+    REG_PHY_DMA_CMD_CD30 = 0x05;          /* Stock: 0x05 (not 0x15) */
+    REG_PHY_DMA_ADDR_LO = 0x00;
+    REG_PHY_DMA_ADDR_HI = 0xC7;
+    REG_CPU_KEEPALIVE = 0x04;              /* CC2A — must be before link-up */
+    REG_CPU_KEEPALIVE_CC2C = 0xC7;         /* CC2C — keepalive timer */
+    REG_CPU_KEEPALIVE_CC2D = 0xC7;         /* CC2D — keepalive timer */
+    REG_PHY_CFG_C655 = 0x09;              /* Stock: 0x09 (bits 0 and 3 set) */
+    REG_PHY_EXT_CTRL_C620 = 0x00;
+    REG_PHY_CFG_C65A = 0x01;              /* C65A — PHY config before link-up */
 
     /* Phase 6: Tunnel adapter config */
     pcie_tunnel_adapter_config();
 
     /* Phase 7: First link-up attempt */
-    uart_puts("[LU1]\n");
-    pcie_link_up_attempt();
+    /* Skip link-up if already trained — link-up resets LTSSM to Detect */
+    if (REG_PCIE_LTSSM_STATE < 0x10) {
+        pcie_link_up_attempt();
+    }
 
-    /* Phase 8: DMA engine config (cycle 75458-75540) */
-    REG_PCIE_DMA_SIZE_A = 0x08;           /* B264 = 0x08 */
-    REG_PCIE_DMA_SIZE_B = 0x00;           /* B265 = 0x00 */
-    REG_PCIE_DMA_SIZE_C = 0x08;           /* B266 = 0x08 */
-    REG_PCIE_DMA_SIZE_D = 0x08;           /* B267 = 0x08 */
-    REG_PCIE_DMA_BUF_A = 0x08;            /* B26C = 0x08 */
-    REG_PCIE_DMA_BUF_B = 0x20;            /* B26D = 0x20 */
-    REG_PCIE_DMA_BUF_C = 0x08;            /* B26E = 0x08 */
-    REG_PCIE_DMA_BUF_D = 0x28;            /* B26F = 0x28 */
-    REG_PCIE_DMA_CFG_50 = 0x00;           /* B250 = 0x00 */
-    REG_PCIE_DMA_CFG_51 = 0x00;           /* B251 = 0x00 */
+    /* Phase 8: DMA engine config */
+    REG_PCIE_DMA_SIZE_A = 0x08;
+    REG_PCIE_DMA_SIZE_B = 0x00;
+    REG_PCIE_DMA_SIZE_C = 0x08;
+    REG_PCIE_DMA_SIZE_D = 0x08;
+    REG_PCIE_DMA_BUF_A = 0x08;
+    REG_PCIE_DMA_BUF_B = 0x20;
+    REG_PCIE_DMA_BUF_C = 0x08;
+    REG_PCIE_DMA_BUF_D = 0x28;
+    REG_PCIE_DMA_CFG_50 = 0x00;
+    REG_PCIE_DMA_CFG_51 = 0x00;
+    REG_CPU_LINK_CEF3 = 0x08;
+    REG_CPU_LINK_CEF2 = 0x80;
+    /* Stock firmware writes these as RMW with global-derived values.
+     * Emulator shows both end up as 0x00. Preserve hardware defaults. */
+    XDATA_REG8(0xCEF0) &= 0xFE;          /* CEF0: clear bit 0 only */
+    XDATA_REG8(0xCEEF) &= 0xFE;          /* CEEF: clear bit 0 only */
+    XDATA_REG8(0xC807) = 0x04;            /* INT_DMA_CTRL (stock: cycle 74900) */
+    REG_PCIE_DMA_CTRL_B281 = 0x10;
+    REG_PHY_CFG_C6A8 = 0x01;
+    XDATA_REG8(0x92C8) = (XDATA_REG8(0x92C8) & 0xFC);  /* Stock: clear low bits */
+    REG_CPU_TIMER_CTRL_CD31 = 0x04;
+    REG_CPU_TIMER_CTRL_CD31 = 0x02;
 
-    /* CPU link control
-     * Proxy trace: CEF0=0xF7, CEEF=0x7F (not 0x00 as emulator showed) */
-    REG_CPU_LINK_CEF3 = 0x08;             /* CEF3 = 0x08 */
-    REG_CPU_LINK_CEF2 = 0x80;             /* CEF2 = 0x80 */
-    REG_CPU_LINK_CEF0 = 0xF7;             /* CEF0 = 0xF7 (proxy: real HW value) */
-    REG_CPU_LINK_CEEF = 0x7F;             /* CEEF = 0x7F (proxy: real HW value) */
-    REG_PCIE_DMA_CTRL_B281 = 0x10;        /* B281 = 0x10 */
-
-    /* PHY link enable */
-    REG_PHY_CFG_C6A8 = 0x01;              /* C6A8 = 0x01 */
-
-    /* Reset timer (cycle 75694) */
-    REG_CPU_TIMER_CTRL_CD31 = 0x04;       /* CD31 = 0x04 (clear) */
-    REG_CPU_TIMER_CTRL_CD31 = 0x02;       /* CD31 = 0x02 (start) */
+    /* Timer 1 (CC1C-CC1F) and Timer 2 (CC5C-CC5F) config
+     * Stock firmware at cycles 75126-75175 */
+    XDATA_REG8(0xCC1D) = 0x04;  /* stop timer 1 */
+    XDATA_REG8(0xCC1D) = 0x02;  /* clear timer 1 */
+    XDATA_REG8(0xCC5D) = 0x04;  /* stop timer 2 */
+    XDATA_REG8(0xCC5D) = 0x02;  /* clear timer 2 */
+    XDATA_REG8(0xCC1C) = 0x06;  /* timer 1 prescaler */
+    XDATA_REG8(0xCC1E) = 0x00;  /* timer 1 count hi */
+    XDATA_REG8(0xCC1F) = 0x8B;  /* timer 1 count lo */
+    XDATA_REG8(0xCC5C) = 0x04;  /* timer 2 prescaler */
+    XDATA_REG8(0xCC5E) = 0x00;  /* timer 2 count hi */
+    XDATA_REG8(0xCC5F) = 0xC7;  /* timer 2 count lo */
 
     /* Phase 9: Second link-up with reconfigured adapter */
-    REG_PCIE_TUNNEL_CTRL = 0x01;           /* B401 = 0x01 */
-    REG_PCIE_TUNNEL_CTRL = 0x00;           /* B401 = 0x00 */
+    if (REG_PCIE_LTSSM_STATE < 0x10) {
+        REG_PCIE_TUNNEL_CTRL = 0x01;
+        REG_PCIE_TUNNEL_CTRL = 0x00;
+        pcie_tunnel_adapter_config();
+        pcie_link_up_attempt();
+    }
 
-    /* Re-apply adapter config */
-    pcie_tunnel_adapter_config();
+    /* Phase 9b: Bridge port register configuration.
+     * B298 bit 4 (tunnel enable) is needed for TLP completions to return data.
+     * B430 bit 0 clear for lane config.
+     * NOTE: These are set AFTER USB enumeration (in handle_cbw) to avoid
+     * interfering with host xHCI controller during early boot. */
 
-    /* Second link-up attempt */
-    uart_puts("[LU2]\n");
-    pcie_link_up_attempt();
+    /* Final: set link active + clean up (stock: cycles 75650-75798) */
+    REG_PCIE_LANE_CTRL_C659 &= 0xFE;     /* C659: clear bit 0 */
+    /* B402 skip — see Phase 1 comment */
+    REG_PCIE_LANE_CONFIG = 0xEE;
+    REG_PCIE_LANE_CONFIG = 0xEE;
 
-    /* Final: set link active + clean up
-     * Proxy trace: B480=1, C659=0, B402=0x01 (not 0x00!), B436=0xEE twice */
-    REG_TUNNEL_LINK_CTRL = 0x01;           /* B480 = 0x01 */
-    REG_PCIE_LANE_CTRL_C659 = 0x00;       /* C659 = 0x00 */
-    REG_PCIE_CTRL_B402 = 0x01;            /* B402 = 0x01 (proxy: keeps bit 0 set) */
-    REG_PCIE_LANE_CONFIG = 0xEE;           /* B436 = 0xEE */
-    REG_PCIE_LANE_CONFIG = 0xEE;           /* B436 = 0xEE */
+    /* NOTE: CE3D, C233 SerDes reset, D9A4 signal detect, E3AF CDR config
+     * are NOT in the stock emulator init path. They only appear in the
+     * D92E event handler on real hardware. Skipping them for now to match
+     * stock init ordering. They may be added later if needed. */
+
+    /* B1C5 pre-CF3D: MSC engine init trigger (stock: B219-B223)
+     * NOTE: C42C=0x01, C42D&=0xFE — stock does this before CF3D. */
+    REG_USB_MSC_CTRL = 0x01;
+    REG_USB_MSC_STATUS &= 0xFE;
+
+    /* CF3D(0) equivalent: PHY/interrupt mask config */
+    { uint8_t ff_idx;
+    for (ff_idx = 0; ff_idx < 4; ff_idx++) XDATA_REG8(0xC430 + ff_idx) = 0xFF;
+    for (ff_idx = 0; ff_idx < 4; ff_idx++) XDATA_REG8(0xC440 + ff_idx) = 0xFF;
+    for (ff_idx = 0; ff_idx < 8; ff_idx++) XDATA_REG8(0x9096 + ff_idx) = 0xFF;
+    XDATA_REG8(0x909E) = 0x03;
+    for (ff_idx = 0; ff_idx < 4; ff_idx++) XDATA_REG8(0xC438 + ff_idx) = 0xFF;
+    for (ff_idx = 0; ff_idx < 4; ff_idx++) XDATA_REG8(0xC448 + ff_idx) = 0xFF;
+    for (ff_idx = 0; ff_idx < 8; ff_idx++) XDATA_REG8(0x9011 + ff_idx) = 0xFF;
+    XDATA_REG8(0x9018) = 0x03;
+    XDATA_REG8(0x9010) = 0xFE;
+    }
+
+    /* DF5E equivalent: NVMe/PCIe link prep */
+    XDATA_REG8(0xC428) &= 0xF7;
+    XDATA_REG8(0xC473) = (XDATA_REG8(0xC473) & 0xBF) | 0x40;
+    XDATA_REG8(0xC473) = (XDATA_REG8(0xC473) & 0xFD) | 0x02;
+    XDATA_REG8(0xC473) &= 0xF7;
+    XDATA_REG8(0xC472) &= 0xFD;
+    { uint8_t fi;
+    for (fi = 0; fi < 4; fi++) XDATA_REG8(0xC448 + fi) = 0xFF;
+    }
+    XDATA_REG8(0xC473) = (XDATA_REG8(0xC473) & 0xDF) | 0x20;
+    XDATA_REG8(0xC473) = (XDATA_REG8(0xC473) & 0xFB) | 0x04;
+    XDATA_REG8(0xC473) &= 0xEF;
+    XDATA_REG8(0xC472) &= 0xFB;
+    { uint8_t fi;
+    for (fi = 0; fi < 4; fi++) XDATA_REG8(0xC438 + fi) = 0xFF;
+    }
 
     /*
-     * PD CC Hard Reset + Link Training sequence.
+     * B1C5 post-CF3D/DF5E sequence: PHY init completion
+     * Stock firmware address: 0xB22C-0xB25F
      *
-     * Stock firmware UART trace shows this order:
-     *   [InternalPD_StateInit][CC_state=00][Drive_HardRst][InternalPD_StateInit]
-     *   [PD_int:01:00][Source_Cap]
-     *   [PD_int:01:00][Accept]
-     *   [PD_int:01:00][PS_RDY][5V3A]
-     *   [PD_int:01:00][VDM][Discover_ID]
-     *   [PD_int:01:00][VDM][Discover_SIDs][1 sec time out]
-     *   [RstRxpll...][Done]
-     *   [CDRV ok]
+     * After CF3D(0) and DF5E, the stock firmware does:
+     *   1. 91C3 &= 0xDF (clear bit 5 — PHY control)
+     *   2. 91C0 pulse bit 0 (set then clear — PHY reset pulse)
+     *   3. Clear 0x0AF7 (PCIe enum done flag)
+     *   4. Start timer (prescaler=4, count=0x018F)
+     *   5. Poll E318 bit 4 (PHY completion) with timer timeout
+     *   6. Stop timer
+     *   7. Read 91C0 bits 3-4, set 0x09FA=4, write 0x0AE1
      *
-     * The Drive_HardRst on CC pins triggers the host to restart PD negotiation.
-     * This generates E40F/E410 events needed for link training to proceed.
-     * Without PD CC signaling, E40F/E410 stay at 0x00.
+     * Original disassembly:
+     *   b22c: mov dptr, #0x91c3
+     *   b22f: movx a, @dptr
+     *   b230: anl a, #0xdf       ; 91C3 &= 0xDF
+     *   b232: movx @dptr, a
+     *   b233: mov dptr, #0x91c0
+     *   b236: movx a, @dptr
+     *   b237: anl a, #0xfe
+     *   b239: orl a, #0x01       ; 91C0 |= 0x01
+     *   b23b: movx @dptr, a
+     *   b23c: movx a, @dptr
+     *   b23d: anl a, #0xfe       ; 91C0 &= 0xFE
+     *   b23f: movx @dptr, a
+     *   b240: lcall 0x54bb       ; 0x0AF7 = 0
+     *   b243: mov r5, #0x8f      ; timer count lo
+     *   b245: mov r4, #0x01      ; timer count hi
+     *   b247: mov r7, #0x04      ; prescaler
+     *   b249: lcall 0xe292       ; timer_setup(4, 0x01, 0x8F)
+     *   b24c: mov dptr, #0xe318
+     *   b24f: movx a, @dptr      ; read E318
+     *   b250: anl a, #0x10       ; check bit 4
+     *   b252: mov r7, a
+     *   b253: swap a
+     *   b254: anl a, #0x0f
+     *   b256: jnz 0xb25f         ; if bit 4 set, done
+     *   b258: mov dptr, #0xcc11
+     *   b25b: movx a, @dptr
+     *   b25c: jnb 0xe0.1, 0xb24c ; if timer not expired, keep polling
+     *   b25f: lcall 0xe642       ; timer_stop
      */
+    REG_USB_PHY_CTRL_91C3 &= 0xDF;         /* clear bit 5 */
+    REG_USB_PHY_CTRL_91C0 |= 0x01;         /* set bit 0 */
+    REG_USB_PHY_CTRL_91C0 &= 0xFE;         /* clear bit 0 (pulse) */
+    G_XFER_CTRL_0AF7 = 0;                  /* clear PCIe enum done */
 
-    /*
-     * PD CC Hard Reset was already done in main() before hw_init().
-     * Now do LTSSM + RXPLL to attempt link training.
-     */
-    /* LTSSM transition + RXPLL reset for link training.
-     * Note: PCIe link won't fully train until D92E sequence runs
-     * (requires 92C2 bit 6 + 9090 bit 7 clear) which conflicts with
-     * current USB3 setup. Stock firmware resolves this via PD negotiation
-     * (Source_Cap → PS_RDY → D92E → PHY events → CDRV ok). */
-    uart_puts("[LTSSM]\n");
-    ltssm_transition();
+    /* Start timer and poll E318 bit 4 for PHY completion */
+    timer_stop();
+    REG_TIMER0_DIV = (REG_TIMER0_DIV & 0xF8) | 0x04;  /* prescaler = 4 */
+    REG_TIMER0_THRESHOLD_HI = 0x01;
+    REG_TIMER0_THRESHOLD_LO = 0x8F;
+    REG_TIMER0_CSR = TIMER_CSR_ENABLE;     /* start timer */
 
-    uart_puts("[RXPLL]\n");
-    phy_rxpll_config();
-    phy_rst_rxpll();
+    uart_puts("[E318 poll]\n");
+    while (!(REG_PHY_COMPLETION_E318 & 0x10)) {
+        if (REG_TIMER0_CSR & TIMER_CSR_EXPIRED) break;  /* timeout */
+    }
+    timer_stop();
 
-    /* Suppress events generated by LTSSM/RXPLL */
-    XDATA_REG8(0xE40F) = 0xFF;
-    XDATA_REG8(0xE410) = 0xFF;
+    /* Post-completion: read 91C0 bits 3-4, set globals (stock: B262-B285) */
+    { uint8_t phy_status = (REG_USB_PHY_CTRL_91C0 & 0x18) >> 3;
+    uart_puts("[91C0 phy="); uart_puthex(phy_status); uart_puts("]\n");
+    G_EVENT_CTRL_09FA = 0x04;
+    if (phy_status == 0x02) {
+        G_TLP_BASE_LO = (G_EVENT_CTRL_09FA == 0x04) ? 0x01 : 0x02;
+    } else {
+        G_TLP_BASE_LO = 0x02;
+    }
+    }
 
-    /* Restore PHY init state (C655=0x01 from Phase 5) after RXPLL reset */
-    REG_PHY_CFG_C655 = 0x01;
+    /* Post-E318 timer setup (stock: cycle 94486-94535) */
+    timer_stop();
+    REG_TIMER0_DIV = (REG_TIMER0_DIV & 0xF8) | 0x00;  /* prescaler = 0 */
+    REG_TIMER0_THRESHOLD_HI = 0x00;
+    REG_TIMER0_THRESHOLD_LO = 0x09;
+    REG_TIMER0_CSR = TIMER_CSR_ENABLE;
+    while (!(REG_TIMER0_CSR & TIMER_CSR_EXPIRED)) { }
+    REG_TIMER0_CSR = TIMER_CSR_EXPIRED;
 
-    /* Step 6: Monitor B450 for link training progress */
-    { uint16_t poll;
-    uint8_t last_b450 = 0xFF;
-    for (poll = 0; poll < 50000U; poll++) {
-        uint8_t b450 = XDATA_REG8(0xB450);
-        if (b450 != last_b450) {
-            uart_puts("[B450="); uart_puthex(b450); uart_puts("]\n");
-            last_b450 = b450;
-            if (b450 >= 0x10) break;
-        }
-        phy_event_dispatcher();
-    } }
+    /* C807: 0x04 then 0x84 (stock: cycles 94580-94586) */
+    XDATA_REG8(0xC807) = 0x04;
+    XDATA_REG8(0xC807) = 0x84;
 
-    /* Print link status for debug */
-    uart_puts("[B434="); uart_puthex(REG_PCIE_LINK_STATE); uart_puts("]\n");
-    uart_puts("[B480="); uart_puthex(REG_TUNNEL_LINK_CTRL); uart_puts("]\n");
-    uart_puts("[B450="); uart_puthex(XDATA_REG8(0xB450)); uart_puts("]\n");
-    uart_puts("[B455="); uart_puthex(XDATA_REG8(0xB455)); uart_puts("]\n");
-    uart_puts("[B481="); uart_puthex(XDATA_REG8(0xB481)); uart_puts("]\n");
+    uart_puts("[B450="); uart_puthex(REG_PCIE_LTSSM_STATE); uart_puts("]\n");
     uart_puts("[PCIe done]\n");
+}
+
+/* pcie_link_train removed — all init now in pcie_init() pre-USB */
+
+/*
+ * phy_link_ctrl_init - PHY link controller initialization
+ * Bank 1 Address: 0xDAC8-0xDB34 (109 bytes) [actual addr: 0x15A33]
+ *
+ * Configures PHY link controller registers and extended page registers
+ * for PCIe link training. Called via trampoline 0x0561 → bank1 0xEEB5
+ * which calls DAC8 then falls through to serdes_phy_init (0x8E31).
+ *
+ * Sets C21B bits 7:6, C202 bit 3 (link ctrl enable), configures
+ * extended page registers 0x1262/0x28ED/0x28CE/0x281C/0x281D,
+ * clears C20B bit 7, and configures C22F.
+ *
+ * Original disassembly:
+ *   dac8: mov dptr, #0xc21b
+ *   dacb: movx a, @dptr
+ *   dacc: anl a, #0x3f
+ *   dace: orl a, #0xc0
+ *   dad0: movx @dptr, a
+ *   dad1: mov dptr, #0xc202
+ *   dad4: movx a, @dptr
+ *   dad5: anl a, #0xf7
+ *   dad7: orl a, #0x08
+ *   dad9: movx @dptr, a
+ *   dada: mov r3, #0x02       ; ext page mode
+ *   dadc: mov r2, #0x12
+ *   dade: mov r1, #0x62
+ *   dae0: lcall 0x0ba0        ; read ext[0x1262]
+ *   dae3: anl a, #0xef        ; clear bit 4
+ *   dae5: lcall 0x0bbe        ; write ext[0x1262]
+ *   dae8: mov r2, #0x28
+ *   daea: mov r1, #0xed
+ *   daec: lcall 0x0ba0        ; read ext[0x28ED]
+ *   daef: anl a, #0xbf
+ *   daf1: orl a, #0x40        ; set bit 6
+ *   daf3: lcall 0x0bbe        ; write ext[0x28ED]
+ *   daf6: mov r1, #0xce
+ *   daf8: lcall 0x0ba0        ; read ext[0x28CE]
+ *   dafb: anl a, #0xfe        ; clear bit 0
+ *   dafd: lcall 0x0bbe        ; write ext[0x28CE]
+ *   db00: mov r1, #0x1c
+ *   db02: lcall 0x0ba0        ; read ext[0x281C]
+ *   db05: orl a, #0x80        ; set bit 7
+ *   db07: lcall 0x0bbe        ; write ext[0x281C]
+ *   db0a: lcall 0x0ba0        ; read ext[0x281C] again
+ *   db0d: orl a, #0x40        ; set bit 6
+ *   db0f: lcall 0x0bbe        ; write ext[0x281C]
+ *   db12: lcall 0x0ba0        ; read ext[0x281C] again
+ *   db15: orl a, #0x02        ; set bit 1
+ *   db17: lcall 0x0bbe        ; write ext[0x281C]
+ *   db1a: mov dptr, #0xc20b
+ *   db1d: movx a, @dptr
+ *   db1e: anl a, #0x7f        ; clear bit 7
+ *   db20: movx @dptr, a
+ *   db21: inc r1              ; r1 = 0x1d
+ *   db22: lcall 0x0ba0        ; read ext[0x281D]
+ *   db25: anl a, #0xfe        ; clear bit 0
+ *   db27: lcall 0x0bbe        ; write ext[0x281D]
+ *   db2a: mov dptr, #0xc22f
+ *   db2d: lcall 0xc3c9        ; C22F = (C22F & 0xFB) | 0x04
+ *   db30: movx a, @dptr
+ *   db31: anl a, #0xbf        ; C22F &= 0xBF
+ *   db33: movx @dptr, a
+ *   db34: ret
+ */
+static void phy_link_ctrl_init(void) {
+    uint8_t tmp;
+
+    /* C21B: set bits 7:6 */
+    REG_PHY_LINK_CTRL_C21B = (REG_PHY_LINK_CTRL_C21B & 0x3F) | 0xC0;
+
+    /* C202: set bit 3 — link controller enable */
+    REG_LINK_CTRL = (REG_LINK_CTRL & 0xF7) | LINK_CTRL_BIT3;
+
+    /* ext[0x1262]: clear bit 4 */
+    tmp = xdata_ext_read(0x1262);
+    xdata_ext_write(0x1262, tmp & 0xEF);
+
+    /* ext[0x28ED]: set bit 6 */
+    tmp = xdata_ext_read(0x28ED);
+    xdata_ext_write(0x28ED, (tmp & 0xBF) | 0x40);
+
+    /* ext[0x28CE]: clear bit 0 */
+    tmp = xdata_ext_read(0x28CE);
+    xdata_ext_write(0x28CE, tmp & 0xFE);
+
+    /* ext[0x281C]: set bits 7, 6, 1 (three sequential RMW ops) */
+    tmp = xdata_ext_read(0x281C);
+    tmp |= 0x80;
+    xdata_ext_write(0x281C, tmp);
+    tmp = xdata_ext_read(0x281C);
+    tmp |= 0x40;
+    xdata_ext_write(0x281C, tmp);
+    tmp = xdata_ext_read(0x281C);
+    tmp |= 0x02;
+    xdata_ext_write(0x281C, tmp);
+
+    /* C20B: clear bit 7 */
+    REG_PHY_LINK_CTRL_C20B &= 0x7F;
+
+    /* ext[0x281D]: clear bit 0 */
+    tmp = xdata_ext_read(0x281D);
+    xdata_ext_write(0x281D, tmp & 0xFE);
+
+    /* C22F: set bit 2 (via helper c3c9 pattern) then clear bit 6 */
+    REG_PHY_SERDES_C22F = (REG_PHY_SERDES_C22F & 0xFB) | 0x04;
+    REG_PHY_SERDES_C22F &= 0xBF;
+}
+
+/*
+ * serdes_phy_init - SerDes PHY lane initialization
+ * Bank 1 Address: 0x8E31-0x9271 (1089 bytes) [actual addr: 0x10D9C]
+ *
+ * Configures SerDes PHY registers for all lanes including:
+ *   - PHY PLL reference clock (E741/E742)
+ *   - CPU clock config (CC43)
+ *   - Lane equalization, CDR, and signal integrity for lanes 0-3
+ *   - Buffer descriptor config for PCIe DMA (93xx registers)
+ *
+ * Called from init chain after USB PHY config (9241) and before
+ * buffer descriptor setup. Stock firmware calls this via bank switch
+ * trampoline from the hw_init chain at ~cycle 40900.
+ *
+ * All register writes are read-modify-write to preserve other bits.
+ */
+static void serdes_phy_init(void) {
+    uint8_t tmp;
+
+    /* === E741/E742 PHY PLL reference clock config === */
+    /* E741 = (E741 & 0xF8) | 0x03  — set bits [2:0] = 011 */
+    REG_PHY_PLL_CTRL = (REG_PHY_PLL_CTRL & 0xF8) | 0x03;
+    /* E741 = (E741 & 0xC7) | 0x28  — set bits [5:3] = 101 */
+    REG_PHY_PLL_CTRL = (REG_PHY_PLL_CTRL & 0xC7) | 0x28;
+    /* E742 = (E742 & 0xFC) | 0x03  — set bits [1:0] = 11 */
+    REG_PHY_PLL_CFG = (REG_PHY_PLL_CFG & 0xFC) | 0x03;
+    /* E741 = (E741 & 0x3F) | 0x80  — set bit 7, clear bit 6 */
+    REG_PHY_PLL_CTRL = (REG_PHY_PLL_CTRL & 0x3F) | 0x80;
+    /* E742 = E742 & 0xF7  — clear bit 3 */
+    REG_PHY_PLL_CFG &= 0xF7;
+
+    /* === CC43 CPU clock config === */
+    /* CC43 = (CC43 & 0x1F) | 0x80  — set bit 7, preserve bits [4:0] */
+    REG_CPU_CLK_CFG = (REG_CPU_CLK_CFG & 0x1F) | 0x80;
+
+    /* === C21F: set bit 2 === */
+    XDATA_REG8(0xC21F) = (XDATA_REG8(0xC21F) & 0xFB) | 0x04;
+
+    /* === Extended register write: XDATA[0x2849] = 0xA0 === */
+    xdata_ext_write(0x2849, 0xA0);
+
+    /* === Compute equalization parameters from globals ===
+     * G_SERDES_EQ_MULT (0x0746) * 0x20, OR'd with G_SERDES_EQ_PARAM (0x0736)
+     * Stock values: 0x0746=5, 0x0736=3 → result = (5*32)|3 = 0xA3
+     * Written to IDATA[0x6A-0x6D] for later use by equalization code */
+    {
+        uint16_t eq_val;
+        uint8_t eq_lo, eq_hi;
+        eq_val = (uint16_t)G_SERDES_EQ_MULT * 0x20;
+        eq_lo = (uint8_t)eq_val | G_SERDES_EQ_PARAM;
+        eq_hi = (uint8_t)(eq_val >> 8);
+        I_USB_STATE = eq_hi;        /* IDATA[0x6A] = high byte */
+        I_TRANSFER_6B = eq_lo;      /* IDATA[0x6B] = low byte */
+        I_TRANSFER_6C = eq_hi;      /* IDATA[0x6C] = high byte (copy) */
+        I_TRANSFER_6D = eq_lo;      /* IDATA[0x6D] = low byte (copy) */
+    }
+
+    /* === Lane 0-1 (C2xx) SerDes config === */
+
+    /* C2A8: set bit 6 */
+    XDATA_REG8(0xC2A8) = (XDATA_REG8(0xC2A8) & 0x3F) | 0x40;
+    /* C2C5: set bits [6:4]=0x70 */
+    XDATA_REG8(0xC2C5) = (XDATA_REG8(0xC2C5) & 0x8F) | 0x70;
+    /* C2A1: bits [6:5]=11 */
+    XDATA_REG8(0xC2A1) = (XDATA_REG8(0xC2A1) & 0x9F) | 0x60;
+    /* C28C, C29C, C2AC: set bit 0 */
+    XDATA_REG8(0xC28C) = (XDATA_REG8(0xC28C) & 0xFE) | 0x01;
+    XDATA_REG8(0xC29C) = (XDATA_REG8(0xC29C) & 0xFE) | 0x01;
+    XDATA_REG8(0xC2AC) = (XDATA_REG8(0xC2AC) & 0xFE) | 0x01;
+    /* C2BC: clear bit 0 */
+    XDATA_REG8(0xC2BC) &= 0xFE;
+    /* C28C: clear bit 1 */
+    XDATA_REG8(0xC28C) &= 0xFD;
+    /* C29C, C2AC: set bit 1 */
+    XDATA_REG8(0xC29C) = (XDATA_REG8(0xC29C) & 0xFD) | 0x02;
+    XDATA_REG8(0xC2AC) = (XDATA_REG8(0xC2AC) & 0xFD) | 0x02;
+    /* C2BC: clear bit 1 */
+    XDATA_REG8(0xC2BC) &= 0xFD;
+    /* C2C3: bits [5:2]=0111 */
+    XDATA_REG8(0xC2C3) = (XDATA_REG8(0xC2C3) & 0xC3) | 0x1C;
+    /* C2C9: keep bit 7, set bits 6,0 */
+    XDATA_REG8(0xC2C9) = (XDATA_REG8(0xC2C9) & 0x80) | 0x41;
+    /* C2A5: high nibble=0xE0, C2A6: high nibble=0x70 */
+    XDATA_REG8(0xC2A5) = (XDATA_REG8(0xC2A5) & 0x0F) | 0xE0;
+    XDATA_REG8(0xC2A6) = (XDATA_REG8(0xC2A6) & 0x0F) | 0x70;
+    /* C2CA: clear bits 0-3 sequentially */
+    XDATA_REG8(0xC2CA) &= 0xFE;
+    XDATA_REG8(0xC2CA) &= 0xFD;
+    XDATA_REG8(0xC2CA) &= 0xFB;
+    XDATA_REG8(0xC2CA) &= 0xF7;
+    /* C287: bits [7:5]=111 */
+    XDATA_REG8(0xC287) = (XDATA_REG8(0xC287) & 0x1F) | 0xE0;
+    /* C294: set bits [6:4]=0x70 */
+    XDATA_REG8(0xC294) = (XDATA_REG8(0xC294) & 0x8F) | 0x70;
+    /* C2A2: bits [6:5]=11 */
+    XDATA_REG8(0xC2A2) = (XDATA_REG8(0xC2A2) & 0x1F) | 0x60;
+    /* C2C5: bits [3:0]=0x0B */
+    XDATA_REG8(0xC2C5) = (XDATA_REG8(0xC2C5) & 0xF0) | 0x0B;
+    /* C293: bits [3:2]=01 */
+    XDATA_REG8(0xC293) = (XDATA_REG8(0xC293) & 0xF3) | 0x04;
+    /* C2CE: bits [1:0]=10 */
+    XDATA_REG8(0xC2CE) = (XDATA_REG8(0xC2CE) & 0xFC) | 0x02;
+    /* C2CE: bits [4:2]=101 */
+    XDATA_REG8(0xC2CE) = (XDATA_REG8(0xC2CE) & 0xE3) | 0x14;
+    /* C328: set bit 6 (via helper that writes C2CE then switches to C328) */
+    XDATA_REG8(0xC328) = (XDATA_REG8(0xC328) & 0x3F) | 0x40;
+
+    /* === Lane 2-3 (C3xx) SerDes config === */
+
+    /* C345: set bits [6:4]=0x70 */
+    XDATA_REG8(0xC345) = (XDATA_REG8(0xC345) & 0x8F) | 0x70;
+    /* C321: bits [6:5]=11 */
+    XDATA_REG8(0xC321) = (XDATA_REG8(0xC321) & 0x9F) | 0x60;
+    /* C30C, C31C, C32C: set bit 0 */
+    XDATA_REG8(0xC30C) = (XDATA_REG8(0xC30C) & 0xFE) | 0x01;
+    XDATA_REG8(0xC31C) = (XDATA_REG8(0xC31C) & 0xFE) | 0x01;
+    XDATA_REG8(0xC32C) = (XDATA_REG8(0xC32C) & 0xFE) | 0x01;
+    /* C33C: clear bit 0 */
+    XDATA_REG8(0xC33C) &= 0xFE;
+    /* C30C: clear bit 1 */
+    XDATA_REG8(0xC30C) &= 0xFD;
+    /* C31C, C32C: set bit 1 */
+    XDATA_REG8(0xC31C) = (XDATA_REG8(0xC31C) & 0xFD) | 0x02;
+    XDATA_REG8(0xC32C) = (XDATA_REG8(0xC32C) & 0xFD) | 0x02;
+    /* C33C: clear bit 1 */
+    XDATA_REG8(0xC33C) &= 0xFD;
+    /* C343: bits [5:2]=0111 */
+    XDATA_REG8(0xC343) = (XDATA_REG8(0xC343) & 0xC3) | 0x1C;
+    /* C349: keep bit 7, set bits 6,0 */
+    XDATA_REG8(0xC349) = (XDATA_REG8(0xC349) & 0x80) | 0x41;
+    /* C325: high nibble=0xE0, C326: high nibble=0x70 */
+    XDATA_REG8(0xC325) = (XDATA_REG8(0xC325) & 0x0F) | 0xE0;
+    XDATA_REG8(0xC326) = (XDATA_REG8(0xC326) & 0x0F) | 0x70;
+    /* C34A: clear bits 0-3 sequentially */
+    XDATA_REG8(0xC34A) &= 0xFE;
+    XDATA_REG8(0xC34A) &= 0xFD;
+    XDATA_REG8(0xC34A) &= 0xFB;
+    XDATA_REG8(0xC34A) &= 0xF7;
+    /* C307: bits [7:5]=111 */
+    XDATA_REG8(0xC307) = (XDATA_REG8(0xC307) & 0x1F) | 0xE0;
+    /* C314: set bits [6:4]=0x70 */
+    XDATA_REG8(0xC314) = (XDATA_REG8(0xC314) & 0x8F) | 0x70;
+    /* C322: bits [6:5]=11 */
+    XDATA_REG8(0xC322) = (XDATA_REG8(0xC322) & 0x1F) | 0x60;
+    /* C345: bits [3:0]=0x0B */
+    XDATA_REG8(0xC345) = (XDATA_REG8(0xC345) & 0xF0) | 0x0B;
+    /* C313: bits [3:2]=01 */
+    XDATA_REG8(0xC313) = (XDATA_REG8(0xC313) & 0xF3) | 0x04;
+    /* C34E: bits [1:0]=10 */
+    XDATA_REG8(0xC34E) = (XDATA_REG8(0xC34E) & 0xFC) | 0x02;
+    /* C34E: bits [4:2]=010, 100 -> actually (& 0xE3) | 0x14 */
+    XDATA_REG8(0xC34E) = (XDATA_REG8(0xC34E) & 0xE3) | 0x14;
+
+    /* === C21D: bits [7:6]=10 === */
+    XDATA_REG8(0xC21D) = (XDATA_REG8(0xC21D) & 0x3F) | 0x80;
+
+    /* === Clear SerDes status registers === */
+    XDATA_REG8(0x9316) = 0x00;
+    XDATA_REG8(0x9317) = 0x00;
+    XDATA_REG8(0x931A) = 0x00;
+    XDATA_REG8(0x931B) = 0x00;
+    XDATA_REG8(0x9322) = 0x00;
+    XDATA_REG8(0x9323) = 0x00;
+
+    /* === Lane 0-1 additional equalizer/driver config === */
+
+    /* C290: clear bits [6:5] */
+    XDATA_REG8(0xC290) &= 0x9F;
+    /* C2A0: clear bits [6:5] */
+    XDATA_REG8(0xC2A0) &= 0x9F;
+    /* C282: set bits [4:0]=0x0A */
+    XDATA_REG8(0xC282) = (XDATA_REG8(0xC282) & 0xE0) | 0x0A;
+    /* C292: bits [4:0]=0x09 */
+    XDATA_REG8(0xC292) = (XDATA_REG8(0xC292) & 0xE0) | 0x09;
+    /* C2A2: set bits [4:0]=0x0A */
+    XDATA_REG8(0xC2A2) = (XDATA_REG8(0xC2A2) & 0xE0) | 0x0A;
+    /* C290: set bits [4:0]=0x03 */
+    XDATA_REG8(0xC290) = (XDATA_REG8(0xC290) & 0xE0) | 0x03;
+    /* C2A0: set bits [4:0]=0x03 */
+    XDATA_REG8(0xC2A0) = (XDATA_REG8(0xC2A0) & 0xE0) | 0x03;
+    /* C291: set bits [4:0]=0x08 */
+    XDATA_REG8(0xC291) = (XDATA_REG8(0xC291) & 0xE0) | 0x08;
+    /* C2A1: set bits [4:0]=0x08 */
+    XDATA_REG8(0xC2A1) = (XDATA_REG8(0xC2A1) & 0xE0) | 0x08;
+    /* C2DB: bits [4:0]=0x1B */
+    XDATA_REG8(0xC2DB) = (XDATA_REG8(0xC2DB) & 0xE0) | 0x1B;
+    /* C284: bits [3:0]=0x05 */
+    XDATA_REG8(0xC284) = (XDATA_REG8(0xC284) & 0xF0) | 0x05;
+    /* C294: bits [3:0]=0x07 */
+    XDATA_REG8(0xC294) = (XDATA_REG8(0xC294) & 0xF0) | 0x07;
+    /* C285: bits [3:0]=0x0F */
+    XDATA_REG8(0xC285) = (XDATA_REG8(0xC285) & 0xF0) | 0x0F;
+    /* C295: bits [3:0]=0x0C */
+    XDATA_REG8(0xC295) = (XDATA_REG8(0xC295) & 0xF0) | 0x0C;
+    /* C2A5: bits [3:0]=0x0F */
+    XDATA_REG8(0xC2A5) = (XDATA_REG8(0xC2A5) & 0xF0) | 0x0F;
+    /* C285: bits [7:4]=0x60, C286: bits [3:0]=0x07 */
+    XDATA_REG8(0xC285) = (XDATA_REG8(0xC285) & 0x0F) | 0x60;
+    XDATA_REG8(0xC286) = (XDATA_REG8(0xC286) & 0xF0) | 0x07;
+    /* C296: bits [3:0]=0x0F */
+    XDATA_REG8(0xC296) = (XDATA_REG8(0xC296) & 0xF0) | 0x0F;
+    /* C2A7: set bits [4:0]=0x11 */
+    XDATA_REG8(0xC2A7) = (XDATA_REG8(0xC2A7) & 0xE0) | 0x11;
+    /* C28B: bits [5:0]=0x0A */
+    XDATA_REG8(0xC28B) = (XDATA_REG8(0xC28B) & 0xC0) | 0x0A;
+    /* C284: bits [6:4]=010 */
+    XDATA_REG8(0xC284) = (XDATA_REG8(0xC284) & 0x8F) | 0x40;
+    /* C2A4: bits [6:4]=000 */
+    XDATA_REG8(0xC2A4) &= 0x8F;
+    /* C289: bits [7:4]=0x90 */
+    XDATA_REG8(0xC289) = (XDATA_REG8(0xC289) & 0x0F) | 0x90;
+    /* C299: set bits [7:4]=0x80 */
+    XDATA_REG8(0xC299) = (XDATA_REG8(0xC299) & 0x0F) | 0x80;
+    /* C2A9: set bits [7:4]=0x80 */
+    XDATA_REG8(0xC2A9) = (XDATA_REG8(0xC2A9) & 0x0F) | 0x80;
+    /* C282: bits [7:5]=101 */
+    XDATA_REG8(0xC282) = (XDATA_REG8(0xC282) & 0x1F) | 0xA0;
+    /* C292: bits [7:5]=001 */
+    XDATA_REG8(0xC292) = (XDATA_REG8(0xC292) & 0x1F) | 0x20;
+    /* C2C6: bits [3:0]=0x0D */
+    XDATA_REG8(0xC2C6) = (XDATA_REG8(0xC2C6) & 0xF0) | 0x0D;
+    /* C2CC: bits [3:1]=111 (0x0E mask) */
+    XDATA_REG8(0xC2CC) = (XDATA_REG8(0xC2CC) & 0xF1) | 0x0E;
+    /* C2CD: = 0x00 */
+    XDATA_REG8(0xC2CD) = 0x00;
+
+    /* === Lane 2-3 additional equalizer/driver config === */
+
+    /* C310: clear bits [6:5] */
+    XDATA_REG8(0xC310) &= 0x9F;
+    /* C320: clear bits [6:5] */
+    XDATA_REG8(0xC320) &= 0x9F;
+    /* C302: set bits [4:0]=0x0A */
+    XDATA_REG8(0xC302) = (XDATA_REG8(0xC302) & 0xE0) | 0x0A;
+    /* C312: bits [4:0]=0x09 */
+    XDATA_REG8(0xC312) = (XDATA_REG8(0xC312) & 0xE0) | 0x09;
+    /* C322: set bits [4:0]=0x0A */
+    XDATA_REG8(0xC322) = (XDATA_REG8(0xC322) & 0xE0) | 0x0A;
+    /* C310: set bits [4:0]=0x03 */
+    XDATA_REG8(0xC310) = (XDATA_REG8(0xC310) & 0xE0) | 0x03;
+    /* C320: set bits [4:0]=0x03 */
+    XDATA_REG8(0xC320) = (XDATA_REG8(0xC320) & 0xE0) | 0x03;
+    /* C311: set bits [4:0]=0x08 */
+    XDATA_REG8(0xC311) = (XDATA_REG8(0xC311) & 0xE0) | 0x08;
+    /* C321: set bits [4:0]=0x08 */
+    XDATA_REG8(0xC321) = (XDATA_REG8(0xC321) & 0xE0) | 0x08;
+    /* C35B: bits [4:0]=0x1B */
+    XDATA_REG8(0xC35B) = (XDATA_REG8(0xC35B) & 0xE0) | 0x1B;
+    /* C304: bits [3:0]=0x05 */
+    XDATA_REG8(0xC304) = (XDATA_REG8(0xC304) & 0xF0) | 0x05;
+    /* C314: bits [3:0]=0x07 */
+    XDATA_REG8(0xC314) = (XDATA_REG8(0xC314) & 0xF0) | 0x07;
+    /* C305: bits [3:0]=0x0F */
+    XDATA_REG8(0xC305) = (XDATA_REG8(0xC305) & 0xF0) | 0x0F;
+    /* C315: bits [3:0]=0x0C */
+    XDATA_REG8(0xC315) = (XDATA_REG8(0xC315) & 0xF0) | 0x0C;
+    /* C325: bits [3:0]=0x0F */
+    XDATA_REG8(0xC325) = (XDATA_REG8(0xC325) & 0xF0) | 0x0F;
+    /* C305: bits [7:4]=0x60, C306: bits [3:0]=0x07 */
+    XDATA_REG8(0xC305) = (XDATA_REG8(0xC305) & 0x0F) | 0x60;
+    XDATA_REG8(0xC306) = (XDATA_REG8(0xC306) & 0xF0) | 0x07;
+    /* C316: bits [3:0]=0x0F */
+    XDATA_REG8(0xC316) = (XDATA_REG8(0xC316) & 0xF0) | 0x0F;
+    /* C327: set bits [4:0]=0x11 */
+    XDATA_REG8(0xC327) = (XDATA_REG8(0xC327) & 0xE0) | 0x11;
+    /* C30B: bits [5:0]=0x0A */
+    XDATA_REG8(0xC30B) = (XDATA_REG8(0xC30B) & 0xC0) | 0x0A;
+    /* C304: bits [6:4]=010 */
+    XDATA_REG8(0xC304) = (XDATA_REG8(0xC304) & 0x8F) | 0x40;
+    /* C324: bits [6:4]=000 */
+    XDATA_REG8(0xC324) &= 0x8F;
+    /* C309: bits [7:4]=0x90 */
+    XDATA_REG8(0xC309) = (XDATA_REG8(0xC309) & 0x0F) | 0x90;
+    /* C319: set bits [7:4]=0x80 */
+    XDATA_REG8(0xC319) = (XDATA_REG8(0xC319) & 0x0F) | 0x80;
+    /* C329: set bits [7:4]=0x80 */
+    XDATA_REG8(0xC329) = (XDATA_REG8(0xC329) & 0x0F) | 0x80;
+    /* C302: bits [7:5]=101 */
+    XDATA_REG8(0xC302) = (XDATA_REG8(0xC302) & 0x1F) | 0xA0;
+    /* C312: bits [7:5]=001 */
+    XDATA_REG8(0xC312) = (XDATA_REG8(0xC312) & 0x1F) | 0x20;
+    /* C346: bits [3:0]=0x0D */
+    XDATA_REG8(0xC346) = (XDATA_REG8(0xC346) & 0xF0) | 0x0D;
+    /* C34C: bits [3:1]=111 (0x0E mask) */
+    XDATA_REG8(0xC34C) = (XDATA_REG8(0xC34C) & 0xF1) | 0x0E;
+    /* C34D: = 0x00 */
+    XDATA_REG8(0xC34D) = 0x00;
+
+    /* === Buffer descriptor config for PCIe SerDes DMA (93xx) === */
+    XDATA_REG8(0x9310) = 0x01;
+    XDATA_REG8(0x9311) = 0x60;
+    XDATA_REG8(0x9312) = 0x00;
+    XDATA_REG8(0x9313) = 0xE3;
+    XDATA_REG8(0x9314) = 0x01;
+    XDATA_REG8(0x9315) = 0x60;
+    XDATA_REG8(0x9318) = 0x01;
+    XDATA_REG8(0x9319) = 0x60;
+    XDATA_REG8(0x931C) = 0x00;
+    XDATA_REG8(0x931D) = 0x03;
+    XDATA_REG8(0x931E) = 0x00;
+    XDATA_REG8(0x931F) = 0xE0;
+    XDATA_REG8(0x9320) = 0x00;
+    XDATA_REG8(0x9321) = 0xE3;
+
+    /* === Additional lane config === */
+
+    /* C2A3: bits [3:2]=01 */
+    XDATA_REG8(0xC2A3) = (XDATA_REG8(0xC2A3) & 0xF3) | 0x04;
+    /* C323: bits [3:2]=01 */
+    XDATA_REG8(0xC323) = (XDATA_REG8(0xC323) & 0xF3) | 0x04;
+    /* C297: bits [7:5]=010 */
+    XDATA_REG8(0xC297) = (XDATA_REG8(0xC297) & 0x1F) | 0x40;
+    /* C29A: bits [3:0]=0x0E */
+    XDATA_REG8(0xC29A) = (XDATA_REG8(0xC29A) & 0xF0) | 0x0E;
+    /* C2A7: bits [7:5]=010 */
+    XDATA_REG8(0xC2A7) = (XDATA_REG8(0xC2A7) & 0x1F) | 0x40;
+    /* C2AB: bits [5:0]=0x00 */
+    XDATA_REG8(0xC2AB) &= 0xC0;
+    /* C317: bits [7:5]=010 */
+    XDATA_REG8(0xC317) = (XDATA_REG8(0xC317) & 0x1F) | 0x40;
+    /* C31A: bits [3:0]=0x0E */
+    XDATA_REG8(0xC31A) = (XDATA_REG8(0xC31A) & 0xF0) | 0x0E;
+    /* C327: bits [7:5]=010 */
+    XDATA_REG8(0xC327) = (XDATA_REG8(0xC327) & 0x1F) | 0x40;
+    /* C32B: bits [5:0]=0x00 */
+    XDATA_REG8(0xC32B) &= 0xC0;
+
+    /* === Final equalization tune === */
+
+    /* C2AA: bits [3:0]=0x0D */
+    XDATA_REG8(0xC2AA) = (XDATA_REG8(0xC2AA) & 0xF0) | 0x0D;
+    /* C297: bits [4:0]=0x10 */
+    XDATA_REG8(0xC297) = (XDATA_REG8(0xC297) & 0xE0) | 0x10;
+    /* C293: bits [1:0]=01 */
+    XDATA_REG8(0xC293) = (XDATA_REG8(0xC293) & 0xFC) | 0x01;
+    /* C283: bits [3:2]=01 */
+    XDATA_REG8(0xC283) = (XDATA_REG8(0xC283) & 0xF3) | 0x04;
+    /* C2A6: bits [3:0]=0x0B */
+    XDATA_REG8(0xC2A6) = (XDATA_REG8(0xC2A6) & 0xF0) | 0x0B;
+    /* C2A4: bits [3:0]=0x07 */
+    XDATA_REG8(0xC2A4) = (XDATA_REG8(0xC2A4) & 0xF0) | 0x07;
+    /* C2A3: bits [1:0]=10 */
+    XDATA_REG8(0xC2A3) = (XDATA_REG8(0xC2A3) & 0xFC) | 0x02;
+    /* C29B: bits [5:0]=0x00 */
+    XDATA_REG8(0xC29B) &= 0xC0;
+
+    /* C32A: bits [3:0]=0x0D */
+    XDATA_REG8(0xC32A) = (XDATA_REG8(0xC32A) & 0xF0) | 0x0D;
+    /* C317: bits [4:0]=0x10 */
+    XDATA_REG8(0xC317) = (XDATA_REG8(0xC317) & 0xE0) | 0x10;
+    /* C313: bits [1:0]=01 */
+    XDATA_REG8(0xC313) = (XDATA_REG8(0xC313) & 0xFC) | 0x01;
+    /* C303: bits [3:2]=01 */
+    XDATA_REG8(0xC303) = (XDATA_REG8(0xC303) & 0xF3) | 0x04;
+    /* C326: bits [3:0]=0x0B */
+    XDATA_REG8(0xC326) = (XDATA_REG8(0xC326) & 0xF0) | 0x0B;
+    /* C324: bits [3:0]=0x07 */
+    XDATA_REG8(0xC324) = (XDATA_REG8(0xC324) & 0xF0) | 0x07;
+    /* C323: bits [1:0]=10 */
+    XDATA_REG8(0xC323) = (XDATA_REG8(0xC323) & 0xFC) | 0x02;
+    /* C31B: bits [5:0]=0x00 */
+    XDATA_REG8(0xC31B) &= 0xC0;
+
+    /* === Conditional: if C8FF >= 5, apply extra config === */
+    tmp = XDATA_REG8(0xC8FF);
+    if (tmp >= 0x05) {
+        /* C294: bits [3:0]=0x06 */
+        XDATA_REG8(0xC294) = (XDATA_REG8(0xC294) & 0xF0) | 0x06;
+        /* C297: set bits [4:0]=0x11 */
+        XDATA_REG8(0xC297) = (XDATA_REG8(0xC297) & 0xE0) | 0x11;
+        /* C314: bits [3:0]=0x06 */
+        XDATA_REG8(0xC314) = (XDATA_REG8(0xC314) & 0xF0) | 0x06;
+        /* C317: set bits [4:0]=0x11 */
+        XDATA_REG8(0xC317) = (XDATA_REG8(0xC317) & 0xE0) | 0x11;
+    }
 }
 
 /*=== Hardware Init (from stock firmware trace) ===*/
@@ -2136,12 +3108,14 @@ static void hw_init(void) {
     REG_POWER_CTRL_92C6 = 0x05; REG_POWER_CTRL_92C7 = 0x00;
     REG_USB_CTRL_9201 = 0x0E; REG_USB_CTRL_9201 = 0x0C;
     REG_CLOCK_ENABLE = 0x82; REG_USB_CTRL_920C = 0x61;
-    REG_USB_CTRL_920C = 0x60; REG_POWER_ENABLE = 0x87;
+    REG_USB_CTRL_920C = 0x60;
+    /* Stock firmware (0xC8F7-0xC906): C20C/C208 PHY link config before power-on */
+    XDATA_REG8(0xC20C) = (XDATA_REG8(0xC20C) & 0xBF) | 0x40;  /* C20C: set bit 6 */
+    XDATA_REG8(0xC208) &= 0xEF;                                  /* C208: clear bit 4 */
+    REG_POWER_ENABLE = 0x87;
     REG_CLOCK_ENABLE = 0x83; REG_PHY_POWER = 0x2F;
     REG_USB_PHY_CONFIG_9241 = 0x10; REG_USB_PHY_CONFIG_9241 = 0xD0;
-    REG_PHY_PLL_CTRL = 0x5B; REG_PHY_PLL_CTRL = 0x6B;
-    REG_PHY_PLL_CFG = 0x1F; REG_PHY_PLL_CTRL = 0xAB;
-    REG_PHY_PLL_CFG = 0x17; REG_CPU_CLK_CFG = 0x88;
+    /* E741/E742/CC43 now handled by serdes_phy_init() called after hw_init */
     REG_BUF_DESC_STAT0_HI = 0x00; REG_BUF_DESC_STAT0_LO = 0x00;
     REG_BUF_DESC_STAT1_HI = 0x00; REG_BUF_DESC_STAT1_LO = 0x00;
     REG_BUF_DESC_STAT2_HI = 0x00; REG_BUF_DESC_STAT2_LO = 0x00;
@@ -2231,12 +3205,17 @@ static void hw_init(void) {
     REG_CPU_DMA_CTRL_CC90 = 0x00; REG_CPU_DMA_CTRL_CC90 = 0x05;
     REG_CPU_DMA_DATA_LO = 0x00; REG_CPU_DMA_DATA_HI = 0xC8;
     REG_CPU_DMA_INT = 0x01;
+
+    /* Stock firmware at 0x925F calls 0xC020 which writes:
+     *   E764 (already done above), then CA81 |= 0x01
+     * CA81 controls PCIe PHY clock enable — must be set before pcie_init */
+    REG_CPU_CTRL_CA81 |= 0x01;
 }
 
 void main(void) {
     IE = 0;
     is_usb3 = 0; need_bulk_init = 0; bulk_out_state = 0;
-    pd_power_ready_done = 0;
+    pd_power_ready_done = 0; phy_unmask_pending = 0; phy_unmask_counter = 0;
     usb_configured = 0;
 
     /* Initialize XDATA globals — stock firmware's flash_phy_calib_load_new (0x8FCF)
@@ -2252,6 +3231,8 @@ void main(void) {
     G_LINK_EVENT_0B2D = 0;
     G_STATE_0AE8 = 0x0F;             /* Stock: set to 0x0F at 0x8FED */
     G_FLASH_CFG_0AF0 = 0x00;         /* Stock: set to 0 when 0AE5=1 at 0x91DD */
+    G_SERDES_EQ_PARAM = 0x03;        /* Stock: set from init data table at 0x4403 */
+    G_SERDES_EQ_MULT = 0x05;         /* Stock: set from init data table at 0x4403 */
 
     /* Post-calibration register writes from flash_phy_calib_load_new (0x8FCF).
      * Stock firmware does these after setting globals, before pcie_init:
@@ -2287,17 +3268,71 @@ void main(void) {
      * (92C2/E40B/C80A writes), not CC init itself. */
     uart_puts("[CC init]\n");
     pd_cc_controller_init();
-
-    /* Suppress PHY events generated by CC init */
     XDATA_REG8(0xE40F) = 0xFF;
     XDATA_REG8(0xE410) = 0xFF;
 
     hw_init();
+    phy_link_ctrl_init();
+    serdes_phy_init();
     pcie_init();
 
-    /* Suppress PHY events generated by pcie_init (link-up attempts) */
+    /* Pre-USB link training poll:
+     * D92E + CC83/CCDD + RstRxpll already done in pcie_init().
+     * 9090 bit 7 was cleared in pcie_init (D92E sequence).
+     * Just poll for link training events before USB enumeration. */
+    uart_puts("[LT pre-USB]\n");
+    /* Ensure 9090 bit 7 is still clear for PHY events */
+    REG_USB_INT_MASK_9090 &= 0x7F;
+
+    /* Dump key registers to understand PHY state */
+    uart_puts("[9090="); uart_puthex(REG_USB_INT_MASK_9090);
+    uart_puts("][C80A="); uart_puthex(REG_INT_PCIE_NVME);
+    uart_puts("][C809="); uart_puthex(REG_INT_CTRL);
+    uart_puts("][E40B="); uart_puthex(REG_CMD_CONFIG);
+    uart_puts("][E400="); uart_puthex(REG_CMD_CTRL_E400);
+    uart_puts("]\n");
+
+    { uint16_t lt_timeout;
+      for (lt_timeout = 0; lt_timeout < 50000; lt_timeout++) {
+          uint8_t e40f = REG_PHY_EVENT_E40F;
+          uint8_t e410 = REG_PHY_INT_STATUS_E410;
+          uint8_t ltssm = REG_PCIE_LTSSM_STATE;
+          if (e40f || e410) {
+              uart_puts("[E:");
+              uart_puthex(e40f);
+              uart_putc('/');
+              uart_puthex(e410);
+              uart_puts(" B=");
+              uart_puthex(ltssm);
+              uart_puts("]\n");
+              /* Dispatch PHY events */
+              phy_event_dispatcher();
+          }
+          if (ltssm >= 0x10) {  /* Polling or beyond */
+              uart_puts("[TRAINED B450=");
+              uart_puthex(ltssm);
+              uart_puts("]\n");
+              break;
+          }
+          REG_CPU_KEEPALIVE = 0x0C;
+      }
+      uart_puts("[LT done B450=");
+      uart_puthex(REG_PCIE_LTSSM_STATE);
+      uart_puts("][E40F=");
+      uart_puthex(REG_PHY_EVENT_E40F);
+      uart_puts("][E410=");
+      uart_puthex(REG_PHY_INT_STATUS_E410);
+      uart_puts("]\n");
+    }
+    REG_USB_INT_MASK_9090 |= 0x80;  /* re-set bit 7 for USB */
+
+    /* Suppress any remaining PHY events */
     XDATA_REG8(0xE40F) = 0xFF;
     XDATA_REG8(0xE410) = 0xFF;
+
+    /* TLP engine verified: CfgRd0 returns 24641B21 (ASM2464 bridge) with B298 bit 4.
+     * B213/B216 not needed here — set by individual config read functions. */
+    uart_puts("[B298="); uart_puthex(XDATA_REG8(0xB298)); uart_puts("]\n");
 
     uint8_t link = REG_USB_LINK_STATUS;
     is_usb3 = (link >= USB_SPEED_SUPER) ? 1 : 0;
@@ -2316,7 +3351,14 @@ void main(void) {
 
         if (usb_configured && !pd_power_ready_done) {
             pd_power_ready_done = 1;
-            uart_puts("[PD:rdy]\n");
+            /* Enable PCIe TLP bridge — must be after USB enumeration to avoid
+             * interfering with host xHCI during early boot. B298 bit 4 enables
+             * the tunnel so TLP completions return data. */
+            XDATA_REG8(0xB430) &= 0xFE;
+            XDATA_REG8(0xB298) = (XDATA_REG8(0xB298) & 0xEF) | 0x10;
+            uart_puts("[rdy B450=");
+            uart_puthex(REG_PCIE_LTSSM_STATE);
+            uart_puts("]\n");
         }
 
         /* Continuous PHY maintenance — stock firmware calls this every iteration

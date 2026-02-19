@@ -3461,8 +3461,8 @@ void protocol_param_handler(uint8_t param)
         /* Complex transfer handling - simplified */
         if (status != 0 && G_PCIE_TXN_COUNT_LO == 0x04) {
             /* Transfer complete path */
-            REG_POWER_CTRL_B455 = 2;
-            REG_POWER_CTRL_B455 = 4;
+            REG_PCIE_LTSSM_B455 = 2;
+            REG_PCIE_LTSSM_B455 = 4;
             REG_PCIE_CTRL_B2D5 = 1;
             REG_PCIE_STATUS = 8;
         }
