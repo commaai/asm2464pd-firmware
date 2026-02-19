@@ -92,9 +92,19 @@ class Emulator:
         self._proxy_isr_pending_acks = []
 
     def load_firmware(self, path: str):
-        """Load firmware binary."""
+        """Load firmware binary, auto-stripping ASM header if present."""
         with open(path, 'rb') as f:
             data = f.read()
+        
+        # Check for ASM2464 wrapped firmware format:
+        # 4-byte little-endian length + body + 6-byte footer (magic + checksum + crc32)
+        # The first 4 bytes should equal len(data) - 10 (4 header + 6 footer)
+        if len(data) >= 10:
+            header_len = int.from_bytes(data[:4], 'little')
+            if header_len == len(data) - 10:
+                print(f"Detected ASM2464 wrapped firmware, stripping 4-byte header and 6-byte footer")
+                data = data[4:-6]
+        
         print(f"Loaded {len(data)} bytes from {path}")
         self.memory.load_firmware(data)
         # Load USB3 config descriptor from ROM and fix wTotalLength
