@@ -690,6 +690,23 @@ void main(void) {
 
     hw_init();
 
+    /* PCIe power-on sequence (matches stock firmware 0x35B7-0x365F):
+     *   1. Assert PERST# (hold GPU in reset during power-up)
+     *   2. Enable 12V (GPIO5=HIGH enables the buck converter)
+     *   3. Enable 3.3V (C656 bit 5 = HDDPC pin C21 = PCIE_3V3_EN)
+     *   4. Wait for power to stabilize
+     *   5. Release PERST# (allow GPU to start, PCIe link training begins)
+     */
+    XDATA_REG8(0xB480) |= 0x01;  /* Assert PERST# */
+    REG_GPIO_CTRL(5) = 0x03;     /* 12V converter enable (GPIO5=HIGH) */
+    XDATA_REG8(0xC656) |= 0x20;  /* HDDPC: enable PCIE_3V3 */
+    XDATA_REG8(0xC65B) |= 0x20;  /* Associated power enable (stock does both) */
+    uart_puts("[PWR]\n");
+    /* Delay ~100ms for power stabilization (stock fw uses timer-based delay) */
+    { volatile uint16_t d; for (d = 0; d < 60000U; d++) { } }
+    XDATA_REG8(0xB480) &= ~0x01; /* Release PERST# */
+    uart_puts("[PERST]\n");
+
     uint8_t link = REG_USB_LINK_STATUS;
     is_usb3 = (link >= USB_SPEED_SUPER) ? 1 : 0;
     uart_puts("[link="); uart_puthex(link); uart_puts("]\n");

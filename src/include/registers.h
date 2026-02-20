@@ -905,25 +905,26 @@
 #define REG_POWER_CTRL_B455     REG_PCIE_LTSSM_B455  // Legacy alias
 
 /*
- * PCIe Tunnel Link Status (0xB480-0xB482)
- * Indicates whether PCIe tunnel is up to downstream device.
+ * PCIe PERST Control / Tunnel Link Status (0xB480-0xB482)
  *
- * B480 = 0x01: PCIe device connected and link trained.
- *              Required for 90A1 DMA trigger to generate USB packets.
- *              Without PCIe device: B480 = 0x00, bulk IN fails.
+ * B480 bit 0: PERST# control for downstream PCIe device.
+ *   Set bit 0 = assert PERST# (hold device in reset)
+ *   Clear bit 0 = deassert PERST# (release reset, allow link training)
  *
- * B480 = 0x00: No PCIe device, or link not trained.
- *              90A1 trigger consumed but no USB packet sent.
- *              C42C also won't work on USB 2.0 without this.
+ * Stock firmware power-on sequence:
+ *   1. Assert PERST: B480 |= 0x01  (functions at 0x160B, 0x993E, 0xC024)
+ *   2. Enable power (GPIO5=HIGH for 12V, C656 bit 5 for 3.3V)
+ *   3. Wait for power stabilization
+ *   4. Release PERST: B480 &= ~0x01  (at 0x365F, 0x20F2)
+ *   5. Poll B455 bit 1 for link detect
  *
- * Written to 0x01 during hw_init() tunnel setup (B401 toggle + B480=0x01).
- * Reflects actual hardware state — if PCIe link drops, reads back 0x00.
- *
- * Stock firmware pre-trigger check: reads B480, expects 0x01.
+ * Stock firmware pre-trigger check: reads B480, expects 0x01 (PERST asserted
+ * during active operation means device is managed).
  */
-#define REG_TUNNEL_LINK_CTRL    XDATA_REG8(0xB480)  /* PCIe tunnel link status */
-#define   TUNNEL_LINK_UP          0x01  // Bit 0: PCIe tunnel link is up
-#define   TUNNEL_LINK_ACTIVE      0x02  // Bit 1: Tunnel active
+#define REG_PCIE_PERST_CTRL     XDATA_REG8(0xB480)  /* PCIe PERST# control */
+#define   PCIE_PERST_ASSERT       0x01  // Bit 0: Assert PERST# (hold device in reset)
+#define REG_TUNNEL_LINK_CTRL    REG_PCIE_PERST_CTRL  /* Legacy alias */
+#define   TUNNEL_LINK_UP          PCIE_PERST_ASSERT   // Legacy alias
 #define REG_TUNNEL_ADAPTER_MODE XDATA_REG8(0xB482)  /* Tunnel adapter mode */
 #define   TUNNEL_MODE_MASK        0xF0  // Bits 4-7: Tunnel mode
 #define   TUNNEL_MODE_ENABLED     0xF0  // High nibble 0xF0 = tunnel mode enabled
@@ -1170,14 +1171,26 @@
 #define   PHY_EXT_LANE_MASK       0x07  // Bits 0-2: Lane configuration
 #define REG_PHY_CFG_C655        XDATA_REG8(0xC655)  /* PHY config (bit 3 set by flash_set_bit3) */
 /*
- * PHY Extended Signal Status (0xC656)
- * Bit 5: PHY signal detect ready. Stock firmware phy_recovery_handler (0x46DE)
- * checks this bit — if not set, returns error (PHY signal not ready).
+ * HDDPC Power Control / PHY Extended Signal (0xC656)
+ * Controls PCIE_3V3_EN via the dedicated HDDPC pin (C21).
+ *
+ * Bit 5: HDDPC enable (PCIE_3V3 power to downstream PCIe slot)
+ *   Set bit 5 = enable 3.3V power (C656 |= 0x20)
+ *   Clear bit 5 = disable 3.3V power (C656 &= ~0x20)
+ *
+ * Stock firmware enables at 0xE31A (via helper at 0xC049).
+ * Stock firmware disables at 0xE462 (C656 &= ~0x20).
+ * Function at 0x46DE checks bit 5: if not set, returns error (power not ready).
+ *
+ * When enabled with GPIO5=HIGH (12V), GPU draws ~87W from +12V rail.
+ * When disabled, GPU draws ~0.5W (12V converter in hiccup mode).
  */
-#define REG_PHY_EXT_SIGNAL      XDATA_REG8(0xC656)
-#define REG_PHY_EXT_56          REG_PHY_EXT_SIGNAL   // Legacy alias
-#define   PHY_EXT_SIGNAL_READY    0x20  // Bit 5: PHY signal detect ready
-#define   PHY_EXT_SIGNAL_CFG      PHY_EXT_SIGNAL_READY // Legacy alias
+#define REG_HDDPC_CTRL         XDATA_REG8(0xC656)
+#define REG_PHY_EXT_SIGNAL      REG_HDDPC_CTRL       // Legacy alias
+#define REG_PHY_EXT_56          REG_HDDPC_CTRL       // Legacy alias
+#define   HDDPC_ENABLE            0x20  // Bit 5: Enable PCIE_3V3 power
+#define   PHY_EXT_SIGNAL_READY    HDDPC_ENABLE        // Legacy alias
+#define   PHY_EXT_SIGNAL_CFG      HDDPC_ENABLE        // Legacy alias
 /*
  * PCIe Lane Control (0xC659)
  * Bit 0: Lane enable control.
