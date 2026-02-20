@@ -372,7 +372,7 @@ class USBDevicePassthrough:
             response = self.read_response(setup.wLength)
             # Check if we got a valid response (not all zeros)
             if any(b != 0 for b in response):
-                return response
+                return self._patch_vidpid(response, setup)
             # Firmware didn't produce response - re-set conditions and retry
             # Main loop conditions may have been cleared during first run
             hw.regs[0x9002] = 0x00  # Bit 1 CLEAR to allow 0x9091 check
@@ -380,9 +380,43 @@ class USBDevicePassthrough:
             if self.emu.memory:
                 self.emu.memory.xdata[0x07E1] = 0x05  # Descriptor request pending
             self.run_firmware_cycles(max_cycles=200000)
-            return self.read_response(setup.wLength)
+            return self._patch_vidpid(self.read_response(setup.wLength), setup)
 
         return None
+
+    def _patch_vidpid(self, response: bytes, setup) -> bytes:
+        """Patch VID/PID and USB version in device descriptor responses."""
+        override = getattr(self.emu.hw, 'vidpid_override', None)
+        if response is None:
+            return response
+        # Only patch GET_DESCRIPTOR device descriptor (type=0x01)
+        desc_type = (setup.wValue >> 8) & 0xFF
+        if setup.bRequest != 0x06 or desc_type != 0x01:
+            return response
+        if len(response) < 8:
+            return response
+
+        response = bytearray(response)
+
+        # Patch bcdUSB and bMaxPacketSize0 for High Speed (dummy_hcd max)
+        # Firmware returns USB 3.2 descriptor (bcdUSB=0x0320, bMaxPacketSize0=9=2^9)
+        # but dummy_hcd is High Speed only, so kernel rejects USB3 descriptors.
+        if self._emu_speed <= 1:  # Full or High Speed
+            response[2] = 0x00  # bcdUSB low byte
+            response[3] = 0x02  # bcdUSB high byte -> 0x0200
+            response[7] = 64   # bMaxPacketSize0 = 64 for High Speed
+            print(f"[USB_PASS] Patched bcdUSB to 0x0200, bMaxPacketSize0 to 64 (High Speed)")
+
+        # Patch VID/PID if override set
+        if override and len(response) >= 12:
+            vid, pid = override
+            response[8] = vid & 0xFF
+            response[9] = (vid >> 8) & 0xFF
+            response[10] = pid & 0xFF
+            response[11] = (pid >> 8) & 0xFF
+            print(f"[USB_PASS] Patched VID/PID to {vid:04X}:{pid:04X}")
+
+        return bytes(response)
 
     def _handle_e4_read(self, xdata_addr: int, size: int) -> bytes:
         """
@@ -437,8 +471,8 @@ class USBDevicePassthrough:
         """
         print(f"[USB_PASS] E5 write: addr=0x{xdata_addr:04X} value=0x{value:02X}")
 
-        # Directly write to XDATA (like E4 directly reads)
-        self.emu.memory.xdata[xdata_addr] = value
+        # Use write_xdata to trigger MMIO hooks (e.g., B254 PCIe trigger)
+        self.emu.memory.write_xdata(xdata_addr, value)
 
         print(f"[USB_PASS] E5 write complete: XDATA[0x{xdata_addr:04X}] = 0x{value:02X}")
         return None  # OUT transfer - no response data
@@ -529,6 +563,15 @@ class USBDevicePassthrough:
               f"idx=0x{setup.wIndex:04X} len={setup.wLength}")
 
         try:
+            # For SET_CONFIGURATION when already configured, just ACK without
+            # passing to firmware. Re-sending SET_CONFIGURATION resets raw-gadget
+            # endpoint state, breaking the bulk transfer thread.
+            if setup.bmRequestType == 0x00 and setup.bRequest == USB_REQ_SET_CONFIGURATION \
+               and setup.wValue > 0 and self.configured:
+                print(f"[USB_PASS] Already configured, ACKing SET_CONFIGURATION without firmware")
+                self.gadget.ep0_read(0)  # ACK
+                return
+
             # ALL control transfers go through firmware
             response = self.handle_control_transfer(setup)
 
@@ -582,6 +625,14 @@ class USBDevicePassthrough:
         if not self.gadget:
             return
 
+        # If endpoints are already enabled and bulk thread is running, skip re-enable.
+        # raw-gadget's ep_read is a blocking ioctl that can't be cleanly interrupted,
+        # so we reuse existing endpoints instead of trying to recreate them.
+        if self.ep_data_in is not None and self.ep_data_out is not None and \
+           self._bulk_thread and self._bulk_thread.is_alive():
+            print(f"[USB_PASS] Endpoints already enabled (IN={self.ep_data_in}, OUT={self.ep_data_out}), reusing")
+            return
+
         # Clear UAS-specific handles (not used in BBB mode)
         self.ep_stat_in = None
         self.ep_cmd_out = None
@@ -598,22 +649,8 @@ class USBDevicePassthrough:
         except RawGadgetError as e:
             print(f"[USB_PASS] vbus_draw failed: {e}")
 
-        # Enable the specific endpoint addresses from our descriptor
-        # BBB uses: 0x81 (IN), 0x02 (OUT)
-
-        # Disable old endpoints first if they exist
-        for old_handle in [self.ep_data_in, self.ep_data_out]:
-            if old_handle is not None:
-                try:
-                    self.gadget.ep_disable(old_handle)
-                except RawGadgetError:
-                    pass
-
         import time as _t
         _t.sleep(0.1)  # Give kernel time to release endpoints
-
-        self.ep_data_in = None
-        self.ep_data_out = None
 
         # Enable EP1 IN (0x81) - must match descriptor
         try:
@@ -910,8 +947,16 @@ class USBDevicePassthrough:
         # STEP 3: Set up MMIO state for firmware processing
         # =====================================================
 
-        # USB connection status - bit 7=connected, bit 0=active
-        hw.regs[0x9000] = 0x81
+        # Parse CDB fields for E4/E5 vendor commands
+        e5_value = cdb[1] if len(cdb) > 1 else 0
+        e4_size = cdb[1] if len(cdb) > 1 else 0
+        xdata_addr = 0
+        if len(cdb) >= 5:
+            xdata_addr = ((cdb[2] & 0x01) << 16) | (cdb[3] << 8) | cdb[4]
+
+        # USB connection status - bit 7=connected, bit 0=CLEAR for vendor path
+        # At 0x0E68, JB 0xe0.0 jumps away if bit 0 is set
+        hw.regs[0x9000] = 0x80
 
         # USB interrupt flags - trigger SCSI handler path
         hw.regs[0x9101] = 0x21  # Bit 5 for vendor/SCSI path
@@ -920,6 +965,36 @@ class USBDevicePassthrough:
         # Endpoint status
         hw.regs[0x9096] = 0x01  # EP has data
         hw.regs[0x90E2] = 0x01
+
+        # USB command interface registers (matching inject_usb_command)
+        hw.regs[0xE4E0] = opcode  # Command type (0xE4/0xE5)
+        hw.regs[0xE091] = e4_size if opcode == 0xE4 else e5_value
+
+        # E5/E4 value register - firmware reads this at 0x17FD-0x1801
+        # For E5: value byte; For E4: read size
+        hw.regs[0xC47A] = e5_value if opcode == 0xE5 else e4_size
+        hw.regs[0xCEB0] = 0x05 if opcode == 0xE5 else 0x04
+
+        # Target address registers (firmware reads at 0x323A-0x3249)
+        hw.regs[0xCEB2] = (xdata_addr >> 8) & 0xFF
+        hw.regs[0xCEB3] = xdata_addr & 0xFF
+
+        # Store E5 value separately so it survives firmware clearing 0xC47A
+        if opcode == 0xE5:
+            hw.usb_e5_pending_value = e5_value
+            hw._e5_value_delivered = False
+
+        # USB EP0 data registers (firmware reads from these too)
+        hw.regs[0x9E00] = cdb_padded[0]
+        hw.regs[0x9E01] = cdb_padded[1]
+        hw.regs[0x9E02] = cdb_padded[4] if len(cdb) > 4 else 0
+        hw.regs[0x9E03] = cdb_padded[3] if len(cdb) > 3 else 0
+        hw.regs[0x9E04] = cdb_padded[2] if len(cdb) > 2 else 0
+        hw.regs[0x9E05] = 0x00
+
+        # Also populate 0x911F-0x9122 (another CDB location read by 0x3186)
+        for i, b in enumerate(cdb_padded[:4]):
+            hw.regs[0x911F + i] = b
 
         # IDATA USB state - set to CONFIGURED (5) or SCSI state (2)
         self.emu.memory.idata[0x6A] = 5
@@ -935,6 +1010,8 @@ class USBDevicePassthrough:
         hw.usb_data_len = data_length
         hw.usb_cmd_type = opcode
         hw.usb_cmd_pending = True
+        hw._e5_dma_done = False  # Reset E5 DMA completion flag
+        hw.usb_ce89_read_count = 0  # Reset DMA state machine for new command
 
         # =====================================================
         # STEP 4: Run firmware to process the command
@@ -949,13 +1026,24 @@ class USBDevicePassthrough:
         hw._pending_usb_interrupt = True
         self.emu.cpu._ext0_pending = True
 
-        # Run firmware - this is where ALL command processing happens
-        # Use run_firmware_cycles for thread safety with the lock
-        print(f"[SCSI] Running firmware to process command...")
+        # Run firmware - this is where ALL command processing happens.
+        # The firmware processes E4/E5 commands through the interrupt handler.
+        # Run enough cycles for the handler to complete, then check for early exit.
         cycles_before = self.emu.cpu.cycles
-        self.run_firmware_cycles(max_cycles=500000)
+        total_limit = 50000  # Conservative limit for command processing
+
+        # Run in bursts, checking for completion via usb_cmd_pending flag
+        burst = 5000
+        remaining = total_limit
+        while remaining > 0:
+            run_amount = min(burst, remaining)
+            self.run_firmware_cycles(max_cycles=run_amount)
+            remaining -= run_amount
+            # Check if firmware completed the command (DMA trigger clears this)
+            if not hw.usb_cmd_pending:
+                break
+
         cycles_run = self.emu.cpu.cycles - cycles_before
-        print(f"[SCSI] Firmware ran {cycles_run} cycles")
 
         # =====================================================
         # STEP 5: Read response from firmware's USB buffer

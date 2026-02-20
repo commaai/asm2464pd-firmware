@@ -168,6 +168,10 @@ class Emulator:
         """Check for and handle interrupts from proxy hardware."""
         int_num = self.proxy.get_pending_interrupt()
         if int_num is not None:
+            # Invalidate MMIO read cache - hardware state changed
+            if hasattr(self.hw, '_proxy_cache_invalidate'):
+                self.hw._proxy_cache_invalidate()
+
             # Map interrupt number to CPU interrupt flag
             # 8051 interrupt vectors:
             #   0: INT0 (External 0) - vector 0x0003
@@ -484,7 +488,7 @@ class Emulator:
         Requires: sudo modprobe dummy_hcd && sudo modprobe raw_gadget
         """
         try:
-            from usb_device import ASM2464Device
+            from usb_device import USBDevicePassthrough
             from raw_gadget import check_raw_gadget_available, USBSpeed
         except ImportError as e:
             print(f"[USB] Failed to import USB device modules: {e}")
@@ -498,11 +502,8 @@ class Emulator:
 
         print(f"[USB] Starting USB device emulation...")
 
-        # Create device with callbacks to our memory
-        self.usb_device = ASM2464Device(
-            memory_read=self._usb_memory_read,
-            memory_write=self._usb_memory_write
-        )
+        # Create device with emulator reference
+        self.usb_device = USBDevicePassthrough(emulator=self)
 
         # Start the gadget (this connects to USB)
         try:
@@ -675,7 +676,7 @@ Examples:
         try:
             from uart_proxy import UARTProxy
             print(f"Connecting to UART proxy at {args.proxy_device}...")
-            proxy = UARTProxy(args.proxy_device)
+            proxy = UARTProxy(args.proxy_device, timeout=5.0)
             proxy.debug = args.proxy_debug  # 0=off, 1=interrupts, 2=+xdata, 3=+sfr
             
             # Reset device and wait for proxy firmware to boot
@@ -792,6 +793,22 @@ Examples:
         reason = emu.run(max_cycles=args.max_cycles, max_instructions=args.max_inst)
         print("-" * 60)
         print(f"Stopped: {reason} at PC=0x{emu.cpu.pc:04X}")
+
+        # In USB device mode, keep running after initial boot
+        # The USB bulk thread calls run_firmware_cycles() to process commands,
+        # but we also need the main loop to keep the firmware running for
+        # background tasks (main loop polling, timers, etc.)
+        if args.usb_device and emu.usb_device:
+            import time as _time
+            print("[USB] Entering USB serving mode (Ctrl+C to stop)...")
+            while True:
+                # Run firmware in small bursts, yielding to USB threads.
+                # Sleep must be long enough for bulk/event threads to acquire GIL.
+                # Python's GIL switch interval is 5ms, so we sleep 10ms.
+                with emu.usb_device._emu_lock:
+                    emu.run(max_cycles=emu.cpu.cycles + 10000)
+                _time.sleep(0.010)  # Yield to USB bulk/event threads (10ms)
+
     except KeyboardInterrupt:
         print("\n" + "-" * 60)
         print(f"Interrupted at PC=0x{emu.cpu.pc:04X}")
