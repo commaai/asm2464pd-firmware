@@ -97,18 +97,34 @@ static uint8_t is_uart_addr(uint16_t addr)
     return (addr >= 0xC000 && addr <= 0xC00F);
 }
 
+/*
+ * Check if address is in a range that can cause bus hangs when USB is active.
+ * These registers are connected to USB DMA/endpoint hardware that may stall
+ * the bus when the USB controller is waiting for firmware action.
+ *
+ * The emulator should route these through local emulation instead.
+ */
+static uint8_t is_dangerous_addr(uint16_t addr)
+{
+    /* USB endpoint data buffer (0xD800-0xDFFF) - bus hangs during USB DMA */
+    if (addr >= 0xD800 && addr <= 0xDFFF) return 1;
+    return 0;
+}
+
 static uint8_t xdata_read(uint16_t addr)
 {
     if (is_uart_addr(addr)) {
         if (addr == 0xC009) return 0x60;
         return 0x00;
     }
+    if (is_dangerous_addr(addr)) return 0x00;
     return *(__xdata volatile uint8_t *)addr;
 }
 
 static void xdata_write(uint16_t addr, uint8_t val)
 {
     if (is_uart_addr(addr)) return;
+    if (is_dangerous_addr(addr)) return;
     *(__xdata volatile uint8_t *)addr = val;
 }
 

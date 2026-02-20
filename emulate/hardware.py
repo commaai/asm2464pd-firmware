@@ -788,6 +788,557 @@ class USBController:
         print(f"[{cycles:8d}] [USB_CTRL] Control transfer injected (interrupt pending)")
 
 
+# =============================================================================
+# PCIe TLP Engine — Emulates the PCIe switch fabric downstream of ASM2464PD
+# =============================================================================
+
+import struct as _struct
+
+class PCIeTLPEngine:
+    """
+    Emulates a PCIe topology downstream of the ASM2464PD bridge.
+
+    Topology:
+      Bus 0-3: PCIe-to-PCIe bridges (Type 1 headers, VID=0x1002)
+      Bus 4 dev 0: AMD GPU endpoint (Type 0 header, VID=0x1002, DID=0x744C)
+
+    The firmware writes TLP parameters to B2xx MMIO registers and triggers
+    a TLP send via B254. This engine processes the TLP and writes completion
+    data back to B2xx registers for the firmware to read and relay to the host.
+
+    TLP types handled:
+      0x04 CfgRd0 - Config read type 0 (same bus)
+      0x05 CfgRd1 - Config read type 1 (different bus)
+      0x44 CfgWr0 - Config write type 0
+      0x45 CfgWr1 - Config write type 1
+      0x20 MRd    - Memory read (32-bit address)
+      0x60 MWr    - Memory write (32-bit address)
+    """
+
+    # AMD GPU device IDs (Navi 32 / RX 7800 XT)
+    GPU_VID = 0x1002
+    GPU_DID = 0x744C  # Navi 32
+    GPU_CLASS = 0x030000  # VGA compatible controller
+    GPU_BUS = 4
+
+    # BAR definitions for the GPU endpoint:
+    #   BAR0: VRAM (prefetchable, 64-bit) — 16GB capable but we report 256MB
+    #   BAR2: Doorbell (prefetchable, 64-bit) — 2MB
+    #   BAR4: I/O (not used)
+    #   BAR5: MMIO (non-prefetchable, 32-bit) — 512KB
+    #
+    # Size masks: writing 0xFFFFFFFF returns ~(size-1) | flags
+    # BAR0 256MB: mask = 0xF0000000 | 0x0C (64-bit, prefetchable)
+    # BAR2 2MB:   mask = 0xFFE00000 | 0x0C (64-bit, prefetchable)
+    # BAR5 512KB: mask = 0xFFF80000 | 0x00 (32-bit, non-prefetchable)
+
+    BAR_CONFIGS = {
+        0: {'size': 256 << 20, 'flags': 0x0C, '64bit': True},   # VRAM 256MB prefetchable 64-bit
+        2: {'size': 2 << 20,   'flags': 0x0C, '64bit': True},   # Doorbell 2MB prefetchable 64-bit
+        5: {'size': 512 << 10, 'flags': 0x00, '64bit': False},  # MMIO 512KB non-prefetchable 32-bit
+    }
+
+    # REBAR (Resizable BAR) extended capability
+    # Located at cap_ptr=0x200 in extended config space
+    # REBAR cap register (offset +4): supported sizes bitmap
+    # REBAR ctrl register (offset +8): current size
+    REBAR_CAP_PTR = 0x100
+    REBAR_SIZES_SUPPORTED = 0x007FF0  # Sizes 1MB through 1TB (bits 4-21)
+
+    def __init__(self, log=True, hw=None):
+        self.log = log
+        self.hw = hw  # Reference to HardwareState for XDATA writes in completions
+
+        # Config space for each (bus, dev, fn)
+        # Each is a bytearray of 4096 bytes (full PCIe config space)
+        self._config: Dict[tuple, bytearray] = {}
+
+        # BAR sizing state: when True, BAR register returns size mask
+        self._bar_sizing: Dict[tuple, Dict[int, bool]] = {}
+
+        # Memory regions mapped by BARs (base_addr -> (bar_id, size, data))
+        self._mem_regions: Dict[int, tuple] = {}
+
+        # GPU MMIO register file (BAR5 relative offsets -> values)
+        self._gpu_mmio: Dict[int, int] = {}
+
+        # GPU VRAM (large, lazily allocated)
+        self._gpu_vram = bytearray(0)  # Allocated when BAR0 is assigned
+        self._gpu_vram_base = 0
+
+        # GPU doorbell (BAR2)
+        self._gpu_doorbell_base = 0
+
+        # GPU MMIO (BAR5)
+        self._gpu_mmio_base = 0
+
+        # Initialize topology
+        self._init_bridges()
+        self._init_gpu()
+
+    def _init_config(self, bus, dev, fn):
+        """Create a zeroed 4096-byte config space."""
+        key = (bus, dev, fn)
+        self._config[key] = bytearray(4096)
+        self._bar_sizing[key] = {}
+        return self._config[key]
+
+    def _cfg_write32(self, cfg, offset, value):
+        _struct.pack_into('<I', cfg, offset, value & 0xFFFFFFFF)
+
+    def _cfg_write16(self, cfg, offset, value):
+        _struct.pack_into('<H', cfg, offset, value & 0xFFFF)
+
+    def _cfg_write8(self, cfg, offset, value):
+        cfg[offset] = value & 0xFF
+
+    def _cfg_read32(self, cfg, offset):
+        return _struct.unpack_from('<I', cfg, offset)[0]
+
+    def _init_bridges(self):
+        """Initialize PCIe bridge config spaces for buses 0-3."""
+        for bus in range(self.GPU_BUS):
+            cfg = self._init_config(bus, 0, 0)
+
+            # PCI header — Type 1 (bridge)
+            self._cfg_write16(cfg, 0x00, 0x1002)  # Vendor ID: AMD
+            self._cfg_write16(cfg, 0x02, 0x1478)  # Device ID: generic bridge
+            self._cfg_write16(cfg, 0x04, 0x0007)  # Command: IO + Mem + BusMaster
+            self._cfg_write16(cfg, 0x06, 0x0010)  # Status: capabilities list
+            self._cfg_write8(cfg, 0x08, 0x00)     # Revision
+            self._cfg_write32(cfg, 0x09, 0x060400)  # Class: PCI bridge (big-endian 3 bytes)
+            # Fix: class code is at offset 0x09 (prog_if), 0x0A (subclass), 0x0B (class)
+            cfg[0x09] = 0x00  # prog_if
+            cfg[0x0A] = 0x04  # subclass: PCI bridge
+            cfg[0x0B] = 0x06  # class: bridge
+            cfg[0x0E] = 0x01  # Header type: Type 1 (bridge)
+
+            # Bus numbers (will be configured by pci_setup_usb_bars)
+            cfg[0x18] = 0     # Primary bus
+            cfg[0x19] = bus + 1  # Secondary bus
+            cfg[0x1A] = self.GPU_BUS  # Subordinate bus
+
+            # Memory window — will be configured
+            self._cfg_write16(cfg, 0x20, 0xFFFF)  # Memory base
+            self._cfg_write16(cfg, 0x22, 0x0000)  # Memory limit
+            self._cfg_write16(cfg, 0x24, 0xFFFF)  # Prefetchable memory base
+            self._cfg_write16(cfg, 0x26, 0x0000)  # Prefetchable memory limit
+
+    def _init_gpu(self):
+        """Initialize AMD GPU config space at bus 4 dev 0 fn 0."""
+        cfg = self._init_config(self.GPU_BUS, 0, 0)
+
+        # PCI header — Type 0 (endpoint)
+        self._cfg_write16(cfg, 0x00, self.GPU_VID)   # Vendor ID
+        self._cfg_write16(cfg, 0x02, self.GPU_DID)    # Device ID
+        self._cfg_write16(cfg, 0x04, 0x0007)          # Command: IO + Mem + BusMaster
+        self._cfg_write16(cfg, 0x06, 0x0010)          # Status: capabilities list
+        self._cfg_write8(cfg, 0x08, 0xC8)             # Revision
+        cfg[0x09] = 0x00  # prog_if
+        cfg[0x0A] = 0x00  # subclass: VGA compatible
+        cfg[0x0B] = 0x03  # class: display controller
+        cfg[0x0E] = 0x00  # Header type: Type 0 (endpoint)
+
+        # BARs — set initial flags (address bits will be written by pci_setup_usb_bars)
+        for bar_idx, bar_cfg in self.BAR_CONFIGS.items():
+            bar_offset = 0x10 + bar_idx * 4
+            flags = bar_cfg['flags']
+            self._cfg_write32(cfg, bar_offset, flags)
+            if bar_cfg['64bit']:
+                self._cfg_write32(cfg, bar_offset + 4, 0)  # Upper 32 bits
+
+        # BAR4: I/O space (256 bytes) — bit 0 = 1 marks I/O space
+        self._cfg_write32(cfg, 0x10 + 4 * 4, 0x01)  # I/O space flag
+
+        # Capabilities pointer
+        cfg[0x34] = 0x48  # First capability at 0x48
+
+        # Subsystem VID/DID
+        self._cfg_write16(cfg, 0x2C, 0x1002)  # Subsystem vendor
+        self._cfg_write16(cfg, 0x2E, 0x0E3B)  # Subsystem device
+
+        # PCIe capability at 0x48 (standard PCIe cap ID = 0x10)
+        cfg[0x48] = 0x10  # Cap ID: PCI Express
+        cfg[0x49] = 0x00  # Next cap: none
+        self._cfg_write16(cfg, 0x4A, 0x0002)  # PCIe cap: version 2, endpoint
+
+        # MSI capability at 0x50 (cap ID = 0x05)
+        # Not strictly needed but helps with capability walking
+        cfg[0x48 + 1] = 0x50  # Next -> MSI
+        cfg[0x50] = 0x05  # Cap ID: MSI
+        cfg[0x51] = 0x00  # Next cap: none
+
+        # Extended config space — REBAR capability
+        # At 0x200: Extended cap header
+        self._cfg_write32(cfg, self.REBAR_CAP_PTR,
+                          0x0015 |  # Cap ID: REBAR (0x15)
+                          (0x01 << 16) |  # Cap version: 1
+                          (0x000 << 20))  # Next cap: 0 (none)
+
+        # REBAR cap register (offset +4): supported sizes
+        # Bits [31:4] = supported sizes bitmap. Each bit N means size 2^(N+20) is supported.
+        # For BAR0: support from 1MB (bit 0) to 256MB (bit 8) = 0x1F0
+        self._cfg_write32(cfg, self.REBAR_CAP_PTR + 4, self.REBAR_SIZES_SUPPORTED)
+
+        # REBAR ctrl register (offset +8): BAR index + current size
+        # Bits [7:5] = BAR index (0), bits [12:8] = size (log2(size)-20)
+        # Default: BAR0 at 256MB = (8 << 8) | (0 << 5)
+        self._cfg_write32(cfg, self.REBAR_CAP_PTR + 8, (8 << 8) | (0 << 5))
+
+        # Initialize default GPU MMIO values
+        self._init_gpu_mmio()
+
+    def _init_gpu_mmio(self):
+        """Initialize default GPU MMIO register values (BAR5 register file)."""
+        # mmRCC_CONFIG_MEMSIZE (0xDE3 in dword units = 0x378C in byte offset)
+        # Reports VRAM size in MB. 256MB = 0x100
+        self._gpu_mmio[0xDE3] = 0x100  # 256 MB VRAM
+
+        # regSCRATCH_REG6: finalized state (0 = not finalized, needs full init)
+        # regSCRATCH_REG7: AM version (0 = not AM initialized, needs full init)
+        # These are typically at fixed offsets in the GC register block.
+        # For now, return 0 so AM does full init path.
+
+    def process_tlp(self, fmt_type, address, byte_en, data_value, regs):
+        """
+        Process a TLP and write completion data to MMIO registers.
+
+        Args:
+            fmt_type: TLP format/type from B210
+            address: 32-bit address from B218-B21B
+            byte_en: Byte enable from B217
+            data_value: Data from B220-B223 (for writes)
+            regs: Reference to HardwareState.regs dict for writing completions
+
+        Returns:
+            True if TLP was handled, False if unsupported
+        """
+        # Decode TLP type
+        is_write = (fmt_type & 0b01000000) != 0
+        is_cfg = (fmt_type & 0b00000100) != 0 or (fmt_type & 0b00000101) == 0x04
+        is_mem = (fmt_type & 0b00100000) != 0 or fmt_type in (0x20, 0x60)
+
+        if fmt_type in (0x04, 0x05):  # CfgRd0, CfgRd1
+            return self._handle_cfg_read(fmt_type, address, byte_en, regs)
+        elif fmt_type in (0x44, 0x45):  # CfgWr0, CfgWr1
+            return self._handle_cfg_write(fmt_type, address, byte_en, data_value, regs)
+        elif fmt_type == 0x20:  # MRd (memory read)
+            return self._handle_mem_read(address, byte_en, regs)
+        elif fmt_type == 0x60:  # MWr (memory write)
+            return self._handle_mem_write(address, byte_en, data_value, regs)
+        else:
+            if self.log:
+                print(f"[PCIe TLP] Unsupported TLP type: 0x{fmt_type:02X}")
+            # Return UR (Unsupported Request) completion
+            self._write_completion(regs, status=0x001, byte_count=0, has_data=False)
+            return True
+
+    def _decode_cfg_address(self, address):
+        """Decode config address into bus/dev/fn/reg."""
+        bus = (address >> 24) & 0xFF
+        dev = (address >> 19) & 0x1F
+        fn = (address >> 16) & 0x07
+        reg = address & 0xFFF
+        return bus, dev, fn, reg
+
+    def _get_config(self, bus, dev, fn):
+        """Get config space for a device, or None if device doesn't exist."""
+        return self._config.get((bus, dev, fn))
+
+    def _write_completion(self, regs, status=0, byte_count=4, has_data=True, data=0):
+        """
+        Write TLP completion to MMIO registers AND XDATA.
+
+        Completion data must be visible both through MMIO reads (firmware CPU)
+        and through E4 DMA reads (USB vendor commands). The regs dict is used
+        for MMIO callbacks, while XDATA is used for direct memory reads.
+
+        Args:
+            regs: HardwareState.regs dict
+            status: Completion status (0=SC, 1=UR, 2=CRS, 4=CA)
+            byte_count: Byte count field in completion header
+            has_data: True if completion has data (CplD vs Cpl)
+            data: 32-bit completion data (for reads)
+        """
+        # B284: Completion type byte
+        # Bit 0: has data (1=CplD, 0=Cpl) — used by firmware to determine direction
+        val_b284 = 0x01 if has_data else 0x00
+        regs[0xB284] = val_b284
+
+        # B22A-B22B: Completion header (big-endian 16-bit)
+        # Bits [15:13] = status, bits [11:0] = byte count
+        cpl_header = ((status & 0x7) << 13) | (byte_count & 0xFFF)
+        val_b22a = (cpl_header >> 8) & 0xFF
+        val_b22b = cpl_header & 0xFF
+        regs[0xB22A] = val_b22a
+        regs[0xB22B] = val_b22b
+
+        # B224-B227: Completion data (big-endian 32-bit) - alternate location read by tinygrad
+        # B220-B223: Completion data (big-endian 32-bit) - original location
+        if has_data:
+            b3 = (data >> 24) & 0xFF
+            b2 = (data >> 16) & 0xFF
+            b1 = (data >> 8) & 0xFF
+            b0 = data & 0xFF
+            regs[0xB220] = b3
+            regs[0xB221] = b2
+            regs[0xB222] = b1
+            regs[0xB223] = b0
+            # Also write to B224-B227 (tinygrad reads from here)
+            regs[0xB224] = b3
+            regs[0xB225] = b2
+            regs[0xB226] = b1
+            regs[0xB227] = b0
+
+        # B296: Set completion bit (bit 1)
+        regs[0xB296] = 0x02
+
+        # Also write to XDATA so E4 DMA reads can see the values
+        # (DMA reads bypass MMIO callbacks and read raw XDATA)
+        if self.hw and self.hw.memory:
+            xdata = self.hw.memory.xdata
+            xdata[0xB284] = val_b284
+            xdata[0xB22A] = val_b22a
+            xdata[0xB22B] = val_b22b
+            xdata[0xB296] = 0x02
+            if has_data:
+                xdata[0xB220] = b3
+                xdata[0xB221] = b2
+                xdata[0xB222] = b1
+                xdata[0xB223] = b0
+                xdata[0xB224] = b3
+                xdata[0xB225] = b2
+                xdata[0xB226] = b1
+                xdata[0xB227] = b0
+
+    def _handle_cfg_read(self, fmt_type, address, byte_en, regs):
+        """Handle CfgRd0/CfgRd1 TLP."""
+        bus, dev, fn, reg = self._decode_cfg_address(address)
+        cfg = self._get_config(bus, dev, fn)
+
+        if cfg is None:
+            # No device at this address — return UR
+            if self.log:
+                print(f"[PCIe TLP] CfgRd bus={bus} dev={dev} fn={fn} reg=0x{reg:03X} -> UR (no device)")
+            self._write_completion(regs, status=0x001, byte_count=4, has_data=True, data=0xFFFFFFFF)
+            return True
+
+        # Check for BAR sizing mode
+        key = (bus, dev, fn)
+        bar_sizing = self._bar_sizing.get(key, {})
+        aligned_reg = reg & ~0x3
+
+        # Read the register (aligned to 4 bytes)
+        if aligned_reg in bar_sizing and bar_sizing[aligned_reg]:
+            # BAR sizing mode: return size mask
+            bar_idx = (aligned_reg - 0x10) // 4
+            data = self._get_bar_size_mask(bus, dev, fn, bar_idx)
+        else:
+            data = self._cfg_read32(cfg, aligned_reg)
+
+        if self.log:
+            print(f"[PCIe TLP] CfgRd bus={bus} dev={dev} fn={fn} reg=0x{reg:03X} -> 0x{data:08X}")
+
+        # Completion for config reads always has byte_count=4
+        self._write_completion(regs, status=0, byte_count=4, has_data=True, data=data)
+        return True
+
+    def _handle_cfg_write(self, fmt_type, address, byte_en, data_value, regs):
+        """Handle CfgWr0/CfgWr1 TLP."""
+        bus, dev, fn, reg = self._decode_cfg_address(address)
+        cfg = self._get_config(bus, dev, fn)
+
+        if cfg is None:
+            if self.log:
+                print(f"[PCIe TLP] CfgWr bus={bus} dev={dev} fn={fn} reg=0x{reg:03X} -> UR (no device)")
+            self._write_completion(regs, status=0x001, byte_count=0, has_data=False)
+            return True
+
+        aligned_reg = reg & ~0x3
+        offset = reg & 0x3
+
+        if self.log:
+            print(f"[PCIe TLP] CfgWr bus={bus} dev={dev} fn={fn} reg=0x{reg:03X} val=0x{data_value:08X} be=0x{byte_en:02X}")
+
+        # Check if writing to a BAR register
+        key = (bus, dev, fn)
+        is_gpu = (bus == self.GPU_BUS and dev == 0 and fn == 0)
+
+        if is_gpu and 0x10 <= aligned_reg <= 0x24:
+            bar_idx = (aligned_reg - 0x10) // 4
+            # Write the value to config space
+            self._apply_byte_enable_write(cfg, aligned_reg, data_value, byte_en, offset)
+
+            # Check if all F's written — enter BAR sizing mode
+            written = self._cfg_read32(cfg, aligned_reg)
+            if written == 0xFFFFFFFF:
+                self._bar_sizing.setdefault(key, {})[aligned_reg] = True
+            else:
+                self._bar_sizing.setdefault(key, {})[aligned_reg] = False
+                # If a real address is being assigned, update BAR tracking
+                self._update_bar_assignment(bus, dev, fn, bar_idx, written)
+        elif is_gpu and aligned_reg == self.REBAR_CAP_PTR + 8:
+            # REBAR control write — update BAR0 size
+            self._apply_byte_enable_write(cfg, aligned_reg, data_value, byte_en, offset)
+            new_ctrl = self._cfg_read32(cfg, aligned_reg)
+            new_size_log2 = ((new_ctrl >> 8) & 0x1F) + 20  # Size = 2^(field + 20)
+            new_size = 1 << new_size_log2
+            self.BAR_CONFIGS[0]['size'] = new_size
+            if self.log:
+                print(f"[PCIe TLP] REBAR: BAR0 resized to {new_size >> 20}MB")
+        else:
+            # Generic config write with byte enables
+            self._apply_byte_enable_write(cfg, aligned_reg, data_value, byte_en, offset)
+
+        # Config writes return completion without data
+        self._write_completion(regs, status=0, byte_count=0, has_data=False)
+        return True
+
+    def _apply_byte_enable_write(self, cfg, aligned_reg, data_value, byte_en, offset):
+        """Apply a write with byte enables to config space."""
+        # byte_en is a 4-bit mask indicating which bytes to write
+        # For a 1-byte write at offset 2: byte_en = 0x04 (bit 2)
+        # For a 4-byte write: byte_en = 0x0F
+        # data_value is already shifted by tinygrad's pcie_prep_request
+        for i in range(4):
+            if byte_en & (1 << i):
+                cfg[aligned_reg + i] = (data_value >> (i * 8)) & 0xFF
+
+    def _get_bar_size_mask(self, bus, dev, fn, bar_idx):
+        """Get BAR size mask for BAR sizing probe (after writing 0xFFFFFFFF)."""
+        # Map bar register index to BAR_CONFIGS index
+        # bar_idx 0 -> BAR0, bar_idx 1 -> BAR0 upper, bar_idx 2 -> BAR2, etc.
+        bar_config_idx = None
+        for cfg_idx, cfg_val in self.BAR_CONFIGS.items():
+            if cfg_idx == bar_idx:
+                bar_config_idx = cfg_idx
+                break
+            if cfg_val.get('64bit') and cfg_idx + 1 == bar_idx:
+                # This is the upper 32 bits of a 64-bit BAR
+                return 0xFFFFFFFF  # Upper bits are all writable
+
+        if bar_config_idx is None:
+            return 0x00000000  # Unimplemented BAR
+
+        bar_cfg = self.BAR_CONFIGS[bar_config_idx]
+        size = bar_cfg['size']
+        flags = bar_cfg['flags']
+
+        # Size mask: ~(size - 1) | flags
+        mask = (~(size - 1)) & 0xFFFFFFFF
+        return mask | flags
+
+    def _update_bar_assignment(self, bus, dev, fn, bar_idx, value):
+        """Track BAR address assignment."""
+        for cfg_idx, cfg_val in self.BAR_CONFIGS.items():
+            if cfg_idx == bar_idx:
+                addr_lo = value & ~0xF  # Mask off flags
+                # For 64-bit BARs, we need the upper bits too
+                if cfg_val.get('64bit'):
+                    key = (bus, dev, fn)
+                    cfg = self._config[key]
+                    addr_hi = self._cfg_read32(cfg, 0x10 + (bar_idx + 1) * 4)
+                    addr = (addr_hi << 32) | addr_lo
+                else:
+                    addr = addr_lo
+
+                if addr and addr != 0xFFFFFFF0:
+                    if cfg_idx == 0:
+                        self._gpu_vram_base = addr
+                        if self.log:
+                            print(f"[PCIe TLP] BAR0 (VRAM) assigned: 0x{addr:016X} ({cfg_val['size'] >> 20}MB)")
+                    elif cfg_idx == 2:
+                        self._gpu_doorbell_base = addr
+                        if self.log:
+                            print(f"[PCIe TLP] BAR2 (doorbell) assigned: 0x{addr:016X}")
+                    elif cfg_idx == 5:
+                        self._gpu_mmio_base = addr
+                        if self.log:
+                            print(f"[PCIe TLP] BAR5 (MMIO) assigned: 0x{addr:08X}")
+                return
+
+    def _handle_mem_read(self, address, byte_en, regs):
+        """Handle MRd (memory read) TLP."""
+        data = self._read_gpu_mem(address)
+
+        if self.log:
+            print(f"[PCIe TLP] MRd addr=0x{address:08X} -> 0x{data:08X}")
+
+        # Determine byte count from byte_en
+        byte_count = bin(byte_en & 0xF).count('1') if byte_en else 4
+        self._write_completion(regs, status=0, byte_count=byte_count, has_data=True, data=data)
+        return True
+
+    def _handle_mem_write(self, address, byte_en, data_value, regs):
+        """Handle MWr (memory write) TLP."""
+        if self.log:
+            print(f"[PCIe TLP] MWr addr=0x{address:08X} val=0x{data_value:08X}")
+
+        self._write_gpu_mem(address, data_value, byte_en)
+
+        # Memory writes are posted — no completion needed
+        # But the ASM firmware expects B296 to signal completion
+        regs[0xB296] = 0x02
+        return True
+
+    def _read_gpu_mem(self, address):
+        """Read from GPU memory space (dispatched by BAR)."""
+        if self._gpu_mmio_base and address >= self._gpu_mmio_base:
+            offset = address - self._gpu_mmio_base
+            if offset < self.BAR_CONFIGS[5]['size']:
+                # BAR5 MMIO — register file is dword-indexed
+                dword_offset = offset >> 2
+                return self._gpu_mmio.get(dword_offset, 0)
+
+        if self._gpu_vram_base and address >= self._gpu_vram_base:
+            offset = address - self._gpu_vram_base
+            if offset < self.BAR_CONFIGS[0]['size']:
+                # BAR0 VRAM
+                if offset + 4 <= len(self._gpu_vram):
+                    return _struct.unpack_from('<I', self._gpu_vram, offset)[0]
+                return 0
+
+        if self._gpu_doorbell_base and address >= self._gpu_doorbell_base:
+            offset = address - self._gpu_doorbell_base
+            if offset < self.BAR_CONFIGS[2]['size']:
+                return 0  # Doorbell reads return 0
+
+        return 0xFFFFFFFF  # Unmapped
+
+    def _write_gpu_mem(self, address, value, byte_en=0x0F):
+        """Write to GPU memory space (dispatched by BAR)."""
+        if self._gpu_mmio_base and address >= self._gpu_mmio_base:
+            offset = address - self._gpu_mmio_base
+            if offset < self.BAR_CONFIGS[5]['size']:
+                dword_offset = offset >> 2
+                if byte_en == 0x0F:
+                    self._gpu_mmio[dword_offset] = value & 0xFFFFFFFF
+                else:
+                    # Partial write
+                    existing = self._gpu_mmio.get(dword_offset, 0)
+                    for i in range(4):
+                        if byte_en & (1 << i):
+                            existing = (existing & ~(0xFF << (i * 8))) | (((value >> (i * 8)) & 0xFF) << (i * 8))
+                    self._gpu_mmio[dword_offset] = existing
+                return
+
+        if self._gpu_vram_base and address >= self._gpu_vram_base:
+            offset = address - self._gpu_vram_base
+            if offset < self.BAR_CONFIGS[0]['size']:
+                # Grow VRAM backing store as needed
+                if offset + 4 > len(self._gpu_vram):
+                    new_size = min(offset + 0x100000, self.BAR_CONFIGS[0]['size'])
+                    self._gpu_vram.extend(b'\x00' * (new_size - len(self._gpu_vram)))
+                if offset + 4 <= len(self._gpu_vram):
+                    _struct.pack_into('<I', self._gpu_vram, offset, value & 0xFFFFFFFF)
+                return
+
+        if self._gpu_doorbell_base and address >= self._gpu_doorbell_base:
+            offset = address - self._gpu_doorbell_base
+            if offset < self.BAR_CONFIGS[2]['size']:
+                return  # Doorbell writes are consumed (trigger queue processing)
+
+
 @dataclass
 class HardwareState:
     """
@@ -912,6 +1463,9 @@ class HardwareState:
     # This would contain the data that would be read from the NVMe device
     pcie_memory: Dict[int, int] = field(default_factory=dict)
 
+    # PCIe TLP engine — emulates downstream PCIe topology
+    pcie_tlp: 'PCIeTLPEngine' = None
+
     # ============================================
     # SPI Flash Emulation
     # The ASM2464PD has a SPI flash chip for firmware storage.
@@ -939,6 +1493,8 @@ class HardwareState:
         self._setup_callbacks()
         # Create USB controller after self is initialized
         self.usb_controller = USBController(self)
+        # Create PCIe TLP engine for downstream device emulation
+        self.pcie_tlp = PCIeTLPEngine(log=self.log_pcie, hw=self)
 
     def _init_registers(self):
         """
@@ -1417,38 +1973,65 @@ class HardwareState:
     def _pcie_status_read(self, hw: 'HardwareState', addr: int) -> int:
         """
         PCIe status read at 0xB296.
-        Multiple code paths check different bits:
-        - 0xE3A7 checks bit 2 (JNB ACC.2)
-        - 0xBFE6 checks bit 1 (ANL #0x02)
-        Return value with both bits set after polling.
+        Returns current value — completion bits are set by TLP engine
+        or DMA trigger callbacks.
         """
-        # Count reads and set completion bits after some polls
-        if not hasattr(self, '_pcie_read_count'):
-            self._pcie_read_count = 0
-        self._pcie_read_count += 1
-
-        # Return current value with completion bits OR'd in after 5 reads
-        value = self.regs.get(addr, 0x00)
-        if self._pcie_read_count >= 5:
-            value |= 0x06  # Set bits 1 and 2
-        return value
+        return self.regs.get(addr, 0x00)
 
     def _pcie_trigger_write(self, hw: 'HardwareState', addr: int, value: int):
-        """PCIe trigger - set complete status (bit 2)."""
-        self.regs[0xB296] = 0x06  # bit 1 + bit 2 = complete
+        """
+        PCIe trigger at 0xB254.
+        When firmware writes 0x0F here, it means "send the TLP described by
+        B210/B217/B218-B21F/B220-B223 on the PCIe link."
+
+        We intercept this and process the TLP through our emulated PCIe topology.
+        """
+        print(f"[{self.cycles:8d}] [PCIe] B254 write = 0x{value:02X}")
+        self.regs[addr] = value
+
+        if value == 0x0F and self.pcie_tlp:
+            # Read TLP parameters from MMIO registers
+            fmt_type = self.regs.get(0xB210, 0)
+            byte_en = self.regs.get(0xB217, 0)
+
+            # Address (big-endian 4 bytes at B218-B21B)
+            addr_bytes = bytes([
+                self.regs.get(0xB218, 0),
+                self.regs.get(0xB219, 0),
+                self.regs.get(0xB21A, 0),
+                self.regs.get(0xB21B, 0),
+            ])
+            address = _struct.unpack('>I', addr_bytes)[0]
+
+            # Data (big-endian 4 bytes at B220-B223)
+            data_bytes = bytes([
+                self.regs.get(0xB220, 0),
+                self.regs.get(0xB221, 0),
+                self.regs.get(0xB222, 0),
+                self.regs.get(0xB223, 0),
+            ])
+            data_value = _struct.unpack('>I', data_bytes)[0]
+
+            # Process TLP through engine
+            self.pcie_tlp.process_tlp(fmt_type, address, byte_en, data_value, self.regs)
+        else:
+            # Legacy behavior for non-TLP triggers
+            self.regs[0xB296] = 0x06  # bit 1 + bit 2 = complete
 
     def _pcie_dma_trigger(self, hw: 'HardwareState', addr: int, value: int):
         """
-        PCIe DMA trigger at 0xB296.
+        PCIe status/DMA trigger at 0xB296.
 
-        When value 0x08 is written, this triggers a PCIe DMA transfer for E4/E5 commands.
-        - E4 (read): Copy from XDATA to USB buffer (for host to read)
-        - E5 (write): Write value from CDB to XDATA
-
-        The target address comes from the CDB in USB registers 0x910F-0x9111.
-        For E4, 0x910E contains the size to read.
-        For E5, 0x910E contains the value to write (single byte).
+        Write behavior depends on value:
+        - 0x04: Write-to-clear status bits (from tinygrad's pcie_prep_request)
+        - 0x08: E4/E5 DMA trigger (from firmware command handler)
+        - Other: Write-to-clear (standard PCIe status register behavior)
         """
+        if value == 0x04:
+            # Write-to-clear: clear bit 2 (and any bits that are set in value)
+            self.regs[addr] = self.regs.get(addr, 0) & ~value
+            return
+
         self.regs[addr] = value
 
         # Value 0x08 is the E4/E5 DMA trigger
@@ -1470,17 +2053,22 @@ class HardwareState:
                 if self.log_pcie:
                     print(f"[{self.cycles:8d}] [PCIe] E5 WRITE: 0x{write_value:02X} -> XDATA[0x{xdata_addr:04X}]")
 
-                # Perform the write
+                # Perform the write - use write_xdata to trigger MMIO hooks
+                # (e.g., writing to B254 triggers PCIe TLP processing,
+                #  writing to B296 does W1C status clearing)
                 if self.memory:
-                    self.memory.xdata[xdata_addr] = write_value
+                    self.memory.write_xdata(xdata_addr, write_value)
 
-                # Signal completion
-                self.regs[0xB296] = 0x06  # PCIe DMA complete (bits 1+2)
+                # DON'T set B296 here - E5 is just a byte write to XDATA.
+                # If the target was B254, the TLP engine already set B296.
+                # If the target was B296, the W1C handler already processed it.
+                # Setting B296=0x06 here would clobber those results.
 
                 # Clear command pending after successful write
                 if self.usb_cmd_pending:
                     self.usb_cmd_pending = False
-                    print(f"[{self.cycles:8d}] [PCIe] E5 command completed")
+                    if self.log_pcie:
+                        print(f"[{self.cycles:8d}] [PCIe] E5 command completed")
 
             else:
                 # E4 READ: Copy from XDATA to USB buffer
@@ -1525,7 +2113,13 @@ class HardwareState:
                 # E4 command: read from chip's XDATA memory
                 # Address format: 0x50XXXX -> XDATA[XXXX]
                 xdata_addr = (source_addr + i) & 0xFFFF
-                value = self.memory.xdata[xdata_addr]
+                # For MMIO addresses, use hw.read() which checks read_callbacks
+                # then falls back to self.regs (where TLP completion data lives).
+                # For non-MMIO addresses, read from raw XDATA.
+                if xdata_addr in self.memory.xdata_read_hooks:
+                    value = self.read(xdata_addr)
+                else:
+                    value = self.memory.xdata[xdata_addr]
             else:
                 # PCIe memory read (e.g., NVMe config space)
                 pcie_addr = source_addr + i
@@ -1746,12 +2340,12 @@ class HardwareState:
             if self.usb_ce89_read_count >= 3:
                 value |= 0x01
 
-            # Bit 1 - E5 path control
-            # At 0x1862: jb acc.1, 0x1884 - if bit 1 SET, take E5 path
-            # For E5 commands, we SET bit 1 to direct firmware to the E5 handler
-            # For E4 commands, we keep bit 1 CLEAR to take the E4 path
-            if self.usb_cmd_type == 0xE5:
-                value |= 0x02  # Set bit 1 for E5 path
+            # Bit 1 - E4/E5 path control
+            # At 0x1862: jb acc.1, 0x1884 - if bit 1 SET, jump to 0x1884 (E4 read handler)
+            # If bit 1 CLEAR, fall through to E5 write DMA setup (0x1865+)
+            # So: E5 (write) -> bit 1 CLEAR, E4 (read) -> bit 1 SET
+            if self.usb_cmd_type == 0xE4:
+                value |= 0x02  # Set bit 1 for E4 read path
 
             # Bit 2 - DMA/transfer busy status
             # SET during counts 5-14 to allow state transitions
@@ -2301,6 +2895,18 @@ class HardwareState:
         self.usb_hs_config_from_rom = bytes(desc_usb2)
         print(f"[USB] Loaded USB2 config descriptor from ROM: {total_len_usb2} bytes (wTotalLength: {old_len_usb2} -> {total_len_usb2})")
 
+    def _find_device_descriptor_in_rom(self):
+        """Scan ROM for a valid USB device descriptor (bLength=18, bDescriptorType=1, VID=174C)."""
+        if not self.memory:
+            return None
+        code = self.memory.code
+        for off in range(len(code) - 18):
+            if code[off] == 0x12 and code[off + 1] == 0x01:
+                vid = code[off + 8] | (code[off + 9] << 8)
+                if vid == 0x174C:
+                    return off
+        return None
+
     def _extend_config_descriptor(self, base_desc: bytearray, requested_len: int) -> bytes:
         """Return config descriptor appropriate for current USB speed.
 
@@ -2450,11 +3056,40 @@ class HardwareState:
             print(f"[{self.cycles:8d}] [USB] Descriptor DMA trigger (0x9092=0x01): src=0x{dma_src_addr:04X} len={dma_len}")
 
             if self.memory and dma_src_addr > 0 and dma_len > 0:
-                # Firmware specified a code ROM address - DMA from there
-                desc_data = bytes(self.memory.code[dma_src_addr:dma_src_addr + dma_len])
+                # Check if this is a config descriptor request with stale DMA address
+                # The firmware sometimes leaves 905B/905C with values from other DMA ops
+                usb_ctrl = getattr(self, 'usb_controller', None)
+                _desc_type = None
+                if usb_ctrl and usb_ctrl.pending_descriptor_request:
+                    _desc_type = usb_ctrl.pending_descriptor_request.get('type', None)
+
+                if _desc_type == 0x02 and (self.usb_hs_config_from_rom or self.usb_ss_config_from_rom):
+                    # Config descriptor - use pre-loaded ROM descriptor instead of stale DMA addr
+                    desc_data = self._extend_config_descriptor(bytearray(), dma_len)
+                    print(f"[{self.cycles:8d}] [USB] Using ROM config descriptor (stale DMA addr 0x{dma_src_addr:04X} ignored)")
+                elif _desc_type == 0x01:
+                    # Device descriptor - firmware DMA address may be stale/wrong (e.g. 0xE400
+                    # instead of 0x0627). Validate by checking if target looks like a device
+                    # descriptor (starts with 0x12 0x01). If not, scan ROM for correct address.
+                    probe = bytes(self.memory.code[dma_src_addr:dma_src_addr + 2]) if dma_src_addr + 2 <= len(self.memory.code) else b''
+                    if probe == b'\x12\x01':
+                        desc_data = bytes(self.memory.code[dma_src_addr:dma_src_addr + dma_len])
+                        print(f"[{self.cycles:8d}] [USB] DMA'd device descriptor from code 0x{dma_src_addr:04X}: {desc_data[:min(32, len(desc_data))].hex()}")
+                    else:
+                        # Scan ROM for device descriptor with VID 0x174C
+                        dev_desc_addr = self._find_device_descriptor_in_rom()
+                        if dev_desc_addr is not None:
+                            desc_data = bytes(self.memory.code[dev_desc_addr:dev_desc_addr + dma_len])
+                            print(f"[{self.cycles:8d}] [USB] Using ROM device descriptor at 0x{dev_desc_addr:04X} (stale DMA addr 0x{dma_src_addr:04X} ignored): {desc_data[:min(32, len(desc_data))].hex()}")
+                        else:
+                            desc_data = bytes(self.memory.code[dma_src_addr:dma_src_addr + dma_len])
+                            print(f"[{self.cycles:8d}] [USB] DMA'd {len(desc_data)} bytes from code 0x{dma_src_addr:04X} to 0x8000: {desc_data[:min(32, len(desc_data))].hex()}")
+                else:
+                    # Firmware specified a code ROM address - DMA from there
+                    desc_data = bytes(self.memory.code[dma_src_addr:dma_src_addr + dma_len])
+                    print(f"[{self.cycles:8d}] [USB] DMA'd {len(desc_data)} bytes from code 0x{dma_src_addr:04X} to 0x8000: {desc_data[:min(32, len(desc_data))].hex()}")
                 for i, b in enumerate(desc_data):
                     self.memory.xdata[0x8000 + i] = b
-                print(f"[{self.cycles:8d}] [USB] DMA'd {len(desc_data)} bytes from code 0x{dma_src_addr:04X} to 0x8000: {desc_data[:min(32, len(desc_data))].hex()}")
             elif dma_src_addr == 0 and dma_len > 0:
                 # Firmware set src to 0 - DMA from EP0 buffer at 0x9E00 where firmware wrote data
                 # Check if we have captured config descriptor (firmware writes it but then corrupts)
@@ -2727,8 +3362,10 @@ class HardwareState:
                 target_addr = (addr_hi << 8) | addr_lo
 
                 if data != 0xFF and target_addr > 0:
-                    if self.memory and target_addr < 0x6000:
-                        self.memory.xdata[target_addr] = data
+                    if self.memory:
+                        # Use write_xdata for ALL addresses to trigger MMIO hooks
+                        # (e.g., writing to B254 triggers PCIe TLP processing)
+                        self.memory.write_xdata(target_addr, data)
                         self._e5_dma_done = True
                         self.usb_cmd_pending = False  # E5 command complete
                         self.usb_cmd_type = 0  # Reset command type
@@ -3101,10 +3738,70 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
     # ============================================
     # Proxy Mode Hooks (real hardware via UART)
     # ============================================
-    def make_proxy_read_hook(proxy_ref, hw_ref):
-        """Create a read hook that proxies to real hardware."""
+    # MMIO read cache for the main polling loop registers.
+    # Only caches specific registers that are safe to cache:
+    # - They only change on rare events (interrupt-generating)
+    # - The firmware polls them repeatedly in the main loop
+    # - Caching them avoids ~10 UART round-trips per loop iteration
+    #
+    # USB registers (0x9000-0x93FF) are NEVER cached because the firmware
+    # polls them waiting for real-time hardware state changes (e.g. 0x9091
+    # changes when USB host sends setup packets).
+    #
+    # Cache is invalidated on: interrupt, write to cached address, or TTL expiry.
+    import time as _time
+    proxy_cache = {}          # addr -> cached value
+    _cache_last_invalidate = [_time.monotonic()]
+    CACHE_TTL_SECONDS = 0.1   # Invalidate entire cache every 100ms
+
+    # Registers safe to cache: ONLY registers with read-modify-writeback patterns that
+    # don't change between firmware reads. USB/interrupt registers must NEVER be cached:
+    #   - 0x9091 changes in real-time when host sends setup packets (discovery #8)
+    #   - 0x9000, 0x9101, 0xC802 etc. change on USB events
+    #   - Too much caching starves UART traffic, blocking interrupt delivery (discovery #9)
+    CACHEABLE_ADDRS = frozenset([
+        0xE716,  # REG_LINK_STATUS_E716 - link status, read-modify-write
+        0x92F7,  # REG_POWER_STATUS_92F7 - power status, polled
+        0xC520,  # REG_NVME_LINK_STATUS - NVMe link, polled
+        0xC655,  # REG_PHY_CFG_C655 - PHY config (read-modify-writeback, value doesn't change)
+        0xC620,  # PHY config (read-modify-writeback, value doesn't change)
+        0xCD31,  # REG_CPU_TIMER_CTRL_CD31 - timer control, polled
+        0xCEF3,  # REG_CPU_LINK_CEF3 - CPU link status, polled
+    ])
+
+    def proxy_cache_invalidate():
+        """Invalidate all cached MMIO reads (called on interrupt or write)."""
+        proxy_cache.clear()
+        _cache_last_invalidate[0] = _time.monotonic()
+
+    # Store invalidation function on hw so emulator can call it from interrupt handler
+    hw._proxy_cache_invalidate = proxy_cache_invalidate
+
+    def make_proxy_read_hook(proxy_ref, hw_ref, cache, cacheable):
+        """Create a read hook that proxies to real hardware with selective caching."""
         def hook(addr):
+            # Time-based cache invalidation (catches missed interrupts)
+            now = _time.monotonic()
+            if now - _cache_last_invalidate[0] > CACHE_TTL_SECONDS:
+                cache.clear()
+                _cache_last_invalidate[0] = now
+
+            if addr in cache:
+                value = cache[addr]
+                if proxy_ref.debug >= 2:
+                    pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
+                    cyc = hw_ref.cycles
+                    reg_name = get_register_name(addr)
+                    if reg_name:
+                        print(f"[{cyc:8d}] PC=0x{pc:04X} Read  0x{addr:04X} = 0x{value:02X}  {reg_name} (cached)")
+                    else:
+                        print(f"[{cyc:8d}] PC=0x{pc:04X} Read  0x{addr:04X} = 0x{value:02X} (cached)")
+                return value
+
             value = proxy_ref.read(addr)
+            # Only cache if this register is in the safe-to-cache set
+            if addr in cacheable:
+                cache[addr] = value
             if proxy_ref.debug >= 2:
                 pc = hw_ref._cpu_ref.pc if hw_ref._cpu_ref else 0
                 cyc = hw_ref.cycles
@@ -3116,11 +3813,19 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
             return value
         return hook
 
-    def make_proxy_write_hook(proxy_ref, hw_ref):
+    def make_proxy_write_hook(proxy_ref, hw_ref, cache):
         """Create a write hook that proxies to real hardware."""
         # Shadow 0x9E00 buffer header to detect device descriptor
         ep0_shadow = {}
         def hook(addr, value):
+            # Only invalidate cache if the written value differs from cached.
+            # This avoids unnecessary UART reads after read-modify-writeback of same value
+            # (e.g. C655/C620 in the main polling loop).
+            if addr in cache and cache[addr] == value:
+                pass  # Keep cache valid - value didn't change
+            else:
+                cache.pop(addr, None)
+
             # Track writes to USB EP0 buffer header bytes
             if 0x9E00 <= addr <= 0x9E01:
                 ep0_shadow[addr] = value
@@ -3150,9 +3855,9 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
     # Select hooks based on proxy mode
     if proxy is not None:
         # Proxy mode - MMIO goes to real hardware (except certain ranges)
-        print(f"[HW] Using UART proxy for MMIO access")
-        proxy_read_hook = make_proxy_read_hook(proxy, hw)
-        proxy_write_hook = make_proxy_write_hook(proxy, hw)
+        print(f"[HW] Using UART proxy for MMIO access (caching {len(CACHEABLE_ADDRS)} registers, TTL={CACHE_TTL_SECONDS}s)")
+        proxy_read_hook = make_proxy_read_hook(proxy, hw, proxy_cache, CACHEABLE_ADDRS)
+        proxy_write_hook = make_proxy_write_hook(proxy, hw, proxy_cache)
         emu_read_hook = make_read_hook(hw)
         emu_write_hook = make_write_hook(hw)
         
@@ -3166,6 +3871,11 @@ def create_hardware_hooks(memory: 'Memory', hw: HardwareState, proxy: 'UARTProxy
                 return True
             # CPU interrupt/DMA control - may cause reset when written via proxy
             if addr == 0xCC81:
+                return True
+            # USB endpoint data buffer (0xD800-0xDFFF) - bus hangs when USB DMA active
+            # Proxy firmware also blocks these (is_dangerous_addr), but emulate locally
+            # to provide proper hardware emulation for USB DMA operations
+            if 0xD800 <= addr <= 0xDFFF:
                 return True
             # Check user-specified mask ranges
             for mask_start, mask_end in proxy_mask:
