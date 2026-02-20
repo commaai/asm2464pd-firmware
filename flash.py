@@ -2,6 +2,7 @@
 
 import sys
 import struct
+import zlib
 
 from tinygrad.helpers import getenv
 from tinygrad.runtime.support.usb import USB3
@@ -24,6 +25,23 @@ if dev is None:
 
 with open(sys.argv[1], 'rb') as infile:
    fw = bytearray(infile.read())
+
+# E3 expects wrapped format: body_len(4 LE) + body + magic(0xA5) + checksum(1) + crc32(4 LE)
+# If input is raw firmware (starts with LJMP 0x02), wrap it; if already wrapped, use as-is
+if fw[0] == 0x02:
+  # Raw firmware - wrap it
+  body = bytes(fw)
+  checksum = sum(body) & 0xff
+  crc = zlib.crc32(body) & 0xFFFFFFFF
+  fw = bytearray(len(body).to_bytes(4, 'little') + body + bytes([0xA5, checksum]) + crc.to_bytes(4, 'little'))
+  print(f"Wrapped raw firmware ({len(body)} byte body -> {len(fw)} bytes)")
+else:
+  # Verify wrapped format
+  body_len = int.from_bytes(fw[:4], 'little')
+  if body_len + 10 == len(fw) and fw[4] == 0x02 and fw[4 + body_len] == 0xA5:
+    print(f"Using wrapped firmware ({body_len} byte body, {len(fw)} bytes total)")
+  else:
+    print(f"WARNING: Unrecognized firmware format (size={len(fw)}, first byte=0x{fw[0]:02x})")
 
 part1 = fw[:0xff00]
 part2 = fw[0xff00:]
