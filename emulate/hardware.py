@@ -1619,9 +1619,24 @@ class HardwareState:
         # Flash buffer is handled as regular XDATA, not MMIO.
 
         # ============================================
-        # Debug/Command Engine Registers (0xE4xx)
+        # Command Engine Registers (0xE400-0xE41F)
         # ============================================
+        self.regs[0xE400] = 0x00  # CMD_CTRL - command control
+        self.regs[0xE402] = 0x00  # CMD_STATUS - bit 3 = busy (0 = idle)
+        self.regs[0xE403] = 0x00  # CMD_CTRL_E403
+        self.regs[0xE404] = 0x00  # CMD_CFG_E404
+        self.regs[0xE405] = 0x00  # CMD_CFG_E405
+        self.regs[0xE409] = 0x00  # CMD_CTRL_E409
+        self.regs[0xE40A] = 0x00  # CMD_CFG_E40A
+        self.regs[0xE40B] = 0x00  # CMD_CONFIG
+        self.regs[0xE40D] = 0x00  # CMD_CFG_E40D
+        self.regs[0xE40E] = 0x00  # CMD_CFG_E40E
         self.regs[0xE40F] = 0x00  # PD event type (for debug output)
+        self.regs[0xE410] = 0x00  # PHY_INT_STATUS
+        self.regs[0xE411] = 0x00  # CMD_CFG_E411
+        self.regs[0xE412] = 0x00  # CMD_CFG_E412
+        self.regs[0xE413] = 0x00  # CMD_CFG_E413
+        self.regs[0xE41C] = 0x00  # CMD_BUSY_STATUS
         self.regs[0xE410] = 0x00  # PD sub-event (for debug output)
         self.regs[0xE41C] = 0x00  # Command engine status
 
@@ -1802,7 +1817,8 @@ class HardwareState:
         #   XDATA 0xE423 → Code ROM 0x0627 (device descriptor)
         #   XDATA 0xE437 → Code ROM 0x063B (language ID)
         #   XDATA 0xE6xx → Code ROM 0x08xx (additional descriptors)
-        for addr in range(0xE400, 0xE700):
+        # NOTE: E400-E41F are command engine hardware registers, not ROM mirror!
+        for addr in range(0xE420, 0xE700):
             self.read_callbacks[addr] = self._flash_rom_mirror_read
 
     # ============================================
@@ -1848,18 +1864,17 @@ class HardwareState:
         Check if PC matches a trace point and log if enabled.
 
         Returns the label if a trace point was hit, else None.
+        Performance: called every instruction, must be fast when disabled.
         """
+        # Fast path: tracing disabled (common case)
         if not self.trace_enabled:
             return None
 
-        if pc in self.trace_points:
-            label = self.trace_points[pc]
+        label = self.trace_points.get(pc)
+        if label is not None:
             print(f"[{self.cycles:8d}] [TRACE] 0x{pc:04X}: {label}")
-
-            # Call custom callback if registered
             if self.trace_callback:
                 self.trace_callback(self, pc, label)
-
             return label
         return None
 
@@ -3583,87 +3598,81 @@ class HardwareState:
     # Tick - Advance Hardware State
     # ============================================
     def tick(self, cycles: int, cpu=None):
-        """Advance hardware state by cycles."""
+        """Advance hardware state by cycles.
+
+        Performance: this is called every instruction (~300K/s).
+        The fast path (no events pending) should do minimal work.
+        """
         self.cycles += cycles
 
         # In proxy mode, skip all fake USB/interrupt injection
-        # Real hardware handles everything
         if self.proxy_mode:
             return
 
-        # USB plug-in event after delay
-        # Skip if a USB command is already pending to avoid interfering with it
-        if not self.usb_connected and self.cycles > self.usb_connect_delay and not self.usb_cmd_pending:
-            self.usb_connected = True
-            print(f"\n[{self.cycles:8d}] [HW] === USB PLUG-IN EVENT ===")
-
-            # Update USB hardware registers via USBController
-            self.usb_controller.connect()
-
-            # Set NVMe queue busy - triggers the usb_ep_loop_180d(1) call
-            self.regs[0xC471] = 0x01  # Bit 0 - queue busy
-
-            # Re-enable PD task path by setting 0x91C0 bit 1
-            # The firmware clears this at 0xCA8B during init, but we need it set
-            # for the main loop at 0x2027 to call the PD task at 0x0322
-            self.regs[0x91C0] = 0x02  # Bit 1 - enables PD task in main loop
-
-            # Set PD interrupt pending - this triggers the PD handler
-            # Bit 2 (0x04) is the fallback path at 0x9354 when 0x0A9D != 0x01/0x02
-            # Bit 3 (0x08) is for port 1 when 0x0A9D == 0x01
-            self.regs[0xCA0D] = 0x0C  # Bits 2+3 - PD interrupt (covers both paths)
-            self.regs[0xCA0E] = 0x04  # Bit 2 - PD interrupt for port 2
-
-            # Set debug trigger
-            self.regs[0xC80A] = 0x40  # Bit 6 - triggers PD debug output at 0x935E
-
-            # Set PD event info for debug output
-            # These are read by 0xAE89 to print [PD_int:XX:XX] and determine message type
-            self.regs[0xE40F] = 0x01  # PD event type (bit 0 = Source_Cap)
-            self.regs[0xE410] = 0x00  # PD sub-event
-
-            print(f"[{self.cycles:8d}] [HW] USB: 0x9000=0x81, C802=0x05, C471=0x01, CA0D=0x0C, E40F=0x01")
-            print(f"[{self.cycles:8d}] [HW] USB state machine: firmware will poll 0xCE89 to transition states")
-
-            # Trigger External Interrupt 0 to invoke the interrupt handler at 0x0E33
-            # This requires IE register (0xA8) to have EA (bit 7) and EX0 (bit 0) set
-            if cpu:
-                # Enable global interrupts (EA) and EX0 in IE register
-                ie = self.memory.read_sfr(0xA8) if self.memory else 0
-                ie |= 0x81  # EA (bit 7) + EX0 (bit 0)
-                if self.memory:
-                    self.memory.write_sfr(0xA8, ie)
-                cpu._ext0_pending = True
-                print(f"[{self.cycles:8d}] [HW] Triggered EX0 interrupt (IE=0x{ie:02X})")
-
-        # Periodic timer interrupt
-        if self.cycles % 1000 == 0:
-            self.regs[0xC806] |= 0x01
-
-        # Inject USB command after USB connected and additional delay
-        # Only inject if usb_inject_cmd was set (via --usb-cmd option)
-        if self.usb_connected and not self.usb_injected and self.usb_inject_cmd:
-            if self.cycles > self.usb_connect_delay + self.usb_inject_delay:
-                self.usb_injected = True
-                cmd_type, addr, val_or_size = self.usb_inject_cmd
-                print(f"\n[{self.cycles:8d}] [HW] === INJECTING USB COMMAND ===")
-                if cmd_type == 0xE4:
-                    self.inject_usb_command(0xE4, addr, size=val_or_size)
-                elif cmd_type == 0xE5:
-                    self.inject_usb_command(0xE5, addr, value=val_or_size)
-                else:
-                    print(f"[HW] Unknown USB command type: 0x{cmd_type:02X}")
-
-        # Trigger EX0 interrupt after USB command injection
-        if hasattr(self, '_pending_usb_interrupt') and self._pending_usb_interrupt and cpu:
+        # Fast path: most ticks have nothing to do.
+        # Check pending events with minimal overhead.
+        # _pending_usb_interrupt is the most common event after init.
+        if getattr(self, '_pending_usb_interrupt', False) and cpu:
             self._pending_usb_interrupt = False
-            # Enable global interrupts (EA) and EX0 in IE register
             ie = self.memory.read_sfr(0xA8) if self.memory else 0
             ie |= 0x81  # EA (bit 7) + EX0 (bit 0)
             if self.memory:
                 self.memory.write_sfr(0xA8, ie)
             cpu._ext0_pending = True
             print(f"[{self.cycles:8d}] [HW] Triggered EX0 interrupt for USB command (IE=0x{ie:02X})")
+            return
+
+        # USB plug-in event after delay
+        if not self.usb_connected and self.cycles > self.usb_connect_delay and not self.usb_cmd_pending:
+            self._do_usb_connect(cpu)
+            return
+
+        # Inject USB command after USB connected and additional delay
+        if self.usb_connected and not self.usb_injected and self.usb_inject_cmd:
+            if self.cycles > self.usb_connect_delay + self.usb_inject_delay:
+                self._do_usb_inject()
+
+        # Periodic timer interrupt (every 1000 cycles)
+        if self.cycles % 1000 == 0:
+            self.regs[0xC806] |= 0x01
+
+    def _do_usb_connect(self, cpu):
+        """Handle USB plug-in event (called once from tick)."""
+        self.usb_connected = True
+        print(f"\n[{self.cycles:8d}] [HW] === USB PLUG-IN EVENT ===")
+
+        self.usb_controller.connect()
+
+        self.regs[0xC471] = 0x01
+        self.regs[0x91C0] = 0x02
+        self.regs[0xCA0D] = 0x0C
+        self.regs[0xCA0E] = 0x04
+        self.regs[0xC80A] = 0x40
+        self.regs[0xE40F] = 0x01
+        self.regs[0xE410] = 0x00
+
+        print(f"[{self.cycles:8d}] [HW] USB: 0x9000=0x81, C802=0x05, C471=0x01, CA0D=0x0C, E40F=0x01")
+        print(f"[{self.cycles:8d}] [HW] USB state machine: firmware will poll 0xCE89 to transition states")
+
+        if cpu:
+            ie = self.memory.read_sfr(0xA8) if self.memory else 0
+            ie |= 0x81
+            if self.memory:
+                self.memory.write_sfr(0xA8, ie)
+            cpu._ext0_pending = True
+            print(f"[{self.cycles:8d}] [HW] Triggered EX0 interrupt (IE=0x{ie:02X})")
+
+    def _do_usb_inject(self):
+        """Handle USB command injection (called once from tick)."""
+        self.usb_injected = True
+        cmd_type, addr, val_or_size = self.usb_inject_cmd
+        print(f"\n[{self.cycles:8d}] [HW] === INJECTING USB COMMAND ===")
+        if cmd_type == 0xE4:
+            self.inject_usb_command(0xE4, addr, size=val_or_size)
+        elif cmd_type == 0xE5:
+            self.inject_usb_command(0xE5, addr, value=val_or_size)
+        else:
+            print(f"[HW] Unknown USB command type: 0x{cmd_type:02X}")
 
 
 

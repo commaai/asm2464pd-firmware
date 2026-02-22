@@ -201,6 +201,7 @@
 #define REG_USB_CONFIG          XDATA_REG8(0x9002)
 #define   USB_CONFIG_MASK        0x0F  // Bits 0-3: USB configuration value
 #define   USB_CONFIG_BIT1        0x02  // Bit 1: Must be CLEAR to reach 0x9091 check at 0xCDF5
+#define   USB_CONFIG_MSC_INIT    0xE0  // MSC engine init value (stock 0xB203; partially volatile)
 #define REG_USB_EP0_STATUS      XDATA_REG8(0x9003)
 #define REG_USB_EP0_LEN_L       XDATA_REG8(0x9004)  /* EP0 transfer length low byte */
 #define REG_USB_EP0_LEN_H       XDATA_REG8(0x9005)  /* EP0 transfer length high byte */
@@ -444,9 +445,20 @@
  */
 #define REG_USB_SW_DMA_TRIGGER  XDATA_REG8(0x90E1)
 /*
- * USB Mode / EP Control (0x90E2)
- * Read-modify-writeback in CBW handler. Controls endpoint mode.
- * Set to 0x01 during hw_init. Written back unchanged in ISR.
+ * MSC Engine Gate Register (0x90E2)
+ * CRITICAL for C42C bulk IN to work. Acts as a gate in the stock ISR:
+ *   - Stock ISR checks 90E2 bit 0 before processing CBW_RECEIVED (9101 bit 6)
+ *   - If 90E2=0, ISR exits without processing CBW (first pass)
+ *   - 90E2 gets set to 0x01 via the EP_COMPLETE (bit 5) → 9096 path
+ *   - On second ISR entry, 90E2=1, CBW processing proceeds
+ *
+ * Written to 0x01 during:
+ *   - MSC engine init at 0xB20C (stock 0xB1C5 function)
+ *   - ISR CBW second-pass entry at 0x1023/0x100D
+ *
+ * Volatile: does NOT retain value after hardware processing.
+ * Must be written at the right time relative to C42C and hardware state.
+ * Reading it back after C42C or DMA operations may return 0x00.
  */
 #define REG_USB_MODE            XDATA_REG8(0x90E2)
 #define REG_USB_EP_STATUS_90E3  XDATA_REG8(0x90E3)
@@ -665,7 +677,7 @@
  */
 #define REG_POWER_ENABLE        XDATA_REG8(0x92C0)
 #define   POWER_ENABLE_BIT        0x01  // Bit 0: Main power enable
-#define   POWER_ENABLE_MAIN       0x80  // Bit 7: Main power on
+#define   POWER_ENABLE_MAIN       0x80  // Bit 7: Main power on (set during MSC init at 0xB1C5)
 /*
  * Clock Enable / PHY Clock Control (0x92C1)
  * Bit 4 toggled (set then clear) in full 91D1 bit 3 handler during
@@ -711,19 +723,35 @@
  */
 #define REG_POWER_POLL_92FB     XDATA_REG8(0x92FB)
 
-// Buffer config registers (0x9300-0x93FF)
+/*
+ * Buffer Config Registers (0x9300-0x9305)
+ * Configure MSC/bulk DMA buffer parameters.
+ *
+ * Stock MSC engine init (0xB1C5) writes:
+ *   9300 = 0x0C  (volatile — doesn't retain after HW processing)
+ *   9301 = 0xC0  (volatile)
+ *   9302 = 0xBF  (volatile)
+ *   9303 = 0x33  (retains value)
+ *   9304 = 0x3F  (retains value)
+ *   9305 = 0x40  (retains value)
+ *
+ * 9300-9302 are also used as link event status registers by the ISR.
+ */
 #define REG_BUF_CFG_9300        XDATA_REG8(0x9300)
 #define   BUF_CFG_9300_SS_OK      0x02  // Bit 1: USB 3.0 link established (empirically verified)
 #define   BUF_CFG_9300_SS_FAIL    0x04  // Bit 2: USB 3.0 link failed, fall back to 2.0
 #define   BUF_CFG_9300_SS_EVENT   0x08  // Bit 3: SS link event (checked at 0x10b2 after 91D1 dispatch)
+#define   BUF_CFG_9300_MSC_INIT   0x0C  // MSC engine init value (stock 0xB1D7)
 #define REG_BUF_CFG_9301        XDATA_REG8(0x9301)
 #define   BUF_CFG_9301_BIT6      0x40  // Bit 6: Buffer config flag
 #define   BUF_CFG_9301_BIT7      0x80  // Bit 7: Buffer config flag
+#define   BUF_CFG_9301_MSC_INIT  0xC0  // MSC engine init value (stock 0xB1DB)
 #define REG_BUF_CFG_9302        XDATA_REG8(0x9302)
 #define   BUF_CFG_9302_BIT7      0x80  // Bit 7: Buffer status flag
-#define REG_BUF_CFG_9303        XDATA_REG8(0x9303)
-#define REG_BUF_CFG_9304        XDATA_REG8(0x9304)
-#define REG_BUF_CFG_9305        XDATA_REG8(0x9305)
+#define   BUF_CFG_9302_MSC_INIT  0xBF  // MSC engine init value (stock 0xB1DF)
+#define REG_BUF_CFG_9303        XDATA_REG8(0x9303)  /* MSC init: 0x33 (retains) */
+#define REG_BUF_CFG_9304        XDATA_REG8(0x9304)  /* MSC init: 0x3F (retains) */
+#define REG_BUF_CFG_9305        XDATA_REG8(0x9305)  /* MSC init: 0x40 (retains) */
 
 /*
  * Buffer Descriptor Table (0x9310-0x9323)
@@ -768,7 +796,12 @@
 #define REG_PCIE_ADDR_2         XDATA_REG8(0xB21A)
 #define REG_PCIE_ADDR_3         XDATA_REG8(0xB21B)
 #define REG_PCIE_ADDR_HIGH      XDATA_REG8(0xB21C)
+#define REG_PCIE_ADDR_HIGH_1    XDATA_REG8(0xB21D)  // Upper address byte 1 (64-bit addressing)
+#define REG_PCIE_ADDR_HIGH_2    XDATA_REG8(0xB21E)  // Upper address byte 2 (64-bit addressing)
+#define REG_PCIE_ADDR_HIGH_3    XDATA_REG8(0xB21F)  // Upper address byte 3 (64-bit addressing)
 #define REG_PCIE_DATA           XDATA_REG8(0xB220)
+#define REG_PCIE_DATA_1         XDATA_REG8(0xB221)  // Data register byte 1
+#define REG_PCIE_DATA_2         XDATA_REG8(0xB222)  // Data register byte 2
 /*
  * PCIe Extended Status (0xB223)
  * Bit 0: PLL lock / CDR lock indicator.
@@ -1073,19 +1106,31 @@
 #define REG_NVME_CMD_FLAGS      XDATA_REG8(0xC42B)
 /*
  * USB MSC Engine (0xC42C-0xC42D)
- * Alternative bulk IN trigger for MSC (Mass Storage Class) transfers.
- * Same underlying NVMe-USB bridge as 90A1 but different interface.
+ * Primary bulk IN trigger for MSC (Mass Storage Class) transfers.
+ * Used by stock firmware for ALL CSW sends and data-in phases.
  *
  * Usage: data at D800+, set 901A=data_len, write C42C=0x01, clear C42D bit 0.
  * Preceded by 900B/C42A doorbell dance (ramp up bits, then tear down).
  *
- * USB 3.0: Works for both data and CSW (stock firmware uses this exclusively).
- * USB 2.0: C42D reads 0x00 (trigger consumed but no USB packet generated).
- *          Only works on USB 2.0 when C471=0x01 (NVMe queue busy), i.e. with
- *          an actual NVMe device connected, not with GPU only.
+ * REQUIRES: Full MSC engine init (stock 0xB1C5) must have been run first.
+ * This sets 92C0, 91D1, 9300-9305, 9091, 9093, 91C1, 9002, 9005, 90E2, 905E.
+ * Without these registers, the C42C trigger is consumed (reads back 0x00)
+ * but NO USB packet is generated.
+ *
+ * REQUIRES: Interface descriptor class must be 0x08 (Mass Storage) / 0x06 / 0x50.
+ * The hardware MSC engine may check the interface class to enable C42C routing.
+ *
+ * USB 3.0: Confirmed working on stock firmware even without NVMe device (GPU only).
+ *          C471=0x00 does NOT prevent C42C from working on USB3.
+ * USB 2.0: Only works when C471=0x01 (NVMe queue busy).
+ *
+ * Stock firmware writes C42C=0x01 at three locations:
+ *   0x49B5 — scsi_csw_build: CSW send (doorbell dance + USBS + trigger)
+ *   0xB21C — msc_engine_init: Initial arm during SET_INTERFACE
+ *   0x1150 — ISR exit: C42C ack (read bit 0, if set → call 0x47D5 → write 0x01)
  *
  * Post-trigger cleanup: C42A |= 0x20, then NVMe link init (C428/C473/C472),
- * then C42A &= ~0x20.
+ * then C42A &= ~0x20. Stock does NOT call arm_msc again immediately after CSW.
  */
 #define REG_USB_MSC_CTRL        XDATA_REG8(0xC42C)  /* Write 0x01 to trigger bulk IN */
 #define REG_USB_MSC_STATUS      XDATA_REG8(0xC42D)  /* Read status; clear bit 0 after trigger */
@@ -1127,11 +1172,18 @@
 #define REG_CMDQ_DIR_END        XDATA_REG16(0xC470)
 /*
  * NVMe Queue Busy (0xC471)
- * Indicates NVMe command queue is active. CRITICAL for bulk IN on USB 2.0.
+ * Indicates NVMe command queue is active.
  *
  * With NVMe device: write 0x01 sticks, enables 90A1/C42C bulk IN paths.
  * With GPU only:    write 0x01 does NOT stick (reads back 0x00).
- *                   This is why bulk IN fails on USB 2.0 without NVMe.
+ *
+ * USB 3.0: C471=0x00 does NOT block C42C CSW sends. Stock firmware confirmed
+ *          working on USB3 with GPU (C471=0x00). The earlier assumption that
+ *          C471 was required for C42C on USB3 was WRONG.
+ * USB 2.0: C471=0x01 IS required for both 90A1 and C42C bulk IN paths.
+ *
+ * Stock ISR exit at 0x10E5 reads C471 in a loop (up to 32 times) when
+ * C802 bit 2 is set. Also checked at 0x1013 in CBW processing path.
  *
  * Stock firmware writes 0x01 during SET_INTERFACE (Phase 4, doorbell dance).
  * Read-only without NVMe queues configured by hardware.

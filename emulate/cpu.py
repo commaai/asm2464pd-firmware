@@ -3,6 +3,16 @@ ASM2464PD 8051 CPU Emulator Core
 
 This module implements the Intel 8051 instruction set with extensions
 for the ASM2464PD including code banking via DPX register.
+
+Performance notes:
+  - SFR registers ACC, PSW, SP, DPL, DPH, B are cached locally in the
+    Memory.sfr bytearray and accessed directly via index to avoid
+    function-call overhead through properties.
+  - The execute() method uses an if/elif chain which Python compiles
+    to efficient sequential comparison; dispatch tables add dict-lookup
+    overhead per instruction which is slower for <256 entries in CPython.
+  - The step() hot loop avoids per-instruction overhead from tracing,
+    breakpoint checks, and hardware tick when not needed.
 """
 
 from typing import Callable, Optional
@@ -94,127 +104,227 @@ class CPU8051:
     PSW_AC = 6
     PSW_CY = 7
 
+    # ============================================
+    # Fast SFR Access
+    # ============================================
+    # Performance: accessing SFR registers through read_sfr/write_sfr
+    # costs ~2 function calls per access. For ACC/PSW/SP/DPL/DPH which
+    # are accessed millions of times, we cache a reference to the
+    # memory.sfr bytearray and use direct indexing.
+    #
+    # _sfr is set by Emulator.__init__ after Memory is created:
+    #   cpu._sfr = memory.sfr
+    _sfr: bytearray = None  # Set externally; direct ref to Memory.sfr
+    _code: bytearray = None  # Set externally; direct ref to Memory.code
+
+    # SFR offsets into the bytearray (SFR addr - 0x80)
+    _OFF_ACC = SFR_ACC - 0x80   # 0x60
+    _OFF_B = SFR_B - 0x80       # 0x70
+    _OFF_PSW = SFR_PSW - 0x80   # 0x50
+    _OFF_SP = SFR_SP - 0x80     # 0x01
+    _OFF_DPL = SFR_DPL - 0x80   # 0x02
+    _OFF_DPH = SFR_DPH - 0x80   # 0x03
+    _OFF_DPX = SFR_DPX - 0x80   # 0x16
+
     # Property accessors for common registers
+    # When _sfr is set, use direct bytearray access (fast path).
+    # Otherwise fall back to read_sfr/write_sfr (proxy mode, tests).
     @property
     def A(self) -> int:
-        return self.read_sfr(self.SFR_ACC)
+        s = self._sfr
+        return s[0x60] if s is not None else self.read_sfr(0xE0)
 
     @A.setter
     def A(self, value: int):
-        self.write_sfr(self.SFR_ACC, value & 0xFF)
+        s = self._sfr
+        if s is not None:
+            s[0x60] = value & 0xFF
+        else:
+            self.write_sfr(0xE0, value & 0xFF)
 
     @property
     def B(self) -> int:
-        return self.read_sfr(self.SFR_B)
+        s = self._sfr
+        return s[0x70] if s is not None else self.read_sfr(0xF0)
 
     @B.setter
     def B(self, value: int):
-        self.write_sfr(self.SFR_B, value & 0xFF)
+        s = self._sfr
+        if s is not None:
+            s[0x70] = value & 0xFF
+        else:
+            self.write_sfr(0xF0, value & 0xFF)
 
     @property
     def PSW(self) -> int:
-        return self.read_sfr(self.SFR_PSW)
+        s = self._sfr
+        return s[0x50] if s is not None else self.read_sfr(0xD0)
 
     @PSW.setter
     def PSW(self, value: int):
-        self.write_sfr(self.SFR_PSW, value & 0xFF)
+        s = self._sfr
+        if s is not None:
+            s[0x50] = value & 0xFF
+        else:
+            self.write_sfr(0xD0, value & 0xFF)
 
     @property
     def SP(self) -> int:
-        return self.read_sfr(self.SFR_SP)
+        s = self._sfr
+        return s[0x01] if s is not None else self.read_sfr(0x81)
 
     @SP.setter
     def SP(self, value: int):
-        self.write_sfr(self.SFR_SP, value & 0xFF)
+        s = self._sfr
+        if s is not None:
+            s[0x01] = value & 0xFF
+        else:
+            self.write_sfr(0x81, value & 0xFF)
 
     @property
     def DPTR(self) -> int:
-        return (self.read_sfr(self.SFR_DPH) << 8) | self.read_sfr(self.SFR_DPL)
+        s = self._sfr
+        if s is not None:
+            return (s[0x03] << 8) | s[0x02]
+        return (self.read_sfr(0x83) << 8) | self.read_sfr(0x82)
 
     @DPTR.setter
     def DPTR(self, value: int):
-        self.write_sfr(self.SFR_DPL, value & 0xFF)
-        self.write_sfr(self.SFR_DPH, (value >> 8) & 0xFF)
+        s = self._sfr
+        if s is not None:
+            s[0x02] = value & 0xFF
+            s[0x03] = (value >> 8) & 0xFF
+        else:
+            self.write_sfr(0x82, value & 0xFF)
+            self.write_sfr(0x83, (value >> 8) & 0xFF)
 
     @property
     def DPX(self) -> int:
-        return self.read_sfr(self.SFR_DPX)
+        s = self._sfr
+        return s[0x16] if s is not None else self.read_sfr(0x96)
 
     @DPX.setter
     def DPX(self, value: int):
-        self.write_sfr(self.SFR_DPX, value & 0xFF)
+        s = self._sfr
+        if s is not None:
+            s[0x16] = value & 0xFF
+        else:
+            self.write_sfr(0x96, value & 0xFF)
 
     # PSW flag accessors
     @property
     def CY(self) -> bool:
-        return bool(self.PSW & (1 << self.PSW_CY))
+        s = self._sfr
+        return bool((s[0x50] if s is not None else self.read_sfr(0xD0)) & 0x80)
 
     @CY.setter
     def CY(self, value: bool):
-        if value:
-            self.PSW |= (1 << self.PSW_CY)
+        s = self._sfr
+        if s is not None:
+            if value:
+                s[0x50] |= 0x80
+            else:
+                s[0x50] &= 0x7F
         else:
-            self.PSW &= ~(1 << self.PSW_CY)
+            if value:
+                self.PSW |= 0x80
+            else:
+                self.PSW &= 0x7F
 
     @property
     def AC(self) -> bool:
-        return bool(self.PSW & (1 << self.PSW_AC))
+        s = self._sfr
+        return bool((s[0x50] if s is not None else self.read_sfr(0xD0)) & 0x40)
 
     @AC.setter
     def AC(self, value: bool):
-        if value:
-            self.PSW |= (1 << self.PSW_AC)
+        s = self._sfr
+        if s is not None:
+            if value:
+                s[0x50] |= 0x40
+            else:
+                s[0x50] &= 0xBF
         else:
-            self.PSW &= ~(1 << self.PSW_AC)
+            if value:
+                self.PSW |= 0x40
+            else:
+                self.PSW &= 0xBF
 
     @property
     def OV(self) -> bool:
-        return bool(self.PSW & (1 << self.PSW_OV))
+        s = self._sfr
+        return bool((s[0x50] if s is not None else self.read_sfr(0xD0)) & 0x04)
 
     @OV.setter
     def OV(self, value: bool):
-        if value:
-            self.PSW |= (1 << self.PSW_OV)
+        s = self._sfr
+        if s is not None:
+            if value:
+                s[0x50] |= 0x04
+            else:
+                s[0x50] &= 0xFB
         else:
-            self.PSW &= ~(1 << self.PSW_OV)
+            if value:
+                self.PSW |= 0x04
+            else:
+                self.PSW &= 0xFB
 
     def get_regbank(self) -> int:
         """Get current register bank (0-3)."""
-        return (self.PSW >> 3) & 0x03
+        s = self._sfr
+        return ((s[0x50] if s is not None else self.read_sfr(0xD0)) >> 3) & 0x03
 
     def get_reg(self, n: int) -> int:
         """Get R0-R7 from current register bank."""
-        bank = self.get_regbank()
-        addr = (bank * 8) + n
-        return self.read_idata(addr)
+        s = self._sfr
+        bank = ((s[0x50] if s is not None else self.read_sfr(0xD0)) >> 3) & 0x03
+        return self.read_idata((bank << 3) + n)
 
     def set_reg(self, n: int, value: int):
         """Set R0-R7 in current register bank."""
-        bank = self.get_regbank()
-        addr = (bank * 8) + n
-        self.write_idata(addr, value & 0xFF)
+        s = self._sfr
+        bank = ((s[0x50] if s is not None else self.read_sfr(0xD0)) >> 3) & 0x03
+        self.write_idata((bank << 3) + n, value & 0xFF)
 
     def push(self, value: int):
         """Push byte onto stack."""
-        sp = self.SP + 1
-        self.SP = sp
+        s = self._sfr
+        if s is not None:
+            sp = (s[0x01] + 1) & 0xFF
+            s[0x01] = sp
+        else:
+            sp = (self.SP + 1) & 0xFF
+            self.SP = sp
         self.write_idata(sp, value & 0xFF)
 
     def pop(self) -> int:
         """Pop byte from stack."""
-        sp = self.SP
-        value = self.read_idata(sp)
-        self.SP = sp - 1
-        return value
+        s = self._sfr
+        if s is not None:
+            sp = s[0x01]
+            s[0x01] = (sp - 1) & 0xFF
+        else:
+            sp = self.SP
+            self.SP = (sp - 1) & 0xFF
+        return self.read_idata(sp)
 
     def fetch(self) -> int:
         """Fetch next instruction byte and increment PC."""
-        byte = self.read_code(self.pc)
-        self.pc = (self.pc + 1) & 0xFFFF
-        return byte
+        pc = self.pc
+        self.pc = (pc + 1) & 0xFFFF
+        # Fast path: most fetches are in bank 0 lower 32KB
+        code = self._code
+        if code is not None and pc < 0x8000:
+            return code[pc]
+        return self.read_code(pc)
 
     def fetch16(self) -> int:
         """Fetch 16-bit address (big-endian)."""
+        pc = self.pc
+        code = self._code
+        if code is not None and pc < 0x7FFE:
+            self.pc = pc + 2
+            return (code[pc] << 8) | code[pc + 1]
         hi = self.fetch()
         lo = self.fetch()
         return (hi << 8) | lo
@@ -240,15 +350,24 @@ class CPU8051:
             self.write_idata(addr, value & 0xFF)
 
     def _check_interrupts(self):
-        """Check for pending interrupts and trigger if enabled."""
+        """Check for pending interrupts and trigger if enabled.
+
+        Fast path: most calls have no pending interrupts, detected by
+        checking the three pending flags directly (no dict/attr lookup).
+        """
+        # Fast exit: no interrupts pending (common case)
+        if not (self._ext0_pending or self._timer0_pending or self._ext1_pending):
+            return
+
         if self.in_interrupt:
             return  # Don't nest interrupts
 
         # In proxy mode, assume interrupts are enabled - the hardware fired the interrupt
         # so it must be enabled. Don't read IE via proxy (expensive and causes recursion).
         if not self.proxy_mode:
-            # Read interrupt enable register
-            ie = self.read_sfr(0xA8)  # IE register at 0xA8
+            # Read interrupt enable register directly from SFR array
+            s = self._sfr
+            ie = s[0x28] if s is not None else self.read_sfr(0xA8)  # IE at SFR 0xA8
 
             # Global interrupt enable (EA bit 7)
             if not (ie & 0x80):
@@ -258,30 +377,24 @@ class CPU8051:
 
         # Check External Interrupt 0 (EX0 bit 0)
         # ASM2464PD uses EX0 (at 0x0003) for main ISR at 0x0E33
-        if ie & 0x01:  # EX0 enabled
-            if hasattr(self, '_ext0_pending') and self._ext0_pending:
-                self._ext0_pending = False
-                # Push return address onto stack before jumping to ISR
-                # Order matches LCALL: low byte first, high byte second
-                # So high is on top of stack, RET pops high first then low
-                self.push(self.pc & 0xFF)         # PC low byte (pushed first)
-                self.push((self.pc >> 8) & 0xFF)  # PC high byte (on top)
-                self.pc = 0x0003  # INT0 vector
-                self.in_interrupt = True
-                return
+        if (ie & 0x01) and self._ext0_pending:
+            self._ext0_pending = False
+            self.push(self.pc & 0xFF)
+            self.push((self.pc >> 8) & 0xFF)
+            self.pc = 0x0003
+            self.in_interrupt = True
+            return
 
         # Check Timer 0 interrupt (ET0 bit 1)
-        if ie & 0x02:  # ET0 enabled
-            if hasattr(self, '_timer0_pending') and self._timer0_pending:
-                self._timer0_pending = False
-                self._trigger_interrupt(1)  # Timer 0 interrupt vector at 0x0B
+        if (ie & 0x02) and self._timer0_pending:
+            self._timer0_pending = False
+            self._trigger_interrupt(1)
+            return
 
         # Check External Interrupt 1 (EX1 bit 2)
-        # ASM2464PD uses EX1 (at 0x0013) as main ISR, not Timer 0
-        if ie & 0x04:  # EX1 enabled
-            if hasattr(self, '_ext1_pending') and self._ext1_pending:
-                self._ext1_pending = False
-                self._trigger_interrupt(2)  # EX1 interrupt vector at 0x13
+        if (ie & 0x04) and self._ext1_pending:
+            self._ext1_pending = False
+            self._trigger_interrupt(2)
 
     def _trigger_interrupt(self, vector: int):
         """Trigger an interrupt with the given vector number.
@@ -322,7 +435,9 @@ class CPU8051:
 
         # Check for interrupts after executing instruction (so hardware can set flags)
         # In proxy mode, pending flags are set by the proxy when hardware interrupts fire
-        self._check_interrupts()
+        # Fast path: skip function call when no interrupts pending (common case)
+        if self._ext0_pending or self._timer0_pending or self._ext1_pending:
+            self._check_interrupts()
 
         return cycles
 
