@@ -9,10 +9,13 @@
 
 __sfr __at(0xA8) IE;
 __sfr __at(0x88) TCON;
+__sfr __at(0x89) TMOD;
+__sfr __at(0xB8) IP;   /* Interrupt Priority */
 #define IE_EA   0x80
 #define IE_EX1  0x04
 #define IE_ET0  0x02
 #define IE_EX0  0x01
+#define IP_PT0  0x02    /* Timer0 high priority */
 
 #define DESC_BUF ((__xdata uint8_t *)USB_CTRL_BUF_BASE)
 #define EP_BUF(n) XDATA_REG8(0xD800 + (n))
@@ -49,6 +52,7 @@ static volatile __xdata uint8_t pcie_phase2_pending;
 static volatile __xdata uint8_t need_pcie_init;
 static volatile __xdata uint16_t poll_counter;
 static volatile __xdata uint8_t config_done;
+static volatile __xdata uint8_t need_rearm;  /* deferred MSC re-arm (main loop) */
 
 static void poll_bulk_events(void);
 static void sw_dma_bulk_in(uint16_t addr, uint8_t len);
@@ -487,89 +491,47 @@ static void do_bulk_init(void) {
 /*
  * send_csw - Send CSW (Command Status Wrapper) to host via bulk IN
  *
- * Uses the stock firmware's scsi_csw_build approach (0x494D-0x49BD):
- *   1. Doorbell dance ramp-up: 900B |= bits 1,2; C42A |= bits 0,1,2,3,4
- *   2. Doorbell dance teardown: clear all those bits
- *   3. Write "USBS" + tag to D800 (EP buffer)
- *   4. 901A = 0x0D (CSW length), C42C = 0x01 (MSC trigger), C42D &= ~0x01
- *   5. Re-arm MSC engine for next CBW
+ * Stock firmware scsi_csw_build at 0x494D:
+ *   1. Doorbell dance (900B/C42A bit ramp-up then teardown)
+ *   2. Write "USBS" + tag + residue + status to D800
+ *   3. 901A = 0x0D (CSW length)
+ *   4. C42C = 0x01 (MSC trigger — sends CSW + re-arms for next CBW)
+ *   5. C42D &= ~0x01 (clear status)
+ *   6. Post-CSW cleanup at 0xC16C
+ *
+ * Stock firmware calls C42C=0x01 INSIDE the INT0 ISR, after CE88 DMA
+ * handshake. This works because EP_COMPLETE from the initial arm was
+ * processed in a SEPARATE ISR invocation (before CBW_RECEIVED).
+ * The EP_COMPLETE handler does CC17 DMA descriptor reset, which
+ * prepares the hardware for the next C42C.
  */
 static void send_csw(uint8_t status) {
-    /* Stock scsi_csw_build (0x494D): Doorbell dance ramp-up
-     * 0x324B (set_bits_1_2): 900B |= 0x02, 900B |= 0x04
-     * 0x3172 (set_bit_0): C42A |= 0x01
-     * 0x3172 (set_bit_0): 900B |= 0x01
-     * 0x324B (set_bits_1_2): C42A |= 0x02, C42A |= 0x04
-     * C42A = (C42A & ~0x08) | 0x08
-     * 0x32B1 (set_bit_4): C42A |= 0x10 */
-    XDATA_REG8(0x900B) = (XDATA_REG8(0x900B) & 0xFD) | 0x02;
-    XDATA_REG8(0x900B) = (XDATA_REG8(0x900B) & 0xFB) | 0x04;
-    XDATA_REG8(0xC42A) = (XDATA_REG8(0xC42A) & 0xFE) | 0x01;
-    XDATA_REG8(0x900B) = (XDATA_REG8(0x900B) & 0xFE) | 0x01;
-    XDATA_REG8(0xC42A) = (XDATA_REG8(0xC42A) & 0xFD) | 0x02;
-    XDATA_REG8(0xC42A) = (XDATA_REG8(0xC42A) & 0xFB) | 0x04;
-    XDATA_REG8(0xC42A) = (XDATA_REG8(0xC42A) & 0xF7) | 0x08;
-    XDATA_REG8(0xC42A) = (XDATA_REG8(0xC42A) & 0xEF) | 0x10;
+    XDATA_REG8(0x0F14) = 0xC3;  /* diagnostic: send_csw entry */
 
-    /* Doorbell dance teardown (stock 0x4971-0x4999) */
-    XDATA_REG8(0x900B) = XDATA_REG8(0x900B) & 0xFD;  /* clear bit 1 */
-    XDATA_REG8(0x900B) = XDATA_REG8(0x900B) & 0xFB;  /* clear bit 2 */
-    XDATA_REG8(0xC42A) = XDATA_REG8(0xC42A) & 0xFE;  /* clear bit 0 */
-    XDATA_REG8(0x900B) = XDATA_REG8(0x900B) & 0xFE;  /* clear bit 0 */
-    XDATA_REG8(0xC42A) = XDATA_REG8(0xC42A) & 0xFD;  /* clear bit 1 */
-    XDATA_REG8(0xC42A) = XDATA_REG8(0xC42A) & 0xFB;  /* clear bit 2 */
-    XDATA_REG8(0xC42A) = XDATA_REG8(0xC42A) & 0xF7;  /* clear bit 3 */
-    XDATA_REG8(0xC42A) = XDATA_REG8(0xC42A) & 0xEF;  /* clear bit 4 */
-
-    /* Write "USBS" signature + tag + residue + status to D800 EP buffer
-     * Stock: 0x0D9D (store_dword) writes D800-D803 = "USBS" */
+    /* Write "USBS" signature + tag + residue + status to D800 EP buffer.
+     * Stock 0x494D: writes USBS (D800-D803), sets 901A=0x0D, C42C=0x01. */
     EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
     EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
     EP_BUF(0x04) = cbw_tag[0]; EP_BUF(0x05) = cbw_tag[1];
     EP_BUF(0x06) = cbw_tag[2]; EP_BUF(0x07) = cbw_tag[3];
-    /* Residue = 0 (no data transfer) */
     EP_BUF(0x08) = 0x00; EP_BUF(0x09) = 0x00;
     EP_BUF(0x0A) = 0x00; EP_BUF(0x0B) = 0x00;
     EP_BUF(0x0C) = status;
 
-    /* Stock 0x49AC-0x49BC: Set length, set MSC gate, trigger MSC, clear status */
-    REG_USB_MSC_LENGTH = 0x0D;            /* 901A = 0x0D (CSW is 13 bytes) */
+    /* Set CSW length (stock 0x49B1) */
+    REG_USB_MSC_LENGTH = 0x0D;
 
-    XDATA_REG8(0x0F14) = 0xC3;  /* diagnostic: send_csw trigger */
+    /* C42C = 0x01 inline in ISR (matching stock firmware 0x49B5).
+     * Stock firmware writes C42C from inside INT0 ISR after CE88+CBW+CSW.
+     * Previous C42C-in-ISR crashes were caused by missing C802 gate check,
+     * which let 9101 bit 1 spam the ISR. With C802 gate, ISR is stable. */
+    REG_USB_MSC_CTRL = 0x01;
+    REG_USB_MSC_STATUS &= ~0x01;
 
-    /* Try software DMA bulk IN instead of C42C hardware MSC trigger.
-     * C42C=0x01 doesn't produce bulk IN data in our firmware.
-     * Use sw_dma_bulk_in to directly DMA the CSW from D800. */
-    sw_dma_bulk_in(0xD800, 0x0D);
+    /* Post-CSW cleanup deferred to main loop (stock 0xC16C) */
+    need_rearm = 1;
 
-    uart_putc('!');
-
-    /* Stock firmware post-CSW cleanup (0xC16C):
-     * 1. Clear XDATA 0x000B, 0x000A, 0x0052
-     * 2. Loop clearing structure arrays
-     * 3. C42A |= 0x20 (NVME_DOORBELL_LINK_GATE)
-     * 4. Call NVMe link init (0xDF5E)
-     * 5. C42A &= ~0x20
-     * We do the C42A LINK_GATE toggle but skip the full NVMe reinit since
-     * we don't have NVMe queues configured.
-     * NOTE: Stock firmware clears XDATA 0x000B, 0x000A, 0x0052 here.
-     * These are stock firmware globals (not ours). Our static variables
-     * live at XDATA 0x0000+ (SDCC linker allocated), so we MUST NOT
-     * write to those addresses — it would clobber bulk_ready (0x000B)
-     * and need_dma_setup (0x000A)! */
-
-    /* Stock: C42A |= 0x20, NVMe link init, C42A &= ~0x20 */
-    XDATA_REG8(0xC42A) = XDATA_REG8(0xC42A) | 0x20;
-    XDATA_REG8(0xC42A) = XDATA_REG8(0xC42A) & ~0x20;
-
-    /* Re-arm MSC engine for next CBW.
-     * sw_dma_bulk_in changes: DMA_CONFIG, EP_BUF_HI/LO, D800 buf,
-     * C509, 905A, SW_DMA_TRIGGER, 0AF4, BULK_DMA_TRIGGER.
-     * We already restored DMA_CONFIG, 905A, 0AF4 in sw_dma_bulk_in cleanup.
-     * Now just re-arm MSC with proper gate/trigger. */
-    XDATA_REG8(0x90E2) = 0x01;
-    XDATA_REG8(0x905E) = XDATA_REG8(0x905E) & 0xFE;
-    arm_msc();
+    XDATA_REG8(0x0F14) = 0xC4;  /* diagnostic: C42C fired in ISR */
 }
 
 static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
@@ -658,22 +620,24 @@ static void handle_cbw(void) {
     uint8_t opcode;
     XDATA_REG8(0x0F14) = 0xC1;  /* diagnostic: handle_cbw entered */
 
-    /* DMA handshake (CE88/CE89) — stock firmware does this at 0x3484-0x348C
-     * (usb_ep_loop_3419) during the SECOND ISR entry (0x9000 bit 0 clear).
-     * CE88 write transitions hardware state machine for bulk transfers. */
+    /* Stock 0x346B-0x3483: Clear state variables before DMA handshake.
+     * These clears are done at the start of the CBW processor (0x3458). */
+    XDATA_REG8(0x0B00) = 0x00;
+    XDATA_REG8(0x053C) = 0x00;
+    XDATA_REG8(0x00C2) = 0x00;
+    XDATA_REG8(0x0518) = 0x00;
+    XDATA_REG8(0x014E) = 0x00;
+    XDATA_REG8(0x00E5) = 0x00;
 
-    /* Stock ISR second entry also sets 90E2 = 0x01 */
+    /* Stock ISR second entry sets 90E2 = 0x01 as gate register */
     XDATA_REG8(0x90E2) = 0x01;
 
-    REG_BULK_DMA_HANDSHAKE = 0x00;
-    {
-        uint16_t dma_to;
-        for (dma_to = 30000; dma_to; dma_to--) {
-            if (REG_USB_DMA_STATE & USB_DMA_STATE_READY) break;
-        }
-        if (!dma_to) { uart_puts("[dma TO]\n"); XDATA_REG8(0x0F14) = 0xCE; }
-        else XDATA_REG8(0x0F14) = 0xC2;  /* diagnostic: DMA handshake ok */
-    }
+    /* DMA handshake (CE88/CE89) — stock firmware does this at 0x3484-0x348C.
+     * CE88 write transitions the DMA state machine for bulk data processing.
+     * CE89 bit 0 = ready, bit 1 = error.
+     * Skipped for now — CE88 may interfere with deferred C42C approach.
+     * CBW data registers (911F-912A) are populated by MSC engine on arrival. */
+    XDATA_REG8(0x0F14) = 0xC2;  /* diagnostic: CE88 skipped */
 
     cbw_tag[0] = REG_CBW_TAG_0; cbw_tag[1] = REG_CBW_TAG_1;
     cbw_tag[2] = REG_CBW_TAG_2; cbw_tag[3] = REG_CBW_TAG_3;
@@ -725,15 +689,12 @@ static void handle_cbw(void) {
     } else if (opcode == 0xE8) {
         send_csw(0x00);
     } else if (opcode == 0x00) {
-        /* SCSI TEST_UNIT_READY — stock firmware triggers PCIe tunnel
-         * enable after ~21 TURs. We defer PCIe init until we've proven
-         * bulk IN works by successfully handling the first few TURs.
-         * Return status 1 (not ready) until link is up. */
+        /* SCSI TEST_UNIT_READY */
         tur_count++;
         if (tur_count >= 1 && pcie_initialized == 0) {
             need_pcie_init = 1;
         }
-        send_csw((pcie_initialized >= 2) ? 0x00 : 0x01);
+        send_csw(0x00);
     } else if (opcode == 0x12) {
         /* SCSI INQUIRY — return minimal response matching stock firmware.
          * This is needed so usb-storage stays bound (keeps interface configured). */
@@ -1035,6 +996,16 @@ static void poll_bulk_events(void) {
 
 void int0_isr(void) __interrupt(0) {
     uint8_t periph_status, phase;
+
+    /* Stock ISR at 0x0E50: C802 bit 0 gate check.
+     * C802 is the interrupt gate register. If bit 0 is not set,
+     * the ISR should skip main processing and go to exit path.
+     * Without this check, 9101 bit 1 (which we don't handle) causes
+     * the ISR to fire continuously, starving the main loop. */
+    if (!(XDATA_REG8(0xC802) & 0x01)) {
+        return;
+    }
+
     periph_status = REG_USB_PERIPH_STATUS;
     XDATA_REG8(0x0F18) += 1;  /* ISR fire count */
     XDATA_REG8(0x0F19) = periph_status;  /* last ISR periph_status */
@@ -1090,8 +1061,29 @@ void int0_isr(void) __interrupt(0) {
         }
     }
 
-    /* CBW handling — process in ISR like stock firmware.
-     * Stock firmware handles CBW at 0x0E33 entirely within INT0 ISR. */
+    /* EP_COMPLETE (bit 5) — acknowledge and reset DMA descriptors for next cycle.
+     * Stock firmware: 0x0EF4 → 0x5333 → 0x5476 → 0xD5FB (CC17 DMA reset).
+     * EP_COMPLETE fires after C42C completes (CSW sent to host).
+     * The CC17=0x04/0x02/0x01 sequence resets the DMA descriptor engine,
+     * which is REQUIRED before the next C42C can work. */
+    if (periph_status & USB_PERIPH_EP_COMPLETE) {
+        XDATA_REG8(0x0F1C) += 1;  /* EP_COMPLETE count */
+        REG_USB_EP_STATUS_90E3 = 0x02;
+
+        /* CC17 DMA descriptor reset (stock 0xD5FB: CC17=0x04, 0x02, 0x01).
+         * Stock has gate checks (0x0B3D, 9091 bit 0, 0x07E1==1) before writing,
+         * but we skip those since we control the state directly. */
+        XDATA_REG8(0xCC17) = 0x04;
+        XDATA_REG8(0xCC17) = 0x02;
+        XDATA_REG8(0xCC17) = 0x01;
+
+        /* Set 90E2 gate for next CBW (stock 0x0EF4 path) */
+        XDATA_REG8(0x90E2) = 0x01;
+    }
+
+    /* CBW handling — CE88 DMA handshake + CBW parse + send_csw in ISR.
+     * send_csw uses sw_dma_bulk_in to deliver CSW data, then requests
+     * do_bulk_init from main loop to re-arm the MSC engine. */
     if (bulk_ready && (periph_status & USB_PERIPH_CBW_RECEIVED)) {
         XDATA_REG8(0x0F12) += 1;  /* diagnostic */
         cbw_dma_setup();
@@ -1139,9 +1131,11 @@ void int0_isr(void) __interrupt(0) {
             /* USB 3.0 required no-data requests */
             send_zlp_ack();
         } else if (bmReq == 0x02 && bReq == 0x01) {
-            /* CLEAR_FEATURE(HALT) -- re-arm MSC */
+            /* CLEAR_FEATURE(HALT) -- re-arm MSC
+             * NOTE: can't use arm_msc() (C42C=0x01) here as it
+             * crashes USB3 SuperSpeed. Use do_bulk_init via main loop. */
             send_zlp_ack();
-            arm_msc();
+            need_bulk_init = 1;
         } else if (bmReq == 0xC0 && bReq == 0xE4) {
             /* Vendor read XDATA via control */
             uint16_t addr = ((uint16_t)wValH << 8) | wValL;
@@ -1167,7 +1161,12 @@ void int0_isr(void) __interrupt(0) {
     }
 }
 
-void timer0_isr(void) __interrupt(1) { }
+void timer0_isr(void) __interrupt(1) {
+    /* Stop Timer0 (one-shot) */
+    TCON &= ~0x10;  /* TR0=0 */
+    /* Timer0 ISR reserved for future use.
+     * C42C is now done inline in send_csw() (matching stock firmware). */
+}
 
 void int1_isr(void) __interrupt(2) {
     uint8_t tmp;
@@ -1205,44 +1204,11 @@ static void delay_long(void) {
  *   Lane 3: read 0x7BAF, set bit 7, write 0x7BAF
  */
 static void phy_link_training(void) {
-    /*
-     * Matches stock firmware 0xD702-0xD743: configures PHY lane registers via
-     * bank-switched XDATA. Stock firmware passes lane_mask in r7 and checks
-     * each lane's bit to decide whether to set bit 7 in the PHY register.
-     * Since we always enable all 4 lanes (mask=0x0F), we always set bit 7.
-     *
-     * SFR 0x93 = 0x01 because stock firmware's bank helpers set 0x93 = (r3-1)
-     * where r3=0x02 for these PHY accesses.
-     */
-    __asm
-        mov     0x93, #0x01     ; Bank select (stock: r3=2 → SFR=(2-1)&0x7F=1)
-
-        ; Lane 0: read 0x78AF, set bit 7, write 0x78AF
-        mov     dptr, #0x78AF
-        movx    a, @dptr
-        orl     a, #0x80
-        movx    @dptr, a
-
-        ; Lane 1: read 0x79AF, set bit 7, write 0x79AF
-        mov     dptr, #0x79AF
-        movx    a, @dptr
-        orl     a, #0x80
-        movx    @dptr, a
-
-        ; Lane 2: read 0x7AAF, set bit 7, write 0x7AAF
-        mov     dptr, #0x7AAF
-        movx    a, @dptr
-        orl     a, #0x80
-        movx    @dptr, a
-
-        ; Lane 3: read 0x7BAF, set bit 7, write 0x7BAF
-        mov     dptr, #0x7BAF
-        movx    a, @dptr
-        orl     a, #0x80
-        movx    @dptr, a
-
-        mov     0x93, #0x00     ; Clear bank select
-    __endasm;
+    /* SKIP: Bank-switched PHY writes kill USB3 SuperSpeed.
+     * Stock firmware's bank helpers set SFR 0x93=1 to access internal PHY regs
+     * (0x78AF-0x7BAF lanes). These are shared with USB3 PHY and modifying them
+     * while USB3 is active crashes the SuperSpeed link.
+     * TODO: Either do these before USB3 enumeration, or find a safe way. */
 }
 
 /*=== PCIe Init (from stock firmware disassembly) ===*/
@@ -1281,9 +1247,11 @@ static void timer_wait(uint8_t threshold_hi, uint8_t threshold_lo, uint8_t mode)
 static void pcie_tunnel_setup(void) {
     uint8_t tmp;
 
+    XDATA_REG8(0x0F02) = 0x41;  /* tunnel: CA06 */
     /* Stock 0xCD6C: CA06 &= 0xEF (clear bit 4) — done first */
     REG_CPU_MODE_NEXT = REG_CPU_MODE_NEXT & 0xEF;
 
+    XDATA_REG8(0x0F02) = 0x42;  /* tunnel: adapter config */
     /* Stock 0xCD73: lcall 0xC8DB — adapter config B410-B42B from globals
      * Stock uses globals 0x0A52-0x0A55: 0x1B, 0x21, 0x24, 0x63 */
     REG_TUNNEL_CFG_A_LO = 0x1B;  REG_TUNNEL_CFG_A_HI = 0x21;
@@ -1297,17 +1265,10 @@ static void pcie_tunnel_setup(void) {
     REG_TUNNEL_PATH_CREDITS = 0x24; REG_TUNNEL_PATH_MODE = 0x63;
     REG_TUNNEL_PATH2_CRED = 0x24;  REG_TUNNEL_PATH2_MODE = 0x63;
 
-    /* Stock 0xCD76-0xCD83: Bank-switched writes: 0x4084=0x22, 0x5084=0x22 */
-    __asm
-        mov     0x93, #0x01
-        mov     dptr, #0x4084
-        mov     a, #0x22
-        movx    @dptr, a
-        mov     dptr, #0x5084
-        movx    @dptr, a
-        mov     0x93, #0x00
-    __endasm;
+    XDATA_REG8(0x0F02) = 0x43;  /* tunnel: bank writes 4084/5084 */
+    /* SKIP bank-switched writes 0x4084/0x5084 — may affect USB3 PHY */
 
+    XDATA_REG8(0x0F02) = 0x44;  /* tunnel: B401/B482/B480 */
     /* Stock 0xCD86-0xCD89: B401 |= 0x01 (via 99E4 helper) */
     REG_PCIE_TUNNEL_CTRL = (REG_PCIE_TUNNEL_CTRL & 0xFE) | 0x01;
 
@@ -1320,24 +1281,15 @@ static void pcie_tunnel_setup(void) {
     REG_PCIE_TUNNEL_CTRL = tmp & 0xFE;
     REG_PCIE_PERST_CTRL = (REG_PCIE_PERST_CTRL & 0xFE) | 0x01;  /* B480 |= 1 */
 
+    XDATA_REG8(0x0F02) = 0x45;  /* tunnel: B430/B298 */
     /* Stock 0xCDA1-0xCDA7: B430 &= 0xFE */
     REG_TUNNEL_LINK_STATE = REG_TUNNEL_LINK_STATE & 0xFE;
 
     /* Stock 0xCDA8-0xCDB0: B298 = (B298 & 0xEF) | 0x10 */
     REG_PCIE_TUNNEL_CFG = (REG_PCIE_TUNNEL_CFG & 0xEF) | 0x10;
 
-    /* Stock 0xCDB1-0xCDC3: Bank-switched writes: 0x6043=0x70, 0x6025 |= 0x80 */
-    __asm
-        mov     0x93, #0x01
-        mov     dptr, #0x6043
-        mov     a, #0x70
-        movx    @dptr, a
-        mov     dptr, #0x6025
-        movx    a, @dptr
-        orl     a, #0x80
-        movx    @dptr, a
-        mov     0x93, #0x00
-    __endasm;
+    XDATA_REG8(0x0F02) = 0x46;  /* tunnel: bank 6043/6025 */
+    /* SKIP bank-switched writes 0x6043/0x6025 — may affect USB3 PHY */
 }
 
 /*
@@ -1445,8 +1397,9 @@ static void pcie_tunnel_setup_reinit(void) {
 
     /* Step 3: CDA0: 05ED dispatch → bank1 ECC3 (PHY soft reset variant)
      * Stock does a full PHY soft reset (CC37 bit 2 toggle + E712 wait).
-     * SKIPPED: calling phy_soft_reset() here causes USB disconnect.
-     * The PHY was already reset during boot pcie_pre_init(). */
+     * Previously skipped (USB disconnect), but that was when CC43=0x80 was written.
+     * Re-enabling since we no longer write CC43. */
+    phy_soft_reset();
 
     /* Step 4: CDA3-CDA9: C233 &= 0xFC (clear bits 0,1) */
     XDATA_REG8(0xC233) = XDATA_REG8(0xC233) & 0xFC;
@@ -1528,24 +1481,8 @@ static void pcie_tunnel_setup_reinit(void) {
     /* PHY set bit6 on all lanes (stock E049) */
     phy_set_bit6();
 
-    /* Bank writes (stock D9BD-D9DC) */
-    __asm
-        mov     0x93, #0x01
-        mov     dptr, #0x7041
-        movx    a, @dptr
-        anl     a, #0xBF
-        movx    @dptr, a
-        mov     dptr, #0x1507
-        movx    a, @dptr
-        anl     a, #0xFB
-        orl     a, #0x04
-        movx    @dptr, a
-        movx    a, @dptr
-        anl     a, #0xFD
-        orl     a, #0x02
-        movx    @dptr, a
-        mov     0x93, #0x00
-    __endasm;
+    /* SKIP bank writes (stock D9BD-D9DC): 0x7041 clear bit 6, 0x1507 set bits 2,1.
+     * Bank-switched PHY writes kill USB3 SuperSpeed. */
 
     uart_puts("[TR]\n");
 }
@@ -1584,17 +1521,8 @@ static void pcie_lane_config_mask(uint8_t mask) {
     REG_PCIE_CTRL_B402 = REG_PCIE_CTRL_B402 & 0xFD;
 
     if (mask != 0x0F) {
-        /* Stock 0xC7C0: Set bit 6 on bank 1 register 0x6041 (PHY isolation).
-         * 0xCAC3: bank_read(bank=2, addr=0x6041) → ORL 0x40 → bank_write.
-         * Bank select via SFR 0x93 = (bank-1) = 1. */
-        __asm
-            mov     0x93, #0x01     ; Bank select = 1 (bank 2 → SFR 0x93 = 2-1 = 1)
-            mov     dptr, #0x6041
-            movx    a, @dptr        ; Read bank 1 @ 0x6041
-            orl     a, #0x40        ; Set bit 6
-            movx    @dptr, a        ; Write back
-            mov     0x93, #0x00     ; Clear bank select
-        __endasm;
+        /* SKIP: bank-switched write to 0x6041 bit 6 (PHY isolation)
+         * Bank-switched PHY writes kill USB3 SuperSpeed. */
     }
 
     /* Stock 0xBEA0: Progressive lane enable.
@@ -1635,15 +1563,8 @@ static void pcie_lane_config_mask(uint8_t mask) {
     }
 
     if (mask != 0x0F) {
-        /* Stock 0xC7D4: Clear bit 6 on bank 1 register 0x6041 (end isolation) */
-        __asm
-            mov     0x93, #0x01
-            mov     dptr, #0x6041
-            movx    a, @dptr
-            anl     a, #0xBF        ; Clear bit 6
-            movx    @dptr, a
-            mov     0x93, #0x00
-        __endasm;
+        /* Stock 0xC7D4: Clear bit 6 on bank 1 register 0x6041 (end isolation)
+         * SKIPPED: Bank-switched PHY writes (SFR 0x93=1) kill USB3 SuperSpeed */
 
         /* Stock D44C-D457: Pulse B401 (PERST) */
         REG_PCIE_TUNNEL_CTRL = (REG_PCIE_TUNNEL_CTRL & 0xFE) | 0x01;
@@ -1678,39 +1599,9 @@ static void pcie_lane_config(void) {
  * Stock: lcall phy_link_training, then read-modify-write bit 6 on each lane.
  */
 static void phy_set_bit6(void) {
-    /* First call phy_link_training (sets bit 7 on all lanes) */
-    phy_link_training();
-
-    /* Then set bit 6 on each lane register */
-    __asm
-        mov     0x93, #0x01     ; Bank select
-
-        mov     dptr, #0x78AF
-        movx    a, @dptr
-        anl     a, #0xBF
-        orl     a, #0x40
-        movx    @dptr, a
-
-        mov     dptr, #0x79AF
-        movx    a, @dptr
-        anl     a, #0xBF
-        orl     a, #0x40
-        movx    @dptr, a
-
-        mov     dptr, #0x7AAF
-        movx    a, @dptr
-        anl     a, #0xBF
-        orl     a, #0x40
-        movx    @dptr, a
-
-        mov     dptr, #0x7BAF
-        movx    a, @dptr
-        anl     a, #0xBF
-        orl     a, #0x40
-        movx    @dptr, a
-
-        mov     0x93, #0x00     ; Clear bank select
-    __endasm;
+    /* SKIP: Bank-switched PHY writes kill USB3 SuperSpeed.
+     * Would call phy_link_training() and set bit 6 on lanes 0x78AF-0x7BAF.
+     * TODO: Find safe way to do these (before USB3, or with PHY quiesce). */
 }
 
 /*
@@ -1978,32 +1869,11 @@ static void pcie_early_init(void) {
     /* Stock 0xD9AC (E25E): PHY link training + set bit 6 on all lanes */
     phy_set_bit6();
 
-    /* Stock 0xD9AF-0xD9BA: Bank read 0x7041, clear bit 6, bank write */
-    __asm
-        mov     0x93, #0x01
-        mov     dptr, #0x7041
-        movx    a, @dptr
-        anl     a, #0xBF
-        movx    @dptr, a
-        mov     0x93, #0x00
-    __endasm;
+    /* Stock 0xD9AF-0xD9BA: Bank read 0x7041, clear bit 6, bank write
+     * SKIPPED: Bank-switched PHY writes (SFR 0x93=1) kill USB3 SuperSpeed */
 
-    /* Stock 0xD9BD-0xD9D2: Bank read/write 0x1507 — set bits 2 and 1 */
-    __asm
-        mov     0x93, #0x01
-        ; First: clear bit 2, set bit 2
-        mov     dptr, #0x1507
-        movx    a, @dptr
-        anl     a, #0xFB
-        orl     a, #0x04
-        movx    @dptr, a
-        ; Second: clear bit 1, set bit 1
-        movx    a, @dptr
-        anl     a, #0xFD
-        orl     a, #0x02
-        movx    @dptr, a
-        mov     0x93, #0x00
-    __endasm;
+    /* Stock 0xD9BD-0xD9D2: Bank read/write 0x1507 — set bits 2 and 1
+     * SKIPPED: Bank-switched PHY writes (SFR 0x93=1) kill USB3 SuperSpeed */
 
     uart_puts("[EI]\n");
 }
@@ -2099,26 +1969,24 @@ static void pcie_tunnel_enable(void) {
 
     uart_puts("[TEN]\n");
 
-    /* Re-init E710 — 91D1 SS fail events may have set it to 0x1F during
-     * USB enumeration. Stock firmware re-inits E710 in pcie_link_controller_init
-     * (0xCF2E) which runs during the PCIe dispatch. Must be 0x04 for link. */
+    XDATA_REG8(0x0F01) = 0x01;  /* step 1: post-EQ regs */
+
+    /* Post-SerDes-EQ register setup (stock: 0x91CF-0x923F)
+     * SKIP all PLL/PHY registers here — they are part of the stock PLL init
+     * sequence that requires CC43=0x80 (full PLL reset) to be safe.
+     * Writing them without CC43 reset kills USB3 SuperSpeed.
+     * The stock firmware does these during initial boot before USB is up,
+     * or with a full CC43 PLL reset around them. We can't do either.
+     *
+     * Registers skipped from stock pcie_pll_init (0x8E28):
+     *   CC35 &= 0xFE, CC35 &= 0xFB, C65A &= 0xF7, 905F &= 0xEF
+     *   C65B bits, C62D, C004 (KILLS USB3!), C007, CA2E, CC43 (KILLS USB3!)
+     *
+     * E710 re-init is safe (it's in the PCIe controller space, not USB PHY) */
     XDATA_REG8(0xE710) = (XDATA_REG8(0xE710) & 0xE0) | 0x04;
 
-    /* Selective PHY PLL config — apply everything EXCEPT CC43=0x80 which kills USB3.
-     * Stock pcie_pll_init (0x8E28-0x8E5E) does:
-     *   CC35 &= 0xFE, E741 R-M-W, E742 R-M-W, CC43=0x80 (KILLS USB3!),
-     *   C65B bits, C656 bit 5 clear (KILLS downstream power!), C62D, C004, C007, CA2E
-     * We apply CC35 and the controller bus config (C004/C007/CA2E/C62D) which
-     * may be needed for downstream port init. Skip CC43 and C656. */
-    REG_CPU_EXEC_STATUS_3 = REG_CPU_EXEC_STATUS_3 & 0xFE;  /* CC35 &= 0xFE */
-    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & 0xF7) | 0x08;       /* C65B: set bit 3 */
-    REG_PHY_EXT_5B = (REG_PHY_EXT_5B & 0xDF) | 0x20;       /* C65B: set bit 5 */
-    XDATA_REG8(0xC62D) = (XDATA_REG8(0xC62D) & 0xE0) | 0x07;  /* C62D: set bits 0,1,2 */
-    XDATA_REG8(0xC004) = (XDATA_REG8(0xC004) & 0xFD) | 0x02;  /* C004: set bit 1 */
-    XDATA_REG8(0xC007) = XDATA_REG8(0xC007) & 0xF7;            /* C007: clear bit 3 */
-    XDATA_REG8(0xCA2E) = (XDATA_REG8(0xCA2E) & 0xFE) | 0x01;  /* CA2E: set bit 0 */
     uart_puts("[PLL-]\n");
-
+    XDATA_REG8(0x0F01) = 0x02;  /* step 2: PLL done, timers */
     /* Stock DE16→DE24: Timer block init (runs before BFE0 wrapper)
      * Clears globals 0x0B30-0x0B33, then initializes CD30/CD32/CD33 timer
      * and CC2A timer mode. Stock before-training dump: CD30=0x15, CC2A=0x04.
@@ -2185,6 +2053,7 @@ static void pcie_tunnel_enable(void) {
     XDATA_REG8(0xCC5E) = 0x00;  /* timer 5 threshold hi */
     XDATA_REG8(0xCC5F) = 0xC7;  /* timer 5 threshold lo */
 
+    XDATA_REG8(0x0F01) = 0x03;  /* step 3: GPIO/power config */
     /* Stock 0xC370-0xC393: GPIO/power config BEFORE tunnel setup.
      * Emulator trace cycle ~73946: C655, C620, C65A writes.
      * C655: bit 0 set based on link type (for r7!=1, set bit 0)
@@ -2197,10 +2066,12 @@ static void pcie_tunnel_enable(void) {
     /* Step 1: Enable 3.3V power (stock: lcall 0xE5CB) */
     pcie_power_enable();
 
+    XDATA_REG8(0x0F01) = 0x04;  /* step 4: tunnel_setup */
     /* Stock first tunnel_setup (stock: lcall 0xCD6C at ~C00D)
      * Emulator trace cycle ~74060: CA06, B4xx adapter config, B401/B482/B480 */
     pcie_tunnel_setup();
 
+    XDATA_REG8(0x0F01) = 0x05;  /* step 5: DMA config */
     /* Stock DMA config (B264-B281): happens AFTER first tunnel_setup, BEFORE
      * the BFE0 wrapper (timer inits). Emulator trace cycle ~74489. */
     REG_PCIE_DMA_SIZE_A = 0x08;  REG_PCIE_DMA_SIZE_B = 0x00;
@@ -2224,6 +2095,7 @@ static void pcie_tunnel_enable(void) {
     XDATA_REG8(0xC807) = (XDATA_REG8(0xC807) & 0xFB) | 0x04;
     XDATA_REG8(0xB281) = (XDATA_REG8(0xB281) & 0xCF) | 0x10;
 
+    XDATA_REG8(0x0F01) = 0x06;  /* step 6: B401 pulse */
     /* Step 2: B401 pulse (stock: 0xC02C-0xC035)
      * lcall 0x99E4 with DPTR=B401 → B401 |= 0x01
      * then reads B401, clears bit 0 → B401 &= 0xFE */
@@ -2231,25 +2103,28 @@ static void pcie_tunnel_enable(void) {
     tmp = REG_PCIE_TUNNEL_CTRL;
     REG_PCIE_TUNNEL_CTRL = tmp & 0xFE;
 
+    XDATA_REG8(0x0F01) = 0x07;  /* step 7: tunnel_setup_reinit */
     /* Step 3: Second tunnel setup — full CD8F path.
      * Stock CD8F does CE3D (link controller re-init) + C233 config
      * + E712 polling + D9A4 (PHY lane config).
      * This is critical for proper LTSSM state and downstream link training. */
     pcie_tunnel_setup_reinit();
 
+    XDATA_REG8(0x0F01) = 0x08;  /* step 8: CA06/B480 */
     /* Step 4: CA06 &= 0xEF, then B480 |= 0x01 (stock: 0xC039-0xC03F via lcall 0x99E0)
      * tunnel_setup already did CA06 &= 0xEF, this is the second time (no-op)
      * but B480 |= 1 is important */
     REG_CPU_MODE_NEXT = REG_CPU_MODE_NEXT & 0xEF;
     REG_PCIE_PERST_CTRL = (REG_PCIE_PERST_CTRL & 0xFE) | 0x01;
 
+    XDATA_REG8(0x0F01) = 0x09;  /* step 9: 12V OFF */
     /* Step 5: C659 &= 0xFE — 12V OFF during tunnel config (stock: 0xC042-0xC044)
      * Stock firmware turns 12V OFF here, then back ON in phase 2.
-     * SKIPPED: Keep 12V on — turning it off and relying on phase 2 to restore
-     * it fails when phase 2 is skipped (B22B already 0x04 → "skip P2" path).
-     * The "pcie works" commit also skipped this. */
-    /* REG_PCIE_LANE_CTRL_C659 = REG_PCIE_LANE_CTRL_C659 & 0xFE; */
+     * The power cycle forces the GPU to re-initialize its PCIe endpoint
+     * for Gen3 x2 link training. Without this, the link trains but collapses. */
+    REG_PCIE_LANE_CTRL_C659 = REG_PCIE_LANE_CTRL_C659 & 0xFE;
 
+    XDATA_REG8(0x0F01) = 0x0A;  /* step A: lane config */
     /* Step 6: Lane config (stock: lcall 0xD436 with r7=0x0F) */
     pcie_lane_config();
 
@@ -2308,16 +2183,8 @@ static void pcie_phase2(void) {
     REG_CPU_MODE_NEXT = (REG_CPU_MODE_NEXT & 0x1F) | 0x20;  /* CA06: set bit 5 (Gen3 mode) */
     XDATA_REG8(0xB403) = (XDATA_REG8(0xB403) & 0xFE) | 0x01;
 
-    /* Stock bank_write 0x40B0 — match stock exactly */
-    __asm
-        mov     0x93, #0x01
-        mov     dptr, #0x40B0
-        movx    a, @dptr        ; Read 0x40B0 bank 2
-        anl     a, #0xF0        ; Keep upper nibble
-        orl     a, #0x03        ; Set lower nibble to 0x03
-        movx    @dptr, a        ; Write back
-        mov     0x93, #0x00     ; Clear bank select
-    __endasm;
+    /* Stock bank_write 0x40B0 — set lower nibble to 0x03
+     * SKIPPED: Bank-switched PHY writes (SFR 0x93=1) kill USB3 SuperSpeed */
 
     /* Lane mask from stock firmware: 0x0C (lanes 2,3 = Gen3 x2) */
     XDATA_REG8(0x0A5C) = 0x0C;
@@ -2332,8 +2199,36 @@ static void pcie_phase2(void) {
     uart_puts(" B4="); uart_puthex(XDATA_REG8(0xB434));
     uart_puts("]\n");
 
-    /* Step 3: E764 link training config (stock: 0xCDC6 → 0xE7D4)
-     * E7D4 with r7 bit 0 set: E764 = (E764 & 0xF7) | 0x08, then E764 &= 0xFB */
+    /* LTSSM equalization setup (stock: 0x9240-0x928C "ltssm_handler")
+     * The stock firmware's LTSSM handler temporarily enables equalization
+     * and wide link training mode before starting LTSSM negotiation.
+     * Without this, Gen3 links train transiently but can't sustain L0
+     * because the PHY can't complete equalization.
+     *
+     * Sequence (stock 0x9259-0x928C):
+     *   1. Save E764, clear bit 4
+     *   2. Save E710 (& 0x1F), set E710 |= 0x1F (enable all link widths)
+     *   3. Save CA06 (& 0xE0), set CA06 = (CA06 & 0x1F) | 0x80 (max speed)
+     *   4. E751 = 0x01 (equalization enable — CRITICAL for Gen3)
+     *   5. CA81 |= 0x01 (already done before lane_config_mask)
+     */
+    {
+        uint8_t saved_e710, saved_ca06_upper;
+
+        /* Save and set E710: enable all 5 link width bits for negotiation */
+        saved_e710 = XDATA_REG8(0xE710) & 0x1F;
+        XDATA_REG8(0xE710) = (XDATA_REG8(0xE710) & 0xE0) | 0x1F;
+
+        /* Save CA06 upper bits. Stock sets bit 7 (max speed) but this kills USB3.
+         * SKIPPED: CA06 |= 0x80 triggers PCIe speed renegotiation that crashes USB3 PHY.
+         * Link trains fine without it since we're already in Gen3 mode (CA06 bit 5). */
+        saved_ca06_upper = REG_CPU_MODE_NEXT & 0xE0;
+
+        /* E751 = 0x01: equalization enable (stock 0x928A-0x928C) */
+        XDATA_REG8(0xE751) = 0x01;
+        uart_puts("[EQ1]\n");
+
+    /* Step 3: E764 link training config (stock: 0xCDC6 → 0xE7D4) */
     tmp = REG_PHY_TIMER_CTRL_E764;
     tmp = (tmp & 0xF7) | 0x08;     /* Set bit 3 */
     REG_PHY_TIMER_CTRL_E764 = tmp;
@@ -2341,8 +2236,7 @@ static void pcie_phase2(void) {
     tmp = tmp & 0xFB;               /* Clear bit 2 */
     REG_PHY_TIMER_CTRL_E764 = tmp;
 
-    /* Step 3b: E764 bits 0,1 config (stock: 0xCDD5-0xCDE1)
-     * Clear bit 0, then set bit 1 */
+    /* Step 3b: E764 bits 0,1 config */
     tmp = REG_PHY_TIMER_CTRL_E764;
     tmp = tmp & 0xFE;               /* Clear bit 0 */
     REG_PHY_TIMER_CTRL_E764 = tmp;
@@ -2368,15 +2262,20 @@ static void pcie_phase2(void) {
     XDATA_REG8(0x0F24) = XDATA_REG8(0xB22B);         /* B22B (link width) at decision */
     XDATA_REG8(0x0F25) = XDATA_REG8(0xE765);         /* E765 at decision */
     XDATA_REG8(0x0F26) = XDATA_REG8(0xE710);         /* E710 at decision */
+
     if (tmp & 0x10) {
         /* Link trained (stock: 0xCBA3-0xCBB2)
          * E764 |= 0x01 (set bit 0), then E764 &= 0xFD (clear bit 1)
          * Transitions PHY from training to L0 stable mode.
          * Stock E762 goes from 0x10 to 0x00 after this — that's expected. */
+        XDATA_REG8(0x0F30) = XDATA_REG8(0xB22B);  /* B22B before E764 config */
+        XDATA_REG8(0x0F31) = XDATA_REG8(0xB450);  /* B450 before E764 config */
         tmp = REG_PHY_TIMER_CTRL_E764;
         REG_PHY_TIMER_CTRL_E764 = (tmp & 0xFE) | 0x01;  /* Set bit 0 */
         tmp = REG_PHY_TIMER_CTRL_E764;
         REG_PHY_TIMER_CTRL_E764 = tmp & 0xFD;            /* Clear bit 1 */
+        XDATA_REG8(0x0F32) = XDATA_REG8(0xB22B);  /* B22B after E764 config */
+        XDATA_REG8(0x0F33) = XDATA_REG8(0xB450);  /* B450 after E764 config */
         XDATA_REG8(0x06E6) = 0x00;
         uart_puts("[LK+]\n");
     } else {
@@ -2391,6 +2290,14 @@ static void pcie_phase2(void) {
         REG_PHY_TIMER_CTRL_E764 = tmp & 0xFD;  /* Clear bit 1 */
         uart_puts("[LK-]\n");
     }
+
+    /* LTSSM equalization restore (stock: 0x9374-0x93A0)
+     * After training (success or fail), restore saved register values.
+     * This transitions from "negotiation mode" back to operational mode. */
+    XDATA_REG8(0xE710) = (XDATA_REG8(0xE710) & 0xE0) | saved_e710;
+    REG_CPU_MODE_NEXT = (REG_CPU_MODE_NEXT & 0x1F) | saved_ca06_upper;
+    XDATA_REG8(0xCA81) = XDATA_REG8(0xCA81) & 0xFE;  /* Clear CA81 bit 0 */
+    }  /* end LTSSM equalization scope */
 
     /* Step 5: C659 |= 0x01 — 12V ON (stock: 0xE8D9 with r7=1 → lcall 0xCC8B)
      * CC8B: read, clear bit 0, set bit 0, write (net: set bit 0)
@@ -2952,7 +2859,7 @@ static void hw_init(void) {
 void main(void) {
     IE = 0;
     is_usb3 = 0; need_bulk_init = 0; need_dma_setup = 0; bulk_ready = 0; bulk_out_state = 0;
-    pcie_initialized = 0; need_pcie_init = 0; config_done = 0;
+    pcie_initialized = 0; need_pcie_init = 0; config_done = 0; need_rearm = 0;
     /* Clear diagnostic area */
     { uint8_t di; for (di = 0; di < 32; di++) XDATA_REG8(0x0F00 + di) = 0x00; }
     REG_UART_LCR &= 0xF7;
@@ -3006,11 +2913,16 @@ void main(void) {
     uart_puts("[PWR]\n");
 
     uart_puts("[GO]\n");
+    TMOD = 0x01;  /* Timer0 Mode 1 (16-bit), Timer1 Mode 0 */
     TCON = 0x04;  /* IT0=0 (level-triggered INT0) */
+    IP = IP_PT0;  /* Timer0 = high priority (can interrupt INT0) */
     IE = IE_EA | IE_EX0 | IE_EX1 | IE_ET0;
 
     uart_puts("[ML]\n");
     while (1) {
+        /* Main loop iteration counter (wraps at 0xFF) */
+        XDATA_REG8(0x0F1D) += 1;
+
         /* Deferred ISR status print */
         if (isr_link_state) {
             if (isr_link_state == 2) uart_puts("[T]\n");
@@ -3026,6 +2938,26 @@ void main(void) {
                 uart_puts("]\n");
             }
             isr_link_state = 0;
+        }
+
+        /* C42C is now done inline in send_csw() (inside ISR, matching stock).
+         * Post-CSW cleanup runs here when need_rearm is set. */
+        if (need_rearm) {
+            need_rearm = 0;
+
+            /* Post-CSW cleanup (stock 0xC16C) */
+            XDATA_REG8(0x000B) = 0x00;
+            XDATA_REG8(0x000A) = 0x00;
+            XDATA_REG8(0x0052) = 0x00;
+
+            /* C42A LINK_GATE toggle + nvme_link_init (stock 0xC1C8-0xC1DA) */
+            XDATA_REG8(0xC42A) = (XDATA_REG8(0xC42A) & 0xDF) | 0x20;
+            XDATA_REG8(0xC428) = XDATA_REG8(0xC428) & 0xF7;
+            XDATA_REG8(0xC473) = (XDATA_REG8(0xC473) & 0xBF) | 0x40;
+            XDATA_REG8(0xC473) = (XDATA_REG8(0xC473) & 0xDF) | 0x20;
+            XDATA_REG8(0xC42A) = XDATA_REG8(0xC42A) & 0xDF;
+
+            XDATA_REG8(0x0F14) = 0xC5;  /* diagnostic: post-CSW cleanup done */
         }
 
         /* 91D1 events are now handled in ISR (line ~1090) matching stock firmware.
@@ -3077,6 +3009,10 @@ void main(void) {
                     if (link_ok || b22b == 0x04) {
                         pcie_post_train();
                         pcie_initialized = 3;
+                        /* Stock firmware 0x3914: set PCIE_ENUM_DONE after successful init.
+                         * CBW handler at 0x34A3 checks this — without it, CBW processing
+                         * takes the error path and doesn't send CSW properly. */
+                        XDATA_REG8(0x0AF7) = 0x01;
                         uart_puts("[L0!]\n");
                     } else {
                         pcie_initialized = 2;
@@ -3090,9 +3026,7 @@ void main(void) {
          * so do_bulk_init must run after pcie_post_train. */
         if (need_bulk_init) { need_bulk_init = 0; do_bulk_init(); }
 
-        /* CBW processing happens in INT0 ISR (line ~1043).
-         * Stock firmware handles all CBW processing in ISR context.
-         * Main loop only handles 91D1 link events and state machine. */
+        /* (C42C deferred trigger moved to top of main loop — see above) */
 
         if (bulk_out_state == 1) {
             REG_USB_EP_CFG1 = USB_EP_CFG1_ARM_OUT;
