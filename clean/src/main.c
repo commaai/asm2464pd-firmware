@@ -11,6 +11,10 @@ __sfr __at(0xA8) IE;
 __sfr __at(0x88) TCON;
 __sfr __at(0x89) TMOD;
 __sfr __at(0xB8) IP;   /* Interrupt Priority */
+__sfr __at(0x82) DPL;  /* Data pointer low */
+__sfr __at(0x83) DPH;  /* Data pointer high */
+__sfr __at(0x93) DPX;  /* DPTR bank select (extended data pointer) */
+__sfr __at(0xE0) ACC;  /* Accumulator */
 #define IE_EA   0x80
 #define IE_EX1  0x04
 #define IE_ET0  0x02
@@ -63,6 +67,48 @@ static void phy_soft_reset(void);
 static void pcie_lane_config(void);
 static void phy_set_bit6(void);
 static void do_bulk_init(void);
+static void pcie_bridge_config_init(void);
+
+/* Bank-switched PHY write: sets SFR 0x93 (DPX)=1, writes to XDATA[addr], restores DPX=0.
+ * Stock firmware uses r3=2 → bank helpers compute SFR 0x93 = (r3-1) & 0x7F = 1.
+ * Entire function in asm because --model-large passes params via dptr/XDATA. */
+static void bank1_write(uint16_t addr, uint8_t val) {
+    (void)addr; (void)val;
+    __asm
+        ; SDCC --model-large: first param (addr) in DPL:DPH at entry
+        ; second param (val) at _bank1_write_PARM_2 in XDATA
+        mov  r6, dpl                 ; save addr low
+        mov  r7, dph                 ; save addr high
+        mov  dptr, #_bank1_write_PARM_2
+        movx a, @dptr                ; A = val
+        mov  dpl, r6                 ; restore addr
+        mov  dph, r7
+        mov  0x93, #0x01             ; DPX = 1 (bank 1)
+        movx @dptr, a                ; write val to bank1 XDATA[addr]
+        mov  0x93, #0x00             ; DPX = 0 (restore)
+    __endasm;
+}
+
+/* Bank-switched read-modify-write: read bank1[addr], OR with mask, write back.
+ * Used for 0x6025 |= 0x80 pattern in stock CC83. */
+static void bank1_or_bits(uint16_t addr, uint8_t mask) {
+    (void)addr; (void)mask;
+    __asm
+        ; addr in DPL:DPH, mask at _bank1_or_bits_PARM_2
+        mov  r6, dpl
+        mov  r7, dph
+        mov  dptr, #_bank1_or_bits_PARM_2
+        movx a, @dptr                ; A = mask
+        mov  r5, a                   ; r5 = mask
+        mov  dpl, r6                 ; restore addr
+        mov  dph, r7
+        mov  0x93, #0x01             ; DPX = 1 (bank 1)
+        movx a, @dptr                ; read bank1[addr]
+        orl  a, r5                   ; OR with mask
+        movx @dptr, a                ; write back
+        mov  0x93, #0x00             ; DPX = 0 (restore)
+    __endasm;
+}
 
 /*=== USB Control Transfer Helpers ===*/
 
@@ -2708,7 +2754,109 @@ static uint8_t pcie_perst_deassert(void) {
     return 1;
 }
 
+/*
+ * pcie_bridge_config_init - Set up PCIe bridge config space shadow registers
+ * Based on stock firmware 0xCC83-0xCCDA (called from 0xC275 post-link)
+ *
+ * The ASM2464PD has an internal PCIe switch with two downstream ports.
+ * The B4xx registers are shadow config space for these ports. Without
+ * the class code set to PCI-to-PCI bridge (0x060400), the hardware
+ * won't forward Type 1 config TLPs downstream, causing all config
+ * reads to return the bridge's own VID/DID regardless of bus number.
+ *
+ * Stock firmware flow (0xCC83):
+ *   1. CA06 &= ~0x10
+ *   2. Call 0xC6D7: write VID/DID/class/subsystem to B410-B42B
+ *   3. B401 |= 0x01, B482 |= 0x01
+ *   4. B482 = (B482 & 0x0F) | 0xF0
+ *   5. B401 &= ~0x01, B480 |= 0x01  (bridge enable)
+ *   6. B430 &= ~0x01
+ *   7. B298 = (B298 & ~0x10) | 0x10
+ *
+ * Caller (0xC275) also does:
+ *   8. CA06 &= ~0x10, B480 |= 0x01  (again)
+ *   9. Call pcie_lane_config_mask(0x0F)
+ */
+static void pcie_bridge_config_init(void) {
+    /* Step 1: CA06 clear bit 4 (stock: 0xCC83-CC89) */
+    REG_CPU_MODE_NEXT = REG_CPU_MODE_NEXT & 0xEF;
+
+    /* Step 2: Bridge config shadow registers (stock: 0xC6D7-C73D)
+     * Port 0 shadow: B410-B41B
+     * Port 1 shadow: B420-B42B
+     * Values from stock dump — VID=0x1B21, DID=0x2463, class=0x060400 */
+
+    /* Port 0: VID/DID */
+    XDATA_REG8(0xB410) = 0x1B;  /* VID low */
+    XDATA_REG8(0xB411) = 0x21;  /* VID high */
+    XDATA_REG8(0xB412) = 0x24;  /* DID low */
+    XDATA_REG8(0xB413) = 0x63;  /* DID high */
+    /* Port 0: Class code = PCI-to-PCI bridge (0x060400) */
+    XDATA_REG8(0xB415) = 0x06;  /* base class: bridge */
+    XDATA_REG8(0xB416) = 0x04;  /* sub class: PCI-to-PCI */
+    XDATA_REG8(0xB417) = 0x00;  /* prog interface */
+    /* Port 0: Subsystem IDs */
+    XDATA_REG8(0xB418) = 0x24;  /* subsystem DID low */
+    XDATA_REG8(0xB419) = 0x63;  /* subsystem DID high */
+    XDATA_REG8(0xB41A) = 0x1B;  /* subsystem VID low */
+    XDATA_REG8(0xB41B) = 0x21;  /* subsystem VID high */
+
+    /* Port 1: same values (stock: 0xC6E9-C73C) */
+    XDATA_REG8(0xB420) = 0x1B;
+    XDATA_REG8(0xB421) = 0x21;
+    XDATA_REG8(0xB422) = 0x24;
+    XDATA_REG8(0xB423) = 0x63;
+    XDATA_REG8(0xB425) = 0x06;
+    XDATA_REG8(0xB426) = 0x04;
+    XDATA_REG8(0xB427) = 0x00;
+    XDATA_REG8(0xB428) = 0x24;
+    XDATA_REG8(0xB429) = 0x63;
+    XDATA_REG8(0xB42A) = 0x1B;
+    XDATA_REG8(0xB42B) = 0x21;
+
+    /* Step 3: B401 set bit 0, B482 set bit 0 (stock: 0xCC9D-CCA6) */
+    XDATA_REG8(0xB401) = (XDATA_REG8(0xB401) & 0xFE) | 0x01;
+    XDATA_REG8(0xB482) = (XDATA_REG8(0xB482) & 0xFE) | 0x01;
+
+    /* Step 4: B482 upper nibble = 0xF0 (stock: 0xCCA9-CCAE) */
+    XDATA_REG8(0xB482) = (XDATA_REG8(0xB482) & 0x0F) | 0xF0;
+
+    /* Step 5: B401 clear bit 0, then B480 set bit 0 = bridge enable
+     * (stock: 0xCCAF-CCB7 calling 0x993D) */
+    XDATA_REG8(0xB401) = XDATA_REG8(0xB401) & 0xFE;
+    XDATA_REG8(0xB480) = (XDATA_REG8(0xB480) & 0xFE) | 0x01;
+
+    /* Step 6: B430 clear bit 0 (stock: 0xCCB8-CCBE) */
+    XDATA_REG8(0xB430) = XDATA_REG8(0xB430) & 0xFE;
+
+    /* Step 7: B298 set bit 4 (stock: 0xCCBF-CCC7) */
+    XDATA_REG8(0xB298) = (XDATA_REG8(0xB298) & 0xEF) | 0x10;
+
+    /* Step 8: Caller (0xC278-C27E): CA06 &= ~0x10 again, B480 |= 0x01 again */
+    REG_CPU_MODE_NEXT = REG_CPU_MODE_NEXT & 0xEF;
+    XDATA_REG8(0xB480) = (XDATA_REG8(0xB480) & 0xFE) | 0x01;
+
+    /* Step 9: Bank-switched PHY writes (stock: 0xCC8D-CC9C via bank helpers)
+     * These configure PCIe switch port PHY and are required for type 1 TLP forwarding.
+     * R3=2 → bank 1 (SFR 0x93 = 1). Done AFTER link reaches L0 (stock: CC83 called from C24C). */
+    bank1_write(0x4084, 0x22);
+    bank1_write(0x5084, 0x22);
+
+    /* Step 10: B401 set bit 0, B482 set bit 0 — already done in step 3 */
+    /* Step 11: B482 upper nibble, B401 clear, B480 set — already done in steps 4-5 */
+    /* Step 12: B430, B298 — already done in steps 6-7 */
+
+    /* Step 13: More bank-switched PHY writes (stock: 0xCCC8-CCDA)
+     * 0x6043 = 0x70, 0x6025 |= 0x80 */
+    bank1_write(0x6043, 0x70);
+    bank1_or_bits(0x6025, 0x80);
+
+    /* Step 14: B481 bits (stock dump shows B481=0x03) */
+    XDATA_REG8(0xB481) = (XDATA_REG8(0xB481) & 0xFC) | 0x03;
+}
+
 static void pcie_post_train(void) {
+    uint8_t i;
     /* Called once after LTSSM reaches L0 */
     /* Ensure 12V is ON (in case phase 2 was skipped) */
     REG_PCIE_LANE_CTRL_C659 = (REG_PCIE_LANE_CTRL_C659 & 0xFE) | 0x01;
@@ -2724,6 +2872,30 @@ static void pcie_post_train(void) {
     XDATA_REG8(0xC4EB) |= 0x01;
     XDATA_REG8(0xC4ED) |= 0x01;
     REG_CPU_MODE_NEXT &= 0xBF;
+
+    /* Bridge config init (stock: CC83 called from C24C after link L0) */
+    pcie_bridge_config_init();
+
+    /* B455 trigger sequence (stock: 0x35E2-0x367A)
+     * This enables PCIe config TLP forwarding through the internal switch.
+     * B455 is a hardware control register:
+     *   Write 0x02: clear/ack pending status
+     *   Write 0x04: trigger downstream port enable
+     *   Bit 1 set by hardware: operation complete
+     * B2D5 = 0x01: enable PCIe config routing */
+    XDATA_REG8(0xB455) = 0x02;   /* Clear pending */
+    XDATA_REG8(0xB455) = 0x04;   /* Trigger */
+    XDATA_REG8(0xB2D5) = 0x01;   /* Enable config routing */
+    XDATA_REG8(0xB296) = 0x08;   /* Ack */
+
+    /* Poll B455 bit 1 for completion (stock: 0x366B-0x3673) */
+    for (i = 0; i < 200; i++) {
+        if (XDATA_REG8(0xB455) & 0x02) {
+            XDATA_REG8(0xB455) = 0x02;  /* Ack completion */
+            break;
+        }
+        delay_short();
+    }
 }
 
 /*=== Hardware Init (from stock firmware trace) ===*/
@@ -3007,7 +3179,7 @@ void main(void) {
                     uart_puts(" L="); uart_puthex(XDATA_REG8(0xB450));
                     uart_puts("]\n");
                     if (link_ok || b22b == 0x04) {
-                        pcie_post_train();
+                        pcie_post_train();  /* includes bridge_config_init + B455 trigger */
                         pcie_initialized = 3;
                         /* Stock firmware 0x3914: set PCIE_ENUM_DONE after successful init.
                          * CBW handler at 0x34A3 checks this — without it, CBW processing
