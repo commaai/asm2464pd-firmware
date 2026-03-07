@@ -59,10 +59,11 @@ static volatile __xdata uint8_t config_done;
 static volatile __xdata uint8_t need_rearm;  /* deferred MSC re-arm (main loop) */
 static volatile __xdata uint8_t need_state_init;  /* deferred state_init (main loop) */
 static volatile __xdata uint8_t pcie_cfg_pending;  /* B297 write seen before PCIe ready */
+static volatile __xdata uint8_t cbw_active;  /* 1 while handle_cbw is running */
 
 static void poll_bulk_events(void);
 static void handle_cbw(void);
-static void sw_dma_bulk_in(uint16_t addr, uint8_t len);
+static void direct_bulk_in(uint8_t len);
 static void pcie_tunnel_enable(void);
 static void pcie_phase2(void);
 static void pcie_early_init(void);
@@ -202,18 +203,43 @@ static __code const uint8_t dev_desc[] = {
     0xD1, 0xAD, 0x01, 0x00, 0x01, 0x00, 0x01, 0x02, 0x03, 0x01,
 };
 static __code const uint8_t cfg_desc[] = {
-    /* Configuration descriptor */
-    0x09, 0x02, 0x2C, 0x00, 0x01, 0x01, 0x00, 0xC0, 0x00,
-    /* Interface descriptor: class=0xFF (vendor-specific), subclass=0x06,
-     * protocol=0x50. Using vendor class avoids kernel mass storage driver
-     * claiming the device (which causes libusb_reset_device on detach). */
-    0x09, 0x04, 0x00, 0x00, 0x02, 0xFF, 0x06, 0x50, 0x00,
-    /* EP1 IN (0x81) bulk, maxpacket 1024 */
+    /* Configuration descriptor: wTotalLength=0x0079=121 (both alt settings)
+     * Matches stock firmware ROM at 0x58CF */
+    0x09, 0x02, 0x79, 0x00, 0x01, 0x01, 0x00, 0xC0, 0x00,
+
+    /* === Alt Setting 0: BOT (Bulk-Only Transport) === */
+    /* Interface: iface=0, alt=0, 2 EPs, class=0x08 MSC, sub=0x06 SCSI, proto=0x50 BOT */
+    0x09, 0x04, 0x00, 0x00, 0x02, 0x08, 0x06, 0x50, 0x00,
+    /* EP 0x81 IN bulk 1024, SS companion burst=15 */
     0x07, 0x05, 0x81, 0x02, 0x00, 0x04, 0x00,
-    0x06, 0x30, 0x00, 0x00, 0x00, 0x00,
-    /* EP2 OUT (0x02) bulk, maxpacket 1024 */
+    0x06, 0x30, 0x0F, 0x00, 0x00, 0x00,
+    /* EP 0x02 OUT bulk 1024, SS companion burst=15 */
     0x07, 0x05, 0x02, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x0F, 0x00, 0x00, 0x00,
+
+    /* === Alt Setting 1: UAS (USB Attached SCSI) === */
+    /* Interface: iface=0, alt=1, 4 EPs, class=0x08 MSC, sub=0x06 SCSI, proto=0x62 UAS */
+    0x09, 0x04, 0x00, 0x01, 0x04, 0x08, 0x06, 0x62, 0x00,
+    /* EP 0x81 IN bulk 1024, SS companion burst=15 streams=32 (0x05=2^5) */
+    0x07, 0x05, 0x81, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x0F, 0x05, 0x00, 0x00,
+    /* UAS pipe usage: Data-In pipe (0x03) */
+    0x04, 0x24, 0x03, 0x00,
+    /* EP 0x02 OUT bulk 1024, SS companion burst=15 streams=32 */
+    0x07, 0x05, 0x02, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x0F, 0x05, 0x00, 0x00,
+    /* UAS pipe usage: Data-Out pipe (0x04) */
+    0x04, 0x24, 0x04, 0x00,
+    /* EP 0x83 IN bulk 1024, SS companion burst=15 streams=32 */
+    0x07, 0x05, 0x83, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x0F, 0x05, 0x00, 0x00,
+    /* UAS pipe usage: Status pipe (0x02) */
+    0x04, 0x24, 0x02, 0x00,
+    /* EP 0x04 OUT bulk 1024, SS companion burst=0 no streams */
+    0x07, 0x05, 0x04, 0x02, 0x00, 0x04, 0x00,
     0x06, 0x30, 0x00, 0x00, 0x00, 0x00,
+    /* UAS pipe usage: Command pipe (0x01) */
+    0x04, 0x24, 0x01, 0x00,
 };
 static __code const uint8_t bos_desc[] = {
     /* BOS header: 22 bytes total, 2 capabilities */
@@ -812,66 +838,92 @@ static void do_bulk_init(void) {
  * We set status + residue, trigger bulk DMA, wait for EP_COMPLETE,
  * then re-arm MSC for next CBW.
  *
- * After EP_COMPLETE, we clear it via 90E3/EP_READY before re-arming
- * to prevent stale EP_COMPLETE from confusing the next cycle.
+ * IMPORTANT: Do NOT clear EP_COMPLETE here. The C42C re-arm does not
+ * generate a new EP_COMPLETE. poll_bulk_events() needs to see the
+ * EP_COMPLETE from the CSW DMA to set REG_USB_MODE=0x01, which gates
+ * the next handle_cbw() call.
+ */
+/*
+ * send_csw - Send CSW via doorbell dance + C802 bulk DMA trigger
+ *
+ * Matches stock firmware pattern: doorbell dance transitions MSC
+ * state machine, then C802 triggers DMA, wait for EP_COMPLETE.
  */
 static void send_csw(uint8_t status) {
+    uint8_t saved_ie = IE;
     EP_BUF(0x0C) = status;
     EP_BUF(0x08) = 0x00; EP_BUF(0x09) = 0x00;
     EP_BUF(0x0A) = 0x00; EP_BUF(0x0B) = 0x00;
+
+    /* Doorbell dance to transition MSC state machine */
+    doorbell_dance();
+
+    /* Disable interrupts during DMA trigger → EP_COMPLETE critical section */
+    IE &= ~0x80;  /* EA = 0 */
+    /* Clear stale EP_COMPLETE BEFORE triggering DMA */
+    if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) {
+        REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+    }
     REG_USB_BULK_DMA_TRIGGER = 0x01;
     while (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) { }
-    REG_USB_EP_STATUS_90E3 = 0x02;
-    REG_USB_EP_READY = 0x01;
+    /* Clear EP_COMPLETE from CSW DMA + reset DMA engine */
+    REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+    REG_USB_STATUS_909E = 0x01;  /* Ack buffer status (stock 0x0EE9) */
+    REG_USB_CTRL_90A0 = 0x01;  /* Reset DMA engine after EP_COMPLETE clear */
+    REG_USB_BULK_DMA_TRIGGER = 0x00;
     REG_USB_MSC_CTRL = 0x01;
     REG_USB_MSC_STATUS &= ~0x01;
+    IE = saved_ie;
+
+    /* Stock firmware jumps to 0xC16C after every CSW (ljmp from 0x494D).
+     * This cleanup resets DMA descriptors, state arrays, and toggles C42A bit 5.
+     * Without it, DMA state accumulates and breaks large bulk OUT after many commands. */
+    post_csw_cleanup();
 }
 
-static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
-    uint8_t ah = (addr >> 8) & 0xFF;
-    uint8_t al = addr & 0xFF;
+/*
+ * direct_bulk_in - Send data to host via bulk IN using MSC DMA engine
+ *
+ * Avoids SW DMA mode (DMA_CONFIG=0xA0, 905A=0x10, 90F0=0x01) which
+ * poisons hardware state and breaks subsequent large bulk OUT transfers.
+ * Instead, uses the same C802 bulk DMA trigger as send_csw().
+ *
+ * Data must already be in EP_BUF (D800+) before calling.
+ * After return, EP_BUF is consumed — caller must restore CSW header.
+ */
+static void direct_bulk_in(uint8_t len) {
+    uint8_t saved_ie;
 
+    REG_USB_MSC_LENGTH = len;
+
+    saved_ie = IE;
+    IE &= ~0x80;  /* EA = 0 */
     /* Clear stale EP_COMPLETE */
     if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) {
         REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
     }
-
-    REG_USB_MSC_LENGTH = len;
-    REG_DMA_CONFIG = DMA_CONFIG_SW_MODE;
-    REG_USB_EP_BUF_HI = ah; REG_USB_EP_BUF_LO = al;
-    EP_BUF(0x02) = ah; EP_BUF(0x03) = al;
-    EP_BUF(0x04) = 0x00; EP_BUF(0x05) = 0x00;
-    EP_BUF(0x06) = 0x00; EP_BUF(0x07) = 0x00;
-    EP_BUF(0x0F) = 0x00; EP_BUF(0x00) = 0x03;
-
-    REG_XFER_CTRL_C509 |= 0x01;
-    REG_USB_EP_CFG_905A = USB_EP_CFG_BULK_IN;
-    REG_USB_SW_DMA_TRIGGER = 0x01;
-    REG_XFER_CTRL_C509 &= ~0x01;
-
-    G_XFER_STATE_0AF4 = 0x40;
     REG_USB_BULK_DMA_TRIGGER = 0x01;
-
-    /* Wait for EP_COMPLETE (9101 bit 5) with timeout */
+    /* Wait for EP_COMPLETE with timeout */
     {
         uint16_t to;
         for (to = 60000; to; to--) {
             if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) break;
         }
         if (!to) {
-            uart_puts("[SW_TO]");
-            XDATA_REG8(0x0F16) = REG_USB_PERIPH_STATUS;  /* diagnostic */
-            XDATA_REG8(0x0F17) += 1;  /* timeout count */
+            uart_puts("[DBI_TO]");
+            XDATA_REG8(0x0F16) = REG_USB_PERIPH_STATUS;
+            XDATA_REG8(0x0F17) += 1;
         }
     }
     REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+    REG_USB_STATUS_909E = 0x01;  /* Ack buffer status (stock 0x0EE9) */
+    REG_USB_CTRL_90A0 = 0x01;  /* Reset DMA engine after EP_COMPLETE clear */
+    REG_USB_BULK_DMA_TRIGGER = 0x00;
+    /* Do NOT re-arm MSC here — caller will send CSW next which does the re-arm.
+     * Re-arming MSC between data-IN and CSW confuses the BOT state machine. */
+    IE = saved_ie;
 
-    REG_DMA_CONFIG = DMA_CONFIG_DISABLE;
-    REG_USB_EP_CFG_905A = 0x00;  /* Clear EP direction (was BULK_IN 0x10) */
-    REG_USB_SW_DMA_TRIGGER = 0x00;   /* Clear SW DMA trigger */
-    REG_USB_BULK_DMA_TRIGGER = 0x00; /* Clear bulk DMA trigger */
-    G_XFER_STATE_0AF4 = 0x00;   /* Clear transfer state */
-    REG_USB_MSC_LENGTH = 0x0D;
+    REG_USB_MSC_LENGTH = 0x0D;  /* Restore to CSW length */
 }
 
 /*=== CBW Handler (from master, proven working) ===*/
@@ -911,27 +963,41 @@ static void handle_cbw(void) {
     } else if (opcode == 0xE4) {
         /* Read XDATA — two modes based on dCBWDataTransferLength:
          *   xfer_len=0: embed up to 4 bytes in CSW residue field (test_bulk.py)
-         *   xfer_len>0: data IN phase via sw_dma_bulk_in (tinygrad ReadOp) */
+         *   xfer_len>0: data IN phase via direct_bulk_in (tinygrad ReadOp) */
         uint8_t sz = REG_USB_CBWCB_1;
         uint16_t addr = ((uint16_t)REG_USB_CBWCB_3 << 8) | REG_USB_CBWCB_4;
         uint8_t xfer_len = REG_USB_CBW_XFER_LEN_0;
         if (sz == 0) sz = 1;
         if (xfer_len == 0) {
             /* No data phase — embed in CSW residue (max 4 bytes) */
+            uint8_t saved_ie2;
             EP_BUF(0x08) = XDATA_REG8(addr);
             EP_BUF(0x09) = (sz >= 2) ? XDATA_REG8(addr + 1) : 0x00;
             EP_BUF(0x0A) = (sz >= 3) ? XDATA_REG8(addr + 2) : 0x00;
             EP_BUF(0x0B) = (sz >= 4) ? XDATA_REG8(addr + 3) : 0x00;
             EP_BUF(0x0C) = 0x00;
+            saved_ie2 = IE;
+            IE &= ~0x80;  /* Disable interrupts during DMA trigger */
+            /* Clear stale EP_COMPLETE before triggering DMA */
+            if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) {
+                REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+            }
             REG_USB_BULK_DMA_TRIGGER = 0x01;
             while (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) { }
+            /* Clear EP_COMPLETE + reset DMA engine after completion */
+            REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+            REG_USB_STATUS_909E = 0x01;  /* Ack buffer status (stock 0x0EE9) */
+            REG_USB_CTRL_90A0 = 0x01;  /* Reset DMA engine */
+            REG_USB_BULK_DMA_TRIGGER = 0x00;
             REG_USB_MSC_CTRL = 0x01;
             REG_USB_MSC_STATUS &= ~0x01;
+            IE = saved_ie2;
+            post_csw_cleanup();
         } else {
             /* Data IN phase */
             uint8_t i;
             for (i = 0; i < sz; i++) EP_BUF(i) = XDATA_REG8(addr + i);
-            sw_dma_bulk_in(0xD800, sz);
+            direct_bulk_in(sz);
             EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
             EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
             EP_BUF(0x04) = cbw_tag[0]; EP_BUF(0x05) = cbw_tag[1];
@@ -944,7 +1010,7 @@ static void handle_cbw(void) {
         uint8_t i;
         if (len == 0) len = 64;
         for (i = 0; i < len; i++) EP_BUF(i) = XDATA_REG8(addr + i);
-        sw_dma_bulk_in(addr, len);
+        direct_bulk_in(len);
         EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
         EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
         EP_BUF(0x04) = cbw_tag[0]; EP_BUF(0x05) = cbw_tag[1];
@@ -1013,7 +1079,7 @@ static void handle_cbw(void) {
         EP_BUF(0x18) = 'E'; EP_BUF(0x19) = ' '; EP_BUF(0x1A) = ' '; EP_BUF(0x1B) = ' ';
         /* Revision: "0   " (4 bytes) */
         EP_BUF(0x20) = '0'; EP_BUF(0x21) = ' '; EP_BUF(0x22) = ' '; EP_BUF(0x23) = ' ';
-        sw_dma_bulk_in(0xD800, resp_len);
+        direct_bulk_in(resp_len);
         /* Restore CSW header after data-in */
         EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
         EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
@@ -1031,7 +1097,7 @@ static void handle_cbw(void) {
         /* Block size = 512 bytes */
         EP_BUF(0x04) = 0x00; EP_BUF(0x05) = 0x00;
         EP_BUF(0x06) = 0x02; EP_BUF(0x07) = 0x00;
-        sw_dma_bulk_in(0xD800, 8);
+        direct_bulk_in(8);
         EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
         EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
         EP_BUF(0x04) = cbw_tag[0]; EP_BUF(0x05) = cbw_tag[1];
@@ -1041,7 +1107,7 @@ static void handle_cbw(void) {
         /* SCSI MODE_SENSE(6) — return minimal response */
         EP_BUF(0x00) = 0x03; EP_BUF(0x01) = 0x00;
         EP_BUF(0x02) = 0x00; EP_BUF(0x03) = 0x00;
-        sw_dma_bulk_in(0xD800, 4);
+        direct_bulk_in(4);
         EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
         EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
         EP_BUF(0x04) = cbw_tag[0]; EP_BUF(0x05) = cbw_tag[1];
@@ -1058,7 +1124,7 @@ static void handle_cbw(void) {
         EP_BUF(0x07) = 0x0A;  /* Additional sense length */
         EP_BUF(0x0C) = 0x3A;  /* ASC: MEDIUM NOT PRESENT */
         EP_BUF(0x0D) = 0x00;  /* ASCQ */
-        sw_dma_bulk_in(0xD800, resp_len);
+        direct_bulk_in(resp_len);
         EP_BUF(0x00) = 0x55; EP_BUF(0x01) = 0x53;
         EP_BUF(0x02) = 0x42; EP_BUF(0x03) = 0x53;
         EP_BUF(0x04) = cbw_tag[0]; EP_BUF(0x05) = cbw_tag[1];
@@ -1075,7 +1141,6 @@ static void handle_cbw(void) {
          * Same mechanism as E7 but in a loop for large transfers. */
         uint32_t xfer_len;
         uint32_t received;
-        uint16_t timeout;
         uint16_t chunk;
 
         /* Read transfer length from CBW */
@@ -1098,28 +1163,41 @@ static void handle_cbw(void) {
             REG_USB_EP_CFG1 = USB_EP_CFG1_ARM_OUT;
             REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
 
-            /* Wait for bulk OUT data */
-            for (timeout = 60000; timeout; timeout--) {
-                if (REG_USB_PERIPH_STATUS & USB_PERIPH_BULK_DATA) break;
-            }
-            if (!timeout) {
-                uart_puts("[W:BD_TO]\n");
-                send_csw(0x01);
-                return;
+            /* Wait for bulk OUT data with timeout for diagnostics */
+            {
+                uint16_t wt;
+                for (wt = 60000; wt; wt--) {
+                    if (REG_USB_PERIPH_STATUS & USB_PERIPH_BULK_DATA) break;
+                    REG_CPU_KEEPALIVE = 0x0C;
+                }
+                if (!wt) {
+                    /* Timed out — dump diagnostic state */
+                    XDATA_REG8(0x0F18) = (uint8_t)(received >> 8);  /* received KB */
+                    XDATA_REG8(0x0F19) = REG_USB_PERIPH_STATUS;
+                    XDATA_REG8(0x0F1A) = REG_USB_EP_CFG_905A;
+                    XDATA_REG8(0x0F1B) = REG_DMA_CONFIG;
+                    XDATA_REG8(0x0F1C) = REG_USB_SW_DMA_TRIGGER;
+                    XDATA_REG8(0x0F1D) = REG_USB_BULK_DMA_TRIGGER;
+                    uart_puts("[W:STUCK@");
+                    uart_puthex((uint8_t)(received >> 8));
+                    uart_puts("KB 9101=");
+                    uart_puthex(REG_USB_PERIPH_STATUS);
+                    uart_puts(" 905A=");
+                    uart_puthex(REG_USB_EP_CFG_905A);
+                    uart_puts(" C8D4=");
+                    uart_puthex(REG_DMA_CONFIG);
+                    uart_puts("]\n");
+                    /* Try to recover — send error CSW */
+                    send_csw(0x01);
+                    return;
+                }
             }
 
             /* DMA handshake — receive data */
             REG_USB_EP_CFG1 = USB_EP_CFG1_ARM_OUT;
             REG_INT_AUX_STATUS = (REG_INT_AUX_STATUS & 0xF9) | 0x02;
             REG_BULK_DMA_HANDSHAKE = 0x00;
-            for (timeout = 60000; timeout; timeout--) {
-                if (REG_USB_DMA_STATE & USB_DMA_STATE_READY) break;
-            }
-            if (!timeout) {
-                uart_puts("[W:CE89_TO]\n");
-                send_csw(0x01);
-                return;
-            }
+            while (!(REG_USB_DMA_STATE & USB_DMA_STATE_READY)) { }
 
             /* Each USB SS packet is up to 1024 bytes */
             chunk = 1024;
@@ -1328,11 +1406,9 @@ static void handle_usb_reset(void) {
 static void poll_bulk_events(void) {
     uint8_t st = REG_USB_PERIPH_STATUS;
     if (st & USB_PERIPH_EP_COMPLETE) {
-        REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
-        /* Stock firmware ISR (0x0E33) re-sets 90E2=0x01 on EP_COMPLETE.
-         * Hardware clears 90E2 after processing arm_msc's C42C. Without
-         * re-setting it here, handle_cbw's 90E2 check fails and the
-         * first CBW (TUR) is silently dropped. */
+        /* Only set REG_USB_MODE here. EP_COMPLETE is cleared by send_csw
+         * after each CSW DMA. Redundant clearing here was causing hardware
+         * state accumulation that broke bulk OUT after ~100 commands. */
         REG_USB_MODE = 0x01;
     }
     /* Don't trigger CBW processing during E7 bulk-out data phase.
@@ -1352,18 +1428,10 @@ void int0_isr(void) __interrupt(0) {
     if ((periph_status & USB_PERIPH_91D1_EVENT) && !(periph_status & USB_PERIPH_CONTROL))
         handle_usb_reset();
 
-    if (periph_status & USB_PERIPH_BULK_REQ) {
-        uint8_t r9301 = REG_BUF_CFG_9301;
-        if (r9301 & BUF_CFG_9301_BIT6)
-            REG_BUF_CFG_9301 = BUF_CFG_9301_BIT6;
-        else if (r9301 & BUF_CFG_9301_BIT7) {
-            REG_BUF_CFG_9301 = BUF_CFG_9301_BIT7;
-            REG_POWER_DOMAIN |= POWER_DOMAIN_BIT1;
-        } else {
-            uint8_t r9302 = REG_BUF_CFG_9302;
-            if (r9302 & BUF_CFG_9302_BIT7) REG_BUF_CFG_9302 = BUF_CFG_9302_BIT7;
-        }
-    }
+    /* BULK_REQ handler: Writing to 9301/9302 interferes with bulk
+     * DMA operations and causes EP_COMPLETE timeouts. Disabled for
+     * now — hardware seems to handle buffer management autonomously
+     * for our use case. */
 
     if (!(periph_status & USB_PERIPH_CONTROL)) return;
     phase = REG_USB_CTRL_PHASE;
@@ -1394,8 +1462,31 @@ void int0_isr(void) __interrupt(0) {
         } else if (bmReq == 0x00 && bReq == USB_REQ_SET_CONFIGURATION) {
             handle_set_config();
         } else if (bmReq == 0x01 && bReq == USB_REQ_SET_INTERFACE) {
-            need_bulk_init = 1;
+            /* SET_INTERFACE: wValL = alt setting (0=BOT, 1=UAS)
+             * Stock firmware (0x3DA8): writes 0xC1 to state[0x108+idata[0x0D]]
+             * which signals the main loop to re-run MSC init.
+             *
+             * For UAS (alt=1), we need to:
+             * 1. Program all 4 endpoints via C8Ax engine
+             * 2. Set EP buffer descriptors (901A-901F) to 0x10 (stock UAS value)
+             * 3. Re-init MSC engine */
+            if (wValL == 1) {
+                /* Program UAS endpoints */
+                program_bulk_endpoint(0x81, 1024);
+                program_bulk_endpoint(0x02, 1024);
+                program_bulk_endpoint(0x83, 1024);
+                program_bulk_endpoint(0x04, 1024);
+                /* Set EP buffer descriptors to match stock UAS config */
+                REG_USB_MSC_LENGTH = 0x10;
+                XDATA_REG8(0x901B) = 0x10;
+                XDATA_REG8(0x901C) = 0x10;
+                XDATA_REG8(0x901D) = 0x10;
+                XDATA_REG8(0x901E) = 0x10;
+                XDATA_REG8(0x901F) = 0x10;
+            }
             send_zlp_ack();
+            need_bulk_init = 1;
+            need_state_init = 1;
         } else if (bmReq == 0x00 && (bReq == USB_REQ_SET_SEL || bReq == USB_REQ_SET_ISOCH_DELAY)) {
             send_zlp_ack();
         } else if (bmReq == 0x02 && bReq == 0x01) {
@@ -3219,7 +3310,7 @@ static void hw_init(void) {
 void main(void) {
     IE = 0;
     is_usb3 = 0; need_bulk_init = 0; need_dma_setup = 0; bulk_ready = 0; bulk_out_state = 0;
-    pcie_initialized = 0; need_pcie_init = 0; config_done = 0; need_rearm = 0; need_state_init = 0; pcie_cfg_pending = 0;
+    pcie_initialized = 0; need_pcie_init = 0; config_done = 0; need_rearm = 0; need_state_init = 0; pcie_cfg_pending = 0; cbw_active = 0;
     /* Clear diagnostic area */
     { uint8_t di; for (di = 0; di < 32; di++) XDATA_REG8(0x0F00 + di) = 0x00; }
     REG_UART_LCR &= 0xF7;
@@ -3307,7 +3398,12 @@ void main(void) {
         poll_bulk_events();
 
         if (need_bulk_init) { need_bulk_init = 0; do_bulk_init(); }
-        if (need_cbw_process) { need_cbw_process = 0; handle_cbw(); }
+        if (need_cbw_process) {
+            need_cbw_process = 0;
+            cbw_active = 1;
+            handle_cbw();
+            cbw_active = 0;
+        }
 
         /* Deferred ISR status print */
         if (isr_link_state) {
