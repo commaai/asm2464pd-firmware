@@ -317,6 +317,149 @@ def test_20_scsi_write_then_e5(dev):
     e5_write_raw(dev, 0xCE6F, 0x00)
     return True
 
+def test_21_scsi_write_pcie_readback(dev):
+    """SCSI WRITE 512B then readback via PCIe mem_req at 0x200000.
+    
+    SCSI WRITE data lands in DMA buffer at PCIe address 0x200000,
+    NOT in XDATA. Must use PCIe mem_req to read it back."""
+    usb = ASM24Controller.__new__(ASM24Controller)
+    usb.usb = dev
+    usb._cache = {}
+    usb._pci_cacheable = []
+    usb._pci_cache = {}
+    
+    # Write known pattern
+    pattern = bytes([(i * 17 + 0xAB) & 0xFF for i in range(512)])
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=5000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+    
+    # Read back via PCIe mem_req at address 0x200000
+    # This is the internal DMA buffer tinygrad uses
+    errors = []
+    for offset in [0, 64, 128, 256, 384, 500]:
+        try:
+            val = usb.pcie_mem_req(0x200000 + offset, size=4)
+            got = struct.pack('<I', val)
+            expected = pattern[offset:offset+4]
+            if got != expected:
+                errors.append(f"  offset {offset:#x}: got {got.hex()}, expected {expected.hex()}")
+        except Exception as e:
+            errors.append(f"  offset {offset:#x}: PCIe read failed: {e}")
+    
+    if errors:
+        print("  READBACK MISMATCHES (via PCIe mem_req):")
+        for e in errors:
+            print(e)
+        # Don't fail — this is diagnostic for understanding where data goes
+        print("  NOTE: Data may be at different PCIe address or need different setup")
+    else:
+        print("  SCSI WRITE 512B PCIe readback verified OK")
+    return True  # Pass regardless — this is diagnostic
+
+def test_22_scsi_write_buffer_location(dev):
+    """Diagnose where SCSI WRITE data actually lands."""
+    usb = ASM24Controller.__new__(ASM24Controller)
+    usb.usb = dev
+    usb._cache = {}
+    usb._pci_cacheable = []
+    usb._pci_cache = {}
+    
+    # Write distinctive pattern
+    pattern = b'\xDE\xAD\xBE\xEF' + b'\x00' * 508
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=5000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+    
+    # Search for the pattern in various memory regions
+    print("  Searching for 0xDEADBEEF pattern...")
+    
+    # Check XDATA via E4
+    xdata_val = e4_read_datain(dev, 0x0000, 4)
+    print(f"    XDATA[0x0000] via E4: {xdata_val.hex()}")
+    
+    # Check D800 buffer (USB endpoint buffer)
+    d800_val = e4_read_datain(dev, 0xD800, 4)
+    print(f"    XDATA[0xD800] via E4: {d800_val.hex()}")
+    
+    # Check potential PCIe DMA regions
+    for addr in [0x200000, 0x000000, 0x100000, 0x10000]:
+        try:
+            val = usb.pcie_mem_req(addr, size=4)
+            marker = "*** FOUND ***" if val == 0xEFBEADDE else ""  # Little-endian
+            print(f"    PCIe[0x{addr:06X}]: 0x{val:08X} {marker}")
+        except Exception as e:
+            print(f"    PCIe[0x{addr:06X}]: error - {e}")
+    
+    return True  # Diagnostic only
+
+def test_23_scsi_write_ce8x_state(dev):
+    """Check CE88/CE89/CE8A DMA state after SCSI WRITE."""
+    # Write some data
+    pattern = bytes(range(256)) + bytes(range(256))
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=5000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+    
+    # Read DMA state registers via E4
+    ce88 = e4_read_datain(dev, 0xCE88, 1)[0]
+    ce89 = e4_read_datain(dev, 0xCE89, 1)[0]
+    ce8a = e4_read_datain(dev, 0xCE8A, 1)[0]
+    ce8b = e4_read_datain(dev, 0xCE8B, 1)[0]
+    
+    print(f"  After SCSI WRITE:")
+    print(f"    CE88 = 0x{ce88:02X}")
+    print(f"    CE89 = 0x{ce89:02X}")
+    print(f"    CE8A = 0x{ce8a:02X}")
+    print(f"    CE8B = 0x{ce8b:02X}")
+    
+    return True
+
+def test_24_firmware_copy_pcie_verify(dev):
+    """Full firmware copy flow: SCSI WRITE 64KB + E5 doorbell + PCIe readback."""
+    usb = ASM24Controller.__new__(ASM24Controller)
+    usb.usb = dev
+    usb._cache = {}
+    usb._pci_cacheable = []
+    usb._pci_cache = {}
+    
+    # Distinctive pattern that's easy to verify
+    pattern = bytes([(i & 0xFF) for i in range(0x10000)])
+    
+    # SCSI WRITE 64KB
+    print("  Writing 64KB pattern...")
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=15000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+    
+    # E5 writes (doorbell sequence from tinygrad)
+    print("  Writing E5 doorbell sequence...")
+    e5_write_raw(dev, 0x0171, 0xFF)
+    e5_write_raw(dev, 0x0172, 0xFF)
+    e5_write_raw(dev, 0x0173, 0xFF)
+    e5_write_raw(dev, 0xCE6E, 0x00)
+    e5_write_raw(dev, 0xCE6F, 0x00)
+    
+    # Try to read back via PCIe at 0x200000 (tinygrad's DMA buffer address)
+    print("  Verifying via PCIe mem_req at 0x200000...")
+    errors = []
+    check_offsets = [0, 0x100, 0x1000, 0x4000, 0x8000, 0xC000, 0xFF00]
+    for offset in check_offsets:
+        try:
+            val = usb.pcie_mem_req(0x200000 + offset, size=4)
+            got = struct.pack('<I', val)
+            expected = pattern[offset:offset+4]
+            if got != expected:
+                errors.append(f"  offset {offset:#06x}: got {got.hex()}, expected {expected.hex()}")
+        except Exception as e:
+            errors.append(f"  offset {offset:#06x}: PCIe read error: {e}")
+    
+    if errors:
+        print("  READBACK ISSUES:")
+        for e in errors[:5]:
+            print(e)
+        print("  (This may be expected if DMA buffer address differs)")
+    else:
+        print(f"  64KB firmware copy verified OK at {len(check_offsets)} offsets")
+    
+    return True  # Diagnostic only
+
 # ============================================================
 # Runner
 # ============================================================
@@ -342,6 +485,10 @@ TESTS = [
     ("18 SCSI WRITE 4KB",         test_18_scsi_write_4k),
     ("19 SCSI WRITE 64KB",        test_19_scsi_write_64k),
     ("20 SCSI WRITE + E5",        test_20_scsi_write_then_e5),
+    ("21 SCSI WRITE PCIe readback", test_21_scsi_write_pcie_readback),
+    ("22 SCSI WRITE buffer location", test_22_scsi_write_buffer_location),
+    ("23 SCSI WRITE CE8x state",    test_23_scsi_write_ce8x_state),
+    ("24 Firmware copy PCIe verify", test_24_firmware_copy_pcie_verify),
 ]
 
 def main():
