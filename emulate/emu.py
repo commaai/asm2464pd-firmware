@@ -56,6 +56,10 @@ class Emulator:
         # UART proxy for real hardware mode
         self.proxy = proxy
 
+        # Wire up fast memory access (direct bytearray refs, avoids function call overhead)
+        self.cpu._sfr = self.memory.sfr
+        self.cpu._code = self.memory.code
+
         # Hardware emulation (replaces simple stubs)
         self.hw = HardwareState(log_reads=log_hw, log_writes=log_hw, log_uart=log_uart)
         self.hw.usb_connect_delay = usb_delay
@@ -124,24 +128,21 @@ class Emulator:
         if self.cpu.halted:
             return False
 
-        self.last_pc = self.cpu.pc
         pc = self.cpu.pc
+        self.last_pc = pc
 
         # In proxy mode, check for hardware interrupts from real device
         if self.proxy:
             self._check_proxy_interrupts()
 
-        # Track PC hit for statistics
-        if self.pc_stats is not None:
-            self.pc_stats[pc] = self.pc_stats.get(pc, 0) + 1
-
-        # Check for trace PC addresses
-        if pc in self.trace_pcs:
+        # Check for trace PC addresses (only when tracing is configured)
+        if self.trace_pcs and pc in self.trace_pcs:
             self.trace_pc_hits[pc] = self.trace_pc_hits.get(pc, 0) + 1
             self._trace_pc_hit(pc)
 
-        # Check hardware trace points
-        self.hw.check_trace(pc)
+        # Check hardware trace points (fast path: returns None when disabled)
+        if self.hw.trace_enabled:
+            self.hw.check_trace(pc)
 
         if self.cpu.trace:
             self._trace_instruction()
@@ -155,7 +156,6 @@ class Emulator:
 
         # In proxy mode, check if ISR just completed (RETI executed)
         if self.proxy and was_in_isr and not self.cpu.in_interrupt:
-            # ISR completed, send ack to proxy with the interrupt mask
             if self._proxy_isr_pending_acks:
                 int_mask = self._proxy_isr_pending_acks.pop(0)
                 if self.proxy.debug:
@@ -168,6 +168,10 @@ class Emulator:
         """Check for and handle interrupts from proxy hardware."""
         int_num = self.proxy.get_pending_interrupt()
         if int_num is not None:
+            # Invalidate MMIO read cache - hardware state changed
+            if hasattr(self.hw, '_proxy_cache_invalidate'):
+                self.hw._proxy_cache_invalidate()
+
             # Map interrupt number to CPU interrupt flag
             # 8051 interrupt vectors:
             #   0: INT0 (External 0) - vector 0x0003
@@ -259,6 +263,11 @@ class Emulator:
 
         Returns reason for stopping.
         """
+        # Use fast path when no debugging features are active
+        if (not self.proxy and not self.cpu.trace and not self.trace_pcs
+                and not self.hw.trace_enabled and max_instructions is None):
+            return self._run_fast(max_cycles or 10000000)
+
         while True:
             if max_cycles and self.cpu.cycles >= max_cycles:
                 return "max_cycles"
@@ -269,6 +278,35 @@ class Emulator:
                 if self.cpu.pc in self.cpu.breakpoints:
                     return "breakpoint"
                 return "halted"
+
+    def _run_fast(self, max_cycles: int) -> str:
+        """Optimized run loop for non-debug mode.
+
+        Avoids per-instruction overhead from tracing, proxy checks, and
+        pc_stats tracking. The CPU step + hardware tick are inlined.
+        """
+        cpu = self.cpu
+        hw = self.hw
+        step = cpu.step
+        tick = hw.tick
+        breakpoints = cpu.breakpoints
+        inst_count = self.inst_count
+
+        while cpu.cycles < max_cycles:
+            if cpu.halted:
+                if cpu.pc in breakpoints:
+                    self.inst_count = inst_count
+                    return "breakpoint"
+                self.inst_count = inst_count
+                return "halted"
+
+            self.last_pc = cpu.pc
+            cycles = step()
+            inst_count += 1
+            tick(cycles, cpu)
+
+        self.inst_count = inst_count
+        return "max_cycles"
 
     def _trace_instruction(self):
         """Print trace of current instruction."""
@@ -484,7 +522,7 @@ class Emulator:
         Requires: sudo modprobe dummy_hcd && sudo modprobe raw_gadget
         """
         try:
-            from usb_device import ASM2464Device
+            from usb_device import USBDevicePassthrough
             from raw_gadget import check_raw_gadget_available, USBSpeed
         except ImportError as e:
             print(f"[USB] Failed to import USB device modules: {e}")
@@ -498,11 +536,8 @@ class Emulator:
 
         print(f"[USB] Starting USB device emulation...")
 
-        # Create device with callbacks to our memory
-        self.usb_device = ASM2464Device(
-            memory_read=self._usb_memory_read,
-            memory_write=self._usb_memory_write
-        )
+        # Create device with emulator reference
+        self.usb_device = USBDevicePassthrough(emulator=self)
 
         # Start the gadget (this connects to USB)
         try:
@@ -675,7 +710,7 @@ Examples:
         try:
             from uart_proxy import UARTProxy
             print(f"Connecting to UART proxy at {args.proxy_device}...")
-            proxy = UARTProxy(args.proxy_device)
+            proxy = UARTProxy(args.proxy_device, timeout=5.0)
             proxy.debug = args.proxy_debug  # 0=off, 1=interrupts, 2=+xdata, 3=+sfr
             
             # Reset device and wait for proxy firmware to boot
@@ -792,6 +827,22 @@ Examples:
         reason = emu.run(max_cycles=args.max_cycles, max_instructions=args.max_inst)
         print("-" * 60)
         print(f"Stopped: {reason} at PC=0x{emu.cpu.pc:04X}")
+
+        # In USB device mode, keep running after initial boot
+        # The USB bulk thread calls run_firmware_cycles() to process commands,
+        # but we also need the main loop to keep the firmware running for
+        # background tasks (main loop polling, timers, etc.)
+        if args.usb_device and emu.usb_device:
+            import time as _time
+            print("[USB] Entering USB serving mode (Ctrl+C to stop)...")
+            while True:
+                # Run firmware in small bursts, yielding to USB threads.
+                # Sleep must be long enough for bulk/event threads to acquire GIL.
+                # Python's GIL switch interval is 5ms, so we sleep 10ms.
+                with emu.usb_device._emu_lock:
+                    emu.run(max_cycles=emu.cpu.cycles + 10000)
+                _time.sleep(0.010)  # Yield to USB bulk/event threads (10ms)
+
     except KeyboardInterrupt:
         print("\n" + "-" * 60)
         print(f"Interrupted at PC=0x{emu.cpu.pc:04X}")

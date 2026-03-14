@@ -227,18 +227,22 @@ class TestPCIeEmulation:
         assert status & 0x06, "PCIe completion bits should be set after trigger"
 
     def test_pcie_status_polling(self, emulator):
-        """Test that PCIe status sets bits after polling."""
+        """Test that PCIe status bits are clear until a TLP trigger fires."""
         emu = emulator
 
-        # Initial read should have bits clear or not all set
+        # Initial read should have bits clear (no trigger has fired)
         initial = emu.hw.read(0xB296)
+        assert initial & 0x06 == 0, "PCIe completion bits should be clear initially"
 
-        # Poll multiple times
+        # Poll multiple times without triggering - bits should remain clear
         for _ in range(10):
             status = emu.hw.read(0xB296)
+        assert status & 0x06 == 0, "PCIe completion bits should stay clear without trigger"
 
-        # After polling, completion bits should be set
-        assert status & 0x06, "PCIe completion bits should be set after polling"
+        # After a TLP trigger (B254 write), completion bits should be set
+        emu.hw.write(0xB254, 0x01)
+        status = emu.hw.read(0xB296)
+        assert status & 0x06, "PCIe completion bits should be set after trigger"
 
 
 class TestUSBVendorCommands:

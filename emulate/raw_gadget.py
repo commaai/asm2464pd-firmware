@@ -297,19 +297,22 @@ class RawGadget:
         # Ensure exactly 257 bytes
         init_data = init_data[:257].ljust(257, b'\x00')
 
-        try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_INIT, init_data)
-        except OSError as e:
-            raise RawGadgetError(f"INIT failed: {e}")
+        # Use ctypes _ioctl to release GIL during blocking call
+        init_array = (ctypes.c_uint8 * len(init_data)).from_buffer_copy(init_data)
+        ret = _ioctl(self.fd, USB_RAW_IOCTL_INIT, ctypes.byref(init_array))
+        if ret < 0:
+            errno = ctypes.get_errno()
+            raise RawGadgetError(f"INIT failed: [Errno {errno}] {os.strerror(errno)}")
 
     def run(self):
         """Start the gadget (begins USB connection process)."""
         if self.fd is None:
             raise RawGadgetError("Device not open")
-        try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_RUN)
-        except OSError as e:
-            raise RawGadgetError(f"RUN failed: {e}")
+        # Use ctypes _ioctl to release GIL during blocking call
+        ret = _ioctl(self.fd, USB_RAW_IOCTL_RUN, ctypes.c_void_p(0))
+        if ret < 0:
+            errno = ctypes.get_errno()
+            raise RawGadgetError(f"RUN failed: [Errno {errno}] {os.strerror(errno)}")
 
     def event_fetch(self, timeout_ms: int = 0) -> USBRawEvent:
         """
@@ -326,13 +329,16 @@ class RawGadget:
         #     __u8 data[];
         # }
         # CRITICAL: Must pre-set length field to tell kernel how much space we have
+        # Use ctypes _ioctl instead of fcntl.ioctl to release the GIL during blocking call.
+        # fcntl.ioctl holds the GIL, which blocks ALL other threads (including bulk transfer).
         buf = bytearray(8 + 1024)
         struct.pack_into('<II', buf, 0, 0, 1024)  # type=0, length=1024
 
-        try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_EVENT_FETCH, buf, True)  # mutate_flag=True
-        except OSError as e:
-            raise RawGadgetError(f"EVENT_FETCH failed: {e}")
+        io_array = (ctypes.c_uint8 * len(buf)).from_buffer(buf)
+        ret = _ioctl(self.fd, USB_RAW_IOCTL_EVENT_FETCH, ctypes.byref(io_array))
+        if ret < 0:
+            errno = ctypes.get_errno()
+            raise RawGadgetError(f"EVENT_FETCH failed: [Errno {errno}] {os.strerror(errno)}")
 
         event_type, length = struct.unpack('<II', buf[:8])
         data = bytes(buf[8:8+length])
@@ -358,10 +364,12 @@ class RawGadget:
         struct.pack_into('<HHI', io_buf, 0, 0, 0, len(data))
         io_buf[8:8+len(data)] = data
 
-        try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_EP0_WRITE, io_buf, True)
-        except OSError as e:
-            raise RawGadgetError(f"EP0_WRITE failed: {e}")
+        # Use ctypes _ioctl to release GIL during blocking call
+        io_array = (ctypes.c_uint8 * len(io_buf)).from_buffer(io_buf)
+        ret = _ioctl(self.fd, USB_RAW_IOCTL_EP0_WRITE, ctypes.byref(io_array))
+        if ret < 0:
+            errno = ctypes.get_errno()
+            raise RawGadgetError(f"EP0_WRITE failed: [Errno {errno}] {os.strerror(errno)}")
 
     def ep0_read(self, length: int) -> bytes:
         """Read data from EP0 (control OUT data)."""
@@ -371,10 +379,12 @@ class RawGadget:
         buf = bytearray(8 + length)
         struct.pack_into('<HHI', buf, 0, 0, 0, length)
 
-        try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_EP0_READ, buf, True)
-        except OSError as e:
-            raise RawGadgetError(f"EP0_READ failed: {e}")
+        # Use ctypes _ioctl to release GIL during blocking call
+        io_array = (ctypes.c_uint8 * len(buf)).from_buffer(buf)
+        ret = _ioctl(self.fd, USB_RAW_IOCTL_EP0_READ, ctypes.byref(io_array))
+        if ret < 0:
+            errno = ctypes.get_errno()
+            raise RawGadgetError(f"EP0_READ failed: [Errno {errno}] {os.strerror(errno)}")
 
         actual_len = struct.unpack_from('<I', buf, 4)[0]
         return bytes(buf[8:8+actual_len])
@@ -383,29 +393,33 @@ class RawGadget:
         """Stall EP0 (indicate error/unsupported request)."""
         if self.fd is None:
             raise RawGadgetError("Device not open")
-        try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_EP0_STALL)
-        except OSError as e:
-            raise RawGadgetError(f"EP0_STALL failed: {e}")
+        # Use ctypes _ioctl to release GIL during blocking call
+        ret = _ioctl(self.fd, USB_RAW_IOCTL_EP0_STALL, ctypes.c_void_p(0))
+        if ret < 0:
+            errno = ctypes.get_errno()
+            raise RawGadgetError(f"EP0_STALL failed: [Errno {errno}] {os.strerror(errno)}")
 
     def configure(self):
         """Configure the gadget (after SET_CONFIGURATION)."""
         if self.fd is None:
             raise RawGadgetError("Device not open")
-        try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_CONFIGURE)
-            self.configured = True
-        except OSError as e:
-            raise RawGadgetError(f"CONFIGURE failed: {e}")
+        # Use ctypes _ioctl to release GIL during blocking call
+        ret = _ioctl(self.fd, USB_RAW_IOCTL_CONFIGURE, ctypes.c_void_p(0))
+        if ret < 0:
+            errno = ctypes.get_errno()
+            raise RawGadgetError(f"CONFIGURE failed: [Errno {errno}] {os.strerror(errno)}")
+        self.configured = True
 
     def vbus_draw(self, ma: int):
         """Set VBUS current draw in mA."""
         if self.fd is None:
             raise RawGadgetError("Device not open")
-        try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_VBUS_DRAW, struct.pack('<I', ma))
-        except OSError as e:
-            raise RawGadgetError(f"VBUS_DRAW failed: {e}")
+        # Use ctypes _ioctl to release GIL during blocking call
+        ma_val = ctypes.c_uint32(ma)
+        ret = _ioctl(self.fd, USB_RAW_IOCTL_VBUS_DRAW, ctypes.byref(ma_val))
+        if ret < 0:
+            errno = ctypes.get_errno()
+            raise RawGadgetError(f"VBUS_DRAW failed: [Errno {errno}] {os.strerror(errno)}")
 
     def eps_info(self) -> List[USBEndpointInfo]:
         """Get information about available endpoints."""
@@ -421,10 +435,12 @@ class RawGadget:
         # struct usb_raw_eps_info has 30 of these
         buf = bytearray(30 * 32)
 
-        try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_EPS_INFO, buf)
-        except OSError as e:
-            raise RawGadgetError(f"EPS_INFO failed: {e}")
+        # Use ctypes _ioctl to release GIL during blocking call
+        buf_array = (ctypes.c_uint8 * len(buf)).from_buffer(buf)
+        ret = _ioctl(self.fd, USB_RAW_IOCTL_EPS_INFO, ctypes.byref(buf_array))
+        if ret < 0:
+            errno = ctypes.get_errno()
+            raise RawGadgetError(f"EPS_INFO failed: [Errno {errno}] {os.strerror(errno)}")
 
         eps = []
         for i in range(USB_RAW_EPS_NUM_MAX):
@@ -529,7 +545,12 @@ class RawGadget:
         if self.fd is None:
             raise RawGadgetError("Device not open")
         try:
-            fcntl.ioctl(self.fd, USB_RAW_IOCTL_EP_DISABLE, struct.pack('<I', ep_num))
+            # Use ctypes _ioctl to release GIL during blocking call
+            ep_val = ctypes.c_uint32(ep_num)
+            ret = _ioctl(self.fd, USB_RAW_IOCTL_EP_DISABLE, ctypes.byref(ep_val))
+            if ret < 0:
+                errno_val = ctypes.get_errno()
+                raise OSError(errno_val, os.strerror(errno_val))
         except OSError as e:
             raise RawGadgetError(f"EP_DISABLE failed: {e}")
 

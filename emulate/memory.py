@@ -64,21 +64,16 @@ class Memory:
         Bank 1: file offset 0xFF6B + (addr - 0x8000)
         """
         addr &= 0xFFFF
+        code = self.code
 
         # If accessing upper 32KB, check bank
         if addr >= 0x8000:
-            dpx = self.sfr[self.SFR_DPX - 0x80]
-            if dpx & 1:  # Bank 1
+            if self.sfr[0x16] & 1:  # DPX bit 0 = Bank 1
                 # Map 0x8000-0xFFFF to file offset 0xFF6B + offset
-                file_addr = self.BANK1_FILE_BASE + (addr - 0x8000)
-                if file_addr < len(self.code):
-                    return self.code[file_addr]
-                return 0xFF
+                addr = 0xFF6B + (addr - 0x8000)
 
-        # Bank 0 or lower 32KB
-        if addr < len(self.code):
-            return self.code[addr]
-        return 0xFF
+        # Direct array access (code is pre-allocated to cover both banks)
+        return code[addr] if addr < len(code) else 0xFF
 
     def read_idata(self, addr: int) -> int:
         """Read from IDATA (internal 256 bytes) with hooks."""
