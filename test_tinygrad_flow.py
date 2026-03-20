@@ -27,7 +27,7 @@ from tinygrad.helpers import round_up
 # Low-level helpers (bypass caches, directly send CBWs)
 # ============================================================
 
-def bot_send(dev, cdb, rlen=0, send_data=None, timeout=10000):
+def bot_send(dev, cdb, rlen=0, send_data=None, timeout=2000):
     """Send a single BOT CBW, optional data phase, receive CSW.
     Returns (residue, status, data_in) tuple."""
     dev._tag += 1
@@ -56,7 +56,7 @@ def e5_write_raw(dev, addr, val):
     residue, status, _ = bot_send(dev, cdb)
     assert status == 0, f"E5 write 0x{addr:04X}=0x{val:02X} failed: status={status}"
 
-def e4_read_datain(dev, addr, size=1):
+def e4_read_residue(dev, addr, size=1):
     """E4 read via CSW residue (xfer_len=0 in CBW). Returns bytes."""
     full_addr = (addr & 0x1FFFF) | 0x500000
     cdb = struct.pack('>BBBHB', 0xE4, size, full_addr >> 16, full_addr & 0xFFFF, 0)
@@ -93,18 +93,17 @@ def test_01_tur(dev):
     return True
 
 def test_02_e8_noop(dev):
-    """Vendor noop command x10 (E5 write 0x00 to scratch addr)."""
+    """E8 no-data vendor command x10."""
     for i in range(10):
-        full_addr = (0x5F80 & 0x1FFFF) | 0x500000
-        cdb = struct.pack('>BBBHB', 0xE5, 0x00, full_addr >> 16, full_addr & 0xFFFF, 0)
+        cdb = struct.pack('>BB13x', 0xE8, 0x00)
         residue, status, _ = bot_send(dev, cdb)
-        assert status == 0, f"noop #{i} failed: status={status}"
+        assert status == 0, f"E8 #{i} failed: status={status}"
     return True
 
 def test_03_e5_write_single(dev):
     """E5 single byte write and readback."""
     e5_write_raw(dev, 0x5000, 0xAB)
-    val = e4_read_datain(dev, 0x5000, 1)
+    val = e4_read_residue(dev, 0x5000, 1)
     assert val[0] == 0xAB, f"Expected 0xAB, got 0x{val[0]:02X}"
     return True
 
@@ -114,7 +113,7 @@ def test_04_e5_batch(dev):
         e5_write_raw(dev, 0x5010 + i, (i * 37 + 0x11) & 0xFF)
     for i in range(10):
         expected = (i * 37 + 0x11) & 0xFF
-        got = e4_read_datain(dev, 0x5010 + i, 1)[0]
+        got = e4_read_residue(dev, 0x5010 + i, 1)[0]
         assert got == expected, f"[{i}] expected 0x{expected:02X}, got 0x{got:02X}"
     return True
 
@@ -128,8 +127,8 @@ def test_05_controller_init_writes(dev):
     for addr, val in writes:
         e5_write_raw(dev, addr, val)
     # Verify a few
-    assert e4_read_datain(dev, 0x054B, 1)[0] == 0x20
-    assert e4_read_datain(dev, 0x0000, 1)[0] == 0x33
+    assert e4_read_residue(dev, 0x054B, 1)[0] == 0x20
+    assert e4_read_residue(dev, 0x0000, 1)[0] == 0x33
     return True
 
 def test_06_e4_residue_multi(dev):
@@ -138,7 +137,7 @@ def test_06_e4_residue_multi(dev):
     for i in range(4):
         e5_write_raw(dev, 0x5020 + i, 0x10 + i)
     for sz in [1, 2, 3, 4]:
-        data = e4_read_datain(dev, 0x5020, sz)
+        data = e4_read_residue(dev, 0x5020, sz)
         for i in range(sz):
             assert data[i] == 0x10 + i, f"sz={sz} byte[{i}]: expected 0x{0x10+i:02X}, got 0x{data[i]:02X}"
     return True
@@ -517,9 +516,7 @@ def main():
                 selected.add(i)
 
     dev = USB3(0xADD1, 0x0001, 0x81, 0x83, 0x02, 0x04, use_bot=True)
-    libusb.libusb_clear_halt(dev.handle, 0x02)
-    libusb.libusb_clear_halt(dev.handle, 0x81)
-    time.sleep(5)
+    time.sleep(0.2)
 
     results = []
     for name, fn in TESTS:
