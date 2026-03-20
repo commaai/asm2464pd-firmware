@@ -5,7 +5,6 @@
 
 #include "types.h"
 #include "registers.h"
-#include "globals.h"
 
 __sfr __at(0xA8) IE;
 __sfr __at(0x88) TCON;
@@ -60,6 +59,12 @@ static volatile __xdata uint8_t need_rearm;  /* deferred MSC re-arm (main loop) 
 static volatile __xdata uint8_t need_state_init;  /* deferred state_init (main loop) */
 static volatile __xdata uint8_t pcie_cfg_pending;  /* B297 write seen before PCIe ready */
 static volatile __xdata uint8_t cbw_active;  /* 1 while handle_cbw is running */
+static volatile uint8_t st_flash_cfg_0aea;
+static volatile uint8_t st_pcie_addr_0;
+static volatile uint8_t st_pcie_direction;
+static volatile uint8_t st_phy_lane_cfg_0ae4;
+static volatile uint8_t st_state_0ae8;
+static volatile uint8_t st_usb_state_clear_06e3;
 static volatile __xdata uint8_t pcie_link_ok;
 static volatile __xdata uint8_t pcie_addr_offset_lo;
 static volatile __xdata uint8_t pcie_addr_offset_hi;
@@ -315,32 +320,22 @@ static void handle_get_descriptor(uint8_t desc_type, uint8_t desc_idx, uint8_t w
 
 static void ep_init_8fcf(void) {
     /* Preamble (stock 0x8FCF-0x9001): Initialize state variables */
-    G_FLASH_READ_TRIGGER = 0x00;
-    G_STATE_0AE9 = 0x01;
-    G_SYSTEM_STATE_0AE2 = 0x01;
-    G_STATE_FLAG_0AE3 = 0x01;
-    G_LINK_CFG_0AEF = 0x01;
-    G_PHY_LANE_CFG_0AE4 = 0x01;
-    G_TLP_INIT_FLAG_0AE5 = 0x01;
-    G_LINK_SPEED_MODE_0AE6 = 0x01;
-    G_LINK_CFG_BIT_0AE7 = 0x01;
-    G_STATE_0AE8 = 0x0F;
-    G_PHY_CFG_0AED = 0x03;
-    G_STATE_CHECK_0AEE = 0x03;
-    G_FLASH_CFG_0AEA = 0x03;
-    G_LINK_CFG_0AEB = 0x03;
-    G_PHY_CFG_0AEC = 0x03;
+
+    st_phy_lane_cfg_0ae4 = 0x01;
+
+    st_state_0ae8 = 0x0F;
+
+    st_flash_cfg_0aea = 0x03;
 
     /* Skip path counter: stock loops 6x then exits (0x0A83 = 6) */
-    G_ACTION_CODE_0A83 = 0x06;
 
     /* Exit path (stock 0x91CF-0x923E): */
 
     /* 0x91CF: 0x0AEA |= 0x01 (already 0x03, stays 0x03) */
-    G_FLASH_CFG_0AEA = G_FLASH_CFG_0AEA | 0x01;
+    st_flash_cfg_0aea = st_flash_cfg_0aea | 0x01;
 
     /* 0x91D6: check 0x0AE5 — nonzero path: 0x0AF0 = 0x00 */
-    G_FLASH_CFG_0AF0 = 0x00;  /* 0x0AE5 = 1 (nonzero) → 0x0AF0 = 0x00 */
+      /* 0x0AE5 = 1 (nonzero) → 0x0AF0 = 0x00 */
 
     /* 0x91EA: check 0x0AE3 — nonzero path: C65A &= 0xF7 */
     REG_PHY_CFG_C65A = REG_PHY_CFG_C65A & 0xF7;
@@ -476,8 +471,6 @@ static void post_csw_cleanup(void) {
 
     /* Stock 0xC16C-0xC178: Clear state variables */
     XDATA_REG8(0x000B) = 0x00;
-    G_USB_CTRL_000A = 0x00;
-    G_SYS_FLAGS_0052 = 0x00;
 
     /* Stock 0xC179-0xC1A7: Clear state arrays (32 entries) */
     for (i = 0; i < 32; i++) {
@@ -487,9 +480,7 @@ static void post_csw_cleanup(void) {
     }
 
     /* Stock 0xC1AA-0xC1C6: Additional state init */
-    G_USB_WORK_01B4 = 0x00;
-    G_STATE_WORK_002D = 0x22;
-    G_ENDPOINT_STATE_0051 = 0x21;
+
     XDATA_REG8(0x002E) = 0x22;
     XDATA_REG8(0x0050) = 0x21;
 
@@ -522,30 +513,15 @@ static void post_csw_cleanup(void) {
  */
 static void state_init(void) {
     /* Stock 0xBDA4-0xBDF9: Clear ~20 state variables */
-    G_SYS_FLAGS_07ED = 0x00;
-    G_SYS_FLAGS_07EE = 0x00;
-    G_EP_DISPATCH_OFFSET = 0x00;
-    G_SYS_FLAGS_07EB = 0x00;
-    G_STATE_FLAG_0AF1 = 0x00;
-    G_LINK_POWER_STATE_0ACA = 0x00;
-    G_USB_CTRL_STATE_07E1 = 0x05;  /* stock sets to 0x05, not 0 */
-    G_USB_TRANSFER_FLAG = 0x00;
-    G_TLP_MASK_0ACB = 0x00;
-    G_CMD_WORK_E3 = 0x00;
+
+      /* stock sets to 0x05, not 0 */
+
     XDATA_REG8(0x07E6) = 0x00;
     XDATA_REG8(0x07E7) = 0x00;
-    G_TLP_STATE_07E9 = 0x00;
-    G_LINK_EVENT_0B2D = 0x00;
+
     XDATA_REG8(0x07E2) = 0x00;
-    G_EP_STATUS_CTRL = 0x00;
-    G_WORK_0006 = 0x00;
-    G_SYS_FLAGS_07E8 = 0x00;
-    G_TRANSFER_ACTIVE = 0x00;
-    G_TRANSFER_BUSY_0B3B = 0x00;
-    G_XFER_FLAG_07EA = 0x00;
 
     /* Stock 0xBDFA: call 0x54BB (clear_pcie_enum_done) */
-    G_XFER_CTRL_0AF7 = 0x00;
 
     /* Stock 0xBDFD: call 0xCC56 — C6A8 |= 0x01 */
     REG_PHY_CFG_C6A8 = (REG_PHY_CFG_C6A8 & 0xFE) | 0x01;
@@ -564,10 +540,10 @@ static void state_init(void) {
      *   - 0x0AE4!=0 AND 0x0AEA>=3: SKIP all CC17 config, SKIP 92C4/9201
      *   - 0x0AE4!=0 AND 0x0AEA<3: CC17 config but SKIP 92C4/9201
      * After ep_init_8fcf: 0x0AE4=1, 0x0AEA=3 → SKIP all */
-    G_STATE_WORK_0B3D = 0x00;
-    G_CMD_SLOT_INDEX = G_CMD_INDEX_SRC;  /* stock 0xD12F-0xD136 */
+
+      /* stock 0xD12F-0xD136 */
     {
-        uint8_t ae4 = G_PHY_LANE_CFG_0AE4;
+        uint8_t ae4 = st_phy_lane_cfg_0ae4;
         if (ae4 == 0) {
             /* D147: CC17 reset + config (first-time path) */
             REG_TIMER1_CSR = 0x04;  /* CC17 reset via C033 */
@@ -575,13 +551,13 @@ static void state_init(void) {
             REG_TIMER1_DIV = (REG_TIMER1_DIV & 0xF8) | 0x04;
             REG_TIMER1_THRESHOLD_HI = 0x01;
             REG_TIMER1_THRESHOLD_LO = 0x90;
-            G_STATE_WORK_0B3D = 0x01;
+
             /* D166: 0x0AE4==0 → 92C4 &= ~0x01, 9201 toggle bit 0 */
             REG_POWER_MISC_CTRL = REG_POWER_MISC_CTRL & 0xFE;
             REG_USB_CTRL_9201 = (REG_USB_CTRL_9201 & 0xFE) | 0x01;
             REG_USB_CTRL_9201 = REG_USB_CTRL_9201 & 0xFE;
         } else {
-            uint8_t aea = G_FLASH_CFG_0AEA;
+            uint8_t aea = st_flash_cfg_0aea;
             if (aea < 3) {
                 /* D147: CC17 config only (no 92C4/9201) */
                 REG_TIMER1_CSR = 0x04;
@@ -589,7 +565,7 @@ static void state_init(void) {
                 REG_TIMER1_DIV = (REG_TIMER1_DIV & 0xF8) | 0x04;
                 REG_TIMER1_THRESHOLD_HI = 0x01;
                 REG_TIMER1_THRESHOLD_LO = 0x90;
-                G_STATE_WORK_0B3D = 0x01;
+
             }
             /* D166: 0x0AE4!=0 → D17A (return) — skip 92C4/9201 */
         }
@@ -601,23 +577,23 @@ static void state_init(void) {
      *   - 0x0AE8!=0x0F: CC23 reset + CC22 config + update 0x0AE8
      * After ep_init_8fcf: 0x0AE8=0x0F → SKIP */
     {
-        uint8_t ae8 = G_STATE_0AE8;
+        uint8_t ae8 = st_state_0ae8;
         if (ae8 != 0x0F) {
             /* C02B: 0x0B3C=0, CC23 reset (0x04, 0x02) */
-            G_STATE_CTRL_0B3C = 0x00;
+
             REG_TIMER3_CSR = 0x04;
             REG_TIMER3_CSR = 0x02;
             /* CC22: clear bit 4, set bits 0-2 */
             REG_TIMER3_DIV = REG_TIMER3_DIV & 0xEF;
             REG_TIMER3_DIV = (REG_TIMER3_DIV & 0xF8) | 0x07;
             if (ae8 == 0) {
-                G_STATE_0AE8 = 0x0F;
+                st_state_0ae8 = 0x0F;
             } else if (ae8 < 0x0B) {
                 /* D3B4: lookup CC24/CC25 from code table at 0x4DBF+ae8*2 */
                 /* For simplicity, set 0x0AE8 = 0x0F (matches final state) */
-                G_STATE_0AE8 = 0x0F;
+                st_state_0ae8 = 0x0F;
             } else {
-                G_STATE_0AE8 = 0x0F;
+                st_state_0ae8 = 0x0F;
             }
         }
         /* 0x0AE8==0x0F → D3CE (return) — skip all CC22/CC23 */
@@ -625,7 +601,7 @@ static void state_init(void) {
 
     /* Stock 0xBE1A: call 0xDF86 — CC1C/CC5C bulk transfer descriptors
      * First calls E3C6 (CC1D/CC5D reset), then configures CC1C/CC5C */
-    G_LOG_ACTIVE_044C = 0x00;  /* E3C6 preamble */
+      /* E3C6 preamble */
     REG_TIMER2_CSR = 0x04;
     REG_TIMER2_CSR = 0x02;
     REG_TIMER4_CSR = 0x04;
@@ -643,19 +619,19 @@ static void state_init(void) {
      * If 0x06E3 != 0: clear it, set 0x06E4/E5=1, clear state, do bridge init.
      * We handle bridge config separately in pcie_post_train, but clear the
      * state variables that stock clears here. */
-    if (G_USB_STATE_CLEAR_06E3) {
+    if (st_usb_state_clear_06e3) {
         uint16_t j;
-        G_USB_STATE_CLEAR_06E3 = 0x00;
+        st_usb_state_clear_06e3 = 0x00;
         XDATA_REG8(0x06E4) = 0x01;
-        G_MAX_LOG_ENTRIES = 0x01;
+
         XDATA_REG8(0x05A4) = 0x00;
-        G_WORK_06E8 = 0x00;
+
         XDATA_REG8(0x05A9) = 0x00;
         XDATA_REG8(0x05AA) = 0x00;
-        G_XFER_CTRL_0AF7 = 0x00;  /* 54BB again */
+          /* 54BB again */
         /* Clear 0x05B0-0x0632 area (stock C24C loop via 0x0BBE helper) */
         for (j = 0x05B0; j <= 0x0631; j++) XDATA_REG8(j) = 0x00;
-        G_PCIE_ADDR_2 = 0x10;  /* stock C2B4 */
+          /* stock C2B4 */
     }
 
     /* Stock 0xBE20: ljmp 0x494D — doorbell dance + initial C42C */
@@ -691,7 +667,7 @@ static void do_bulk_init(void) {
     uint8_t t;
 
     /* === Stock 0xB1C5-0xB211: Critical register config === */
-    
+
     /* Stock 0xB1C5-0xB1CD: 92C0 = (92C0 & 0x7F) | 0x80 */
     REG_POWER_ENABLE = (REG_POWER_ENABLE & 0x7F) | 0x80;
 
@@ -865,7 +841,7 @@ static void send_csw(uint8_t status) {
     while (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) { }
     /* Clear EP_COMPLETE from CSW DMA + reset DMA engine
      * (same as ISR EP_COMPLETE handler - see direct_bulk_in) */
-    G_XFER_STATE_0AF4 = 0x40;
+
     REG_USB_STATUS_909E = 0x01;
     REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
     REG_USB_CTRL_90A0 = 0x01;
@@ -925,7 +901,7 @@ static void direct_bulk_in(uint8_t len) {
      * 3. Write 909E = 0x01 (acknowledge buffer status)
      * 4. Write 90E3 = 0x02 (EP status clear)
      */
-    G_XFER_STATE_0AF4 = 0x40;
+
     REG_USB_STATUS_909E = 0x01;  /* Ack buffer status */
     REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
     REG_USB_CTRL_90A0 = 0x01;  /* Reset DMA engine */
@@ -1279,10 +1255,9 @@ static void handle_91d1_events(void) {
      * (92CF/92C1/E712 polling) was causing USB3 link instability. */
     if (r91d1 & USB_91D1_POWER_MGMT) {
         REG_USB_PHY_CTRL_91D1 = USB_91D1_POWER_MGMT;
-        G_USB_TRANSFER_FLAG = 0;
+
         REG_TIMER_CTRL_CC3B &= ~TIMER_CTRL_LINK_POWER;
-        G_TLP_BASE_LO = 0x01;
-        G_TLP_BASE_LO = 0x01;
+
     }
 
     r91d1 = REG_USB_PHY_CTRL_91D1;
@@ -1311,16 +1286,14 @@ static void handle_91d1_events(void) {
     /* bit 1: simple flag. Stock: 0xe6aa */
     if (r91d1 & USB_91D1_FLAG) {
         REG_USB_PHY_CTRL_91D1 = USB_91D1_FLAG;
-        G_EP_DISPATCH_VAL3 = 0;
-        G_USB_TRANSFER_FLAG = 1;
+
         return;
     }
 
     /* bit 2: link reset ack. Stock: 0xe682 */
     if (r91d1 & USB_91D1_LINK_RESET) {
         REG_PHY_CFG_C6A8 |= PHY_CFG_C6A8_ENABLE;
-        G_USB_TRANSFER_FLAG = 0;
-        G_SYS_FLAGS_07E8 = 0;
+
         REG_USB_PHY_CTRL_91D1 = USB_91D1_LINK_RESET;
     }
 }
@@ -1507,7 +1480,7 @@ void int0_isr(void) __interrupt(0) {
                 /* Stock 0x3DA1: mark interface state */
                 XDATA_REG8(0x0108 + wIdxL) = 0xC1;
                 /* Stock 0x3DEC: clear request state */
-                G_SYS_FLAGS_0052 = 0x00;
+
             }
         } else if (bmReq == 0x00 && (bReq == USB_REQ_SET_SEL || bReq == USB_REQ_SET_ISOCH_DELAY)) {
             send_zlp_ack();
@@ -2538,7 +2511,7 @@ static void pcie_phase2(void) {
      * SKIPPED: Bank-switched PHY writes (SFR 0x93=1) kill USB3 SuperSpeed */
 
     /* Lane mask from stock firmware: 0x0C (lanes 2,3 = Gen3 x2) */
-    G_EP_CFG_0A5C = 0x0C;
+
     REG_TUNNEL_LINK_STATUS = (REG_TUNNEL_LINK_STATUS & 0xF0) | 0x0C;
 
     uart_puts("[LC "); uart_puthex(REG_PCIE_CPL_STATUS); uart_puts("]\n");
@@ -2672,8 +2645,8 @@ static uint8_t pcie_phy_channel_config(uint8_t mode) {
      * (stock: BFC1-BFCA, load_dword(0x05AC) then store_dword(B218)) */
     REG_PCIE_ADDR_0 = pcie_addr_offset_lo;
     REG_PCIE_ADDR_1 = pcie_addr_offset_hi;
-    REG_PCIE_ADDR_2 = G_PCIE_DIRECTION;
-    REG_PCIE_ADDR_3 = G_PCIE_ADDR_0;
+    REG_PCIE_ADDR_2 = st_pcie_direction;
+    REG_PCIE_ADDR_3 = st_pcie_addr_0;
 
     /* Step 6: Trigger B296 sequence (stock: BFCD calling 0x98FA)
      * B296=0x01, 0x02, 0x04; B254=0x0F */
@@ -2745,8 +2718,8 @@ static uint8_t pcie_check_readiness(void) {
      * Stored big-endian: 0x05AC=r4, 0x05AD=r5, 0x05AE=r6, 0x05AF=r7 */
     pcie_addr_offset_lo = 0x00;
     pcie_addr_offset_hi = 0xD0;
-    G_PCIE_DIRECTION = 0x00;
-    G_PCIE_ADDR_0 = 0x1C;
+    st_pcie_direction = 0x00;
+    st_pcie_addr_0 = 0x1C;
 
     /* Step 2: Run BF96 in read mode (stock: E656 → 0x05AB=0, BF96) */
     result = pcie_phy_channel_config(0);
@@ -2914,8 +2887,8 @@ static uint8_t pcie_perst_deassert(void) {
      * E4C8 with r7=0x14: stores {r4=0x00, r5=0xD0, r6=0x00, r7=0x14} to 0x05AC */
     pcie_addr_offset_lo = 0x00;
     pcie_addr_offset_hi = 0xD0;
-    G_PCIE_DIRECTION = 0x00;
-    G_PCIE_ADDR_0 = 0x14;
+    st_pcie_direction = 0x00;
+    st_pcie_addr_0 = 0x14;
 
     /* Step 3: Write B220 TLP config (stock: 0x3623-0x362E)
      * Stock: r7=0x01, r6=0x40, r5=0x46, r4=0x00
@@ -3343,7 +3316,7 @@ void main(void) {
         if (link_ok || b22b == 0x04) {
             pcie_post_train();
             pcie_initialized = 3;
-            G_XFER_CTRL_0AF7 = 0x01;
+
             uart_puts("[L0!]\n");
         } else {
             pcie_initialized = 2;
@@ -3443,7 +3416,7 @@ void main(void) {
                         /* Stock firmware 0x3914: set PCIE_ENUM_DONE after successful init.
                          * CBW handler at 0x34A3 checks this — without it, CBW processing
                          * takes the error path and doesn't send CSW properly. */
-                        G_XFER_CTRL_0AF7 = 0x01;
+
                         /* Re-trigger any PCIe config request that arrived during init.
                          * tinygrad writes B297=0x01 before PCIe link is up — hardware
                          * can't complete the config access. Now that link is trained,
