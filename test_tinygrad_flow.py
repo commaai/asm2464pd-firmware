@@ -367,9 +367,8 @@ def test_21_scsi_write_pcie_readback(dev):
         print(f"  READBACK at BAR0+0x200000 (0x{dma_target:X}):")
         for e in errors:
             print(e)
-        print("  NOTE: DMA doorbell handler may not be implemented yet")
-    else:
-        print(f"  SCSI WRITE 512B PCIe readback verified OK at 0x{dma_target:X}")
+    assert not errors, "SCSI WRITE 512B did not reach BAR0+0x200000"
+    print(f"  SCSI WRITE 512B PCIe readback verified OK at 0x{dma_target:X}")
     return True
 
 def test_22_scsi_write_buffer_location(dev):
@@ -476,10 +475,84 @@ def test_24_firmware_copy_pcie_verify(dev):
         print("  READBACK ISSUES:")
         for e in errors[:5]:
             print(e)
-        print("  NOTE: DMA doorbell handler may not be implemented yet")
-    else:
-        print(f"  64KB firmware copy verified OK at {len(check_offsets)} offsets")
+    assert not errors, "64KB firmware copy did not reach BAR0+0x200000"
+    print(f"  64KB firmware copy verified OK at {len(check_offsets)} offsets")
 
+    return True
+
+def test_25_psp_bootloader_kdb_completion(dev):
+    """PSP bootloader command completion bit should return after KDB load trigger.
+
+    Tinygrad AM init waits for regMPASP_SMN_C2PMSG_35 bit31 after writing
+    component ID (KDB) to the same register.
+    """
+    usb = ASM24Controller.__new__(ASM24Controller)
+    usb.usb = dev
+    usb._cache = {}
+    usb._pci_cacheable = []
+    usb._pci_cache = {}
+
+    from tinygrad.runtime.support.system import System
+    bars = System.pci_setup_usb_bars(usb, gpu_bus=4, mem_base=0x10000000, pref_mem_base=(32 << 30))
+    bar5_addr, _ = bar_addr_size(bars[5])
+
+    reg35 = bar5_addr + 0x16063 * 4
+    reg36 = bar5_addr + 0x16064 * 4
+
+    # msg1 page (matches USB sysmem first page used by tinygrad path)
+    usb.pcie_mem_req(reg36, value=0x200, size=4)
+    # LOAD_KEY_DATABASE command id used by tinygrad for first PSP component
+    usb.pcie_mem_req(reg35, value=0x00080000, size=4)
+
+    deadline = time.time() + 0.5
+    last = 0
+    while time.time() < deadline:
+        last = usb.pcie_mem_req(reg35, size=4)
+        if last & 0x80000000:
+            print(f"  PSP C2PMSG_35 completion=0x{last:08X}")
+            return True
+        time.sleep(0.01)
+
+    raise AssertionError(f"PSP C2PMSG_35 never set bit31, last=0x{last:08X}")
+
+def test_26_scsi_write_pcie_strict(dev):
+    """Strict check: after SCSI upload + doorbell, BAR0+0x200000 must match."""
+    usb = ASM24Controller.__new__(ASM24Controller)
+    usb.usb = dev
+    usb._cache = {}
+    usb._pci_cacheable = []
+    usb._pci_cache = {}
+
+    from tinygrad.runtime.support.system import System
+    bars = System.pci_setup_usb_bars(usb, gpu_bus=4, mem_base=0x10000000, pref_mem_base=(32 << 30))
+    bar0_addr, _ = bar_addr_size(bars[0])
+    dma_target = bar0_addr + 0x200000
+
+    pattern = bytes([(i ^ 0xA5) & 0xFF for i in range(0x10000)])
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=15000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+
+    # tinygrad doorbell sequence
+    e5_write_raw(dev, 0x0171, 0xFF)
+    e5_write_raw(dev, 0x0172, 0xFF)
+    e5_write_raw(dev, 0x0173, 0xFF)
+    e5_write_raw(dev, 0xCE6E, 0x00)
+    e5_write_raw(dev, 0xCE6F, 0x00)
+
+    # Verify dense coverage across the full 64KB upload
+    check_offsets = list(range(0, 0x10000, 0x100)) + [0x1FC, 0x7FFC, 0xFFFC]
+    errors = []
+    for off in check_offsets:
+        val = usb.pcie_mem_req(dma_target + off, size=4)
+        got = struct.pack('<I', val)
+        exp = pattern[off:off+4]
+        if got != exp:
+            errors.append((off, got.hex(), exp.hex()))
+            if len(errors) >= 8:
+                break
+
+    assert not errors, f"PCIe strict readback mismatches: {errors}"
+    print(f"  Strict readback OK at {len(check_offsets)} offsets")
     return True
 
 # ============================================================
