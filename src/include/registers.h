@@ -46,6 +46,9 @@
 #define XDATA_REG8(addr)   (*(__xdata uint8_t *)(addr))
 #define XDATA_REG16(addr)  (*(__xdata uint16_t *)(addr))
 #define XDATA_REG32(addr)  (*(__xdata uint32_t *)(addr))
+#define XDATA_REG8V(addr)  (*(__xdata volatile uint8_t *)(addr))
+#define XDATA_REG16V(addr) (*(__xdata volatile uint16_t *)(addr))
+#define XDATA_REG32V(addr) (*(__xdata volatile uint32_t *)(addr))
 
 //=============================================================================
 // Memory Buffers
@@ -799,34 +802,34 @@
 #define PCIE_EXT_REG(offset)  XDATA_REG8(0xB200 + (offset))
 
 // PCIe TLP registers (0xB210-0xB284)
-#define REG_PCIE_FMT_TYPE       XDATA_REG8(0xB210)
-#define REG_PCIE_TLP_CTRL       XDATA_REG8(0xB213)
-#define REG_PCIE_TLP_LENGTH     XDATA_REG8(0xB216)
-#define REG_PCIE_BYTE_EN        XDATA_REG8(0xB217)
-#define REG_PCIE_ADDR_0         XDATA_REG8(0xB218)
-#define REG_PCIE_ADDR_1         XDATA_REG8(0xB219)
-#define REG_PCIE_ADDR_2         XDATA_REG8(0xB21A)
-#define REG_PCIE_ADDR_3         XDATA_REG8(0xB21B)
-#define REG_PCIE_ADDR_HIGH      XDATA_REG8(0xB21C)
-#define REG_PCIE_ADDR_HIGH_1    XDATA_REG8(0xB21D)  // Upper address byte 1 (64-bit addressing)
-#define REG_PCIE_ADDR_HIGH_2    XDATA_REG8(0xB21E)  // Upper address byte 2 (64-bit addressing)
-#define REG_PCIE_ADDR_HIGH_3    XDATA_REG8(0xB21F)  // Upper address byte 3 (64-bit addressing)
-#define REG_PCIE_DATA           XDATA_REG8(0xB220)
-#define REG_PCIE_DATA_1         XDATA_REG8(0xB221)  // Data register byte 1
-#define REG_PCIE_DATA_2         XDATA_REG8(0xB222)  // Data register byte 2
+#define REG_PCIE_FMT_TYPE       XDATA_REG8V(0xB210)
+#define REG_PCIE_TLP_CTRL       XDATA_REG8V(0xB213)
+#define REG_PCIE_TLP_LENGTH     XDATA_REG8V(0xB216)
+#define REG_PCIE_BYTE_EN        XDATA_REG8V(0xB217)
+#define REG_PCIE_ADDR_0         XDATA_REG8V(0xB218)
+#define REG_PCIE_ADDR_1         XDATA_REG8V(0xB219)
+#define REG_PCIE_ADDR_2         XDATA_REG8V(0xB21A)
+#define REG_PCIE_ADDR_3         XDATA_REG8V(0xB21B)
+#define REG_PCIE_ADDR_HIGH      XDATA_REG8V(0xB21C)
+#define REG_PCIE_ADDR_HIGH_1    XDATA_REG8V(0xB21D)  // Upper address byte 1 (64-bit addressing)
+#define REG_PCIE_ADDR_HIGH_2    XDATA_REG8V(0xB21E)  // Upper address byte 2 (64-bit addressing)
+#define REG_PCIE_ADDR_HIGH_3    XDATA_REG8V(0xB21F)  // Upper address byte 3 (64-bit addressing)
+#define REG_PCIE_DATA           XDATA_REG8V(0xB220)
+#define REG_PCIE_DATA_1         XDATA_REG8V(0xB221)  // Data register byte 1
+#define REG_PCIE_DATA_2         XDATA_REG8V(0xB222)  // Data register byte 2
 /*
  * PCIe Extended Status (0xB223)
  * Bit 0: PLL lock / CDR lock indicator.
  * After phy_rst_rxpll_core returns 0 (success), stock firmware checks
  * bit 0 of B223 — if set, CDR lock confirmed (returns 0x13 = "[CDRV ok]").
  */
-#define REG_PCIE_EXT_STATUS     XDATA_REG8(0xB223)
+#define REG_PCIE_EXT_STATUS     XDATA_REG8V(0xB223)
 #define   PCIE_EXT_STATUS_PLL_LOCK 0x01  // Bit 0: PLL/CDR lock confirmed
 #define REG_PCIE_TLP_CPL_HEADER XDATA_REG32(0xB224)
-#define REG_PCIE_LINK_STATUS    XDATA_REG16(0xB22A)
-#define REG_PCIE_CPL_STATUS     XDATA_REG8(0xB22B)
-#define REG_PCIE_CPL_DATA       XDATA_REG8(0xB22C)
-#define REG_PCIE_CPL_DATA_ALT   XDATA_REG8(0xB22D)
+#define REG_PCIE_LINK_STATUS    XDATA_REG16V(0xB22A)
+#define REG_PCIE_CPL_STATUS     XDATA_REG8V(0xB22B)
+#define REG_PCIE_CPL_DATA       XDATA_REG8V(0xB22C)
+#define REG_PCIE_CPL_DATA_ALT   XDATA_REG8V(0xB22D)
 
 // PCIe Extended Link Registers (0xB234-0xB24E)
 #define REG_PCIE_LINK_STATE_EXT XDATA_REG8(0xB234)   // Extended link state machine state
@@ -850,7 +853,7 @@
 #define REG_PCIE_DMA_CFG_50     XDATA_REG8(0xB250)   // DMA config byte 0
 #define REG_PCIE_DMA_CFG_51     XDATA_REG8(0xB251)   // DMA config byte 1
 #define REG_PCIE_DOORBELL_CMD   XDATA_REG8(0xB251)   // Byte 1 of doorbell - command byte
-#define REG_PCIE_TRIGGER        XDATA_REG8(0xB254)
+#define REG_PCIE_TRIGGER        XDATA_REG8V(0xB254)
 #define REG_PCIE_DMA_SIZE_A     XDATA_REG8(0xB264)   // DMA size config A
 #define REG_PCIE_DMA_SIZE_B     XDATA_REG8(0xB265)   // DMA size config B
 #define REG_PCIE_DMA_SIZE_C     XDATA_REG8(0xB266)   // DMA size config C
@@ -864,7 +867,7 @@
 #define REG_PCIE_COMPL_STATUS   XDATA_REG8(0xB284)
 #define REG_PCIE_POWER_B294     XDATA_REG8(0xB294)  /* PCIe power control */
 // PCIe status registers (0xB296-0xB298)
-#define REG_PCIE_STATUS         XDATA_REG8(0xB296)
+#define REG_PCIE_STATUS         XDATA_REG8V(0xB296)
 #define REG_PCIE_BRIDGE_CTRL    XDATA_REG8(0xB297)  /* PCIe bridge control (bit 0 = enable) */
 #define   PCIE_STATUS_ERROR       0x01  // Bit 0: Error flag
 #define   PCIE_STATUS_COMPLETE    0x02  // Bit 1: Completion status

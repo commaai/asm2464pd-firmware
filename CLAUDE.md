@@ -14,6 +14,11 @@
 - The emulator just moves bytes between addresses the firmware specifies
 - If something doesn't work, the fix is in the FIRMWARE, not adding logic to the emulator
 
+**CRITICAL: FOCUS ON BOT + DMA RELIABILITY (NOT UAS)**
+- For tinygrad bring-up, use `USE_BOT=1` and prioritize BOT path correctness
+- Do not spend time on UAS/alt-setting-1 stream behavior unless explicitly requested
+- The primary objective is reliable DMA behavior in BOT mode matching stock firmware
+
 We are reimplementing the firmware of the ASM2464PD chip in C in the src/ directory. The official firmware is in fw.bin.
 
 We are trying to match each function in the original firmware to ours, giving good names to the functions and registers and structuring the src/ directory well.

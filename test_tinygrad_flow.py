@@ -17,7 +17,7 @@ Tests are ordered to match the tinygrad initialization sequence:
 Run: sudo PYTHONPATH=/home/geohot/tinygrad python3 test_tinygrad_flow.py
 """
 
-import ctypes, struct, sys, time, traceback
+import ctypes, os, struct, sys, time, traceback
 sys.path.insert(0, '/home/geohot/tinygrad')
 from tinygrad.runtime.support.usb import USB3, ASM24Controller, WriteOp, ReadOp, ScsiWriteOp
 from tinygrad.runtime.autogen import libusb
@@ -480,6 +480,432 @@ def test_24_firmware_copy_pcie_verify(dev):
 
     return True
 
+def _mk_usb_controller(dev):
+    usb = ASM24Controller.__new__(ASM24Controller)
+    usb.usb = dev
+    usb._cache = {}
+    usb._pci_cacheable = []
+    usb._pci_cache = {}
+    return usb
+
+def _psp_regs(dev):
+    usb = _mk_usb_controller(dev)
+    from tinygrad.runtime.support.system import System
+    bars = System.pci_setup_usb_bars(usb, gpu_bus=4, mem_base=0x10000000, pref_mem_base=(32 << 30))
+    bar5_addr, _ = bar_addr_size(bars[5])
+    return usb, {
+        "bar5": bar5_addr,
+        "reg35": bar5_addr + 0x16063 * 4,
+        "reg36": bar5_addr + 0x16064 * 4,
+        "reg64": bar5_addr + 0x16080 * 4,
+        "reg81": bar5_addr + 0x16091 * 4,
+    }
+
+def _prepare_psp_msg_page(dev, size=0x10000):
+    payload = bytes([(i * 11 + 0x5D) & 0xFF for i in range(size)])
+    status = scsi_write_raw(dev, payload, lba=0, timeout=20000)
+    assert status == 0, f"SCSI write for PSP msg page failed: status={status}"
+    e5_write_raw(dev, 0x0171, 0xFF)
+    e5_write_raw(dev, 0x0172, 0xFF)
+    e5_write_raw(dev, 0x0173, 0xFF)
+    e5_write_raw(dev, 0xCE6E, 0x00)
+    e5_write_raw(dev, 0xCE6F, 0x00)
+
+def _dma_target_ctx(dev):
+    usb = _mk_usb_controller(dev)
+    from tinygrad.runtime.support.system import System
+    bars = System.pci_setup_usb_bars(usb, gpu_bus=4, mem_base=0x10000000, pref_mem_base=(32 << 30))
+    bar0_addr, _ = bar_addr_size(bars[0])
+    return usb, (bar0_addr + 0x200000)
+
+def _doorbell_kick(dev, seq=None, pause_s=0.0):
+    if seq is None:
+        seq = [(0x0171, 0xFF), (0x0172, 0xFF), (0x0173, 0xFF), (0xCE6E, 0x00), (0xCE6F, 0x00)]
+    for addr, val in seq:
+        e5_write_raw(dev, addr, val)
+        if pause_s > 0:
+            time.sleep(pause_s)
+
+def _dma_quick_mode():
+    return os.getenv("DMA_QUICK", "0") == "1"
+
+def _dma_scsi_timeout_ms():
+    return 8000 if _dma_quick_mode() else 20000
+
+def _verify_dma_pattern(dev, dma_target, pattern, step=0x100):
+    if _dma_quick_mode() and step == 0x100:
+        step = 0x800
+    check_offsets = list(range(0, len(pattern), step)) + [0x1FC, 0x7FFC, len(pattern) - 4]
+    errors = []
+    for off in check_offsets:
+        val = _pcie_mem_read32_bot(dev, dma_target + off)
+        got = struct.pack('<I', val)
+        exp = pattern[off:off+4]
+        if got != exp:
+            errors.append((off, got.hex(), exp.hex()))
+            if len(errors) >= 12:
+                break
+    return errors, len(check_offsets)
+
+def _pcie_mem_read32_bot(dev, address, retries=4):
+    masked_address = address & 0xFFFFFFFC
+    for _ in range(retries):
+        # Program PCIe memory read request (fmt_type 0x20)
+        for i, b in enumerate(struct.pack('>I', masked_address)):
+            e5_write_raw(dev, 0xB218 + i, b)
+        for i, b in enumerate(struct.pack('>I', address >> 32)):
+            e5_write_raw(dev, 0xB21C + i, b)
+        e5_write_raw(dev, 0xB217, 0x0F)
+        e5_write_raw(dev, 0xB210, 0x20)
+        e5_write_raw(dev, 0xB254, 0x0F)
+        e5_write_raw(dev, 0xB296, 0x04)
+
+        for _ in range(200):
+            st = e4_read_residue(dev, 0xB296, 1)[0]
+            if st & 0x02:
+                raw = e4_read_residue(dev, 0xB220, 4)
+                return int.from_bytes(raw, 'big')
+            if st & 0x01:
+                e5_write_raw(dev, 0xB296, 0x01)
+                break
+    raise AssertionError(f"pcie_mem_read32 timeout @0x{address:X}")
+
+def _verify_dma_offsets(dev, dma_target, pattern, offsets):
+    errors = []
+    for off in offsets:
+        if _dma_quick_mode():
+            print(f"    read off=0x{off:04X}")
+        val = _pcie_mem_read32_bot(dev, dma_target + off)
+        got = struct.pack('<I', val)
+        exp = pattern[off:off+4]
+        if got != exp:
+            errors.append((off, got.hex(), exp.hex()))
+    return errors
+
+def _psp_send_bootloader_cmd(usb, regs, compid, wait_complete=True, timeout_s=10.0):
+    usb.pcie_mem_req(regs["reg36"], value=0x200, size=4)
+    usb.pcie_mem_req(regs["reg35"], value=compid, size=4)
+    if not wait_complete:
+        return usb.pcie_mem_req(regs["reg35"], size=4)
+    deadline = time.time() + timeout_s
+    last = 0
+    while time.time() < deadline:
+        last = usb.pcie_mem_req(regs["reg35"], size=4)
+        if last & 0x80000000:
+            return last
+        time.sleep(0.01)
+    raise AssertionError(f"PSP compid 0x{compid:08X} timed out, reg35=0x{last:08X}")
+
+def _psp_load_sos_ladder(usb, regs):
+    # KDB, SPL, SYS, SOC, INTF, DBG, RAS, SOS
+    for compid in [0x00080000, 0x10000000, 0x00010000, 0x000B0000, 0x000D0000, 0x000C0000, 0x000E0000]:
+        _psp_send_bootloader_cmd(usb, regs, compid, wait_complete=True, timeout_s=10.0)
+    _psp_send_bootloader_cmd(usb, regs, 0x00020000, wait_complete=False)
+
+def test_25_psp_reg36_message_page(dev):
+    """PSP msg page pointer register (reg36) should latch 0x200."""
+    usb, regs = _psp_regs(dev)
+    usb.pcie_mem_req(regs["reg36"], value=0x200, size=4)
+    val = usb.pcie_mem_req(regs["reg36"], size=4)
+    assert (val & 0xFFF) == 0x200, f"reg36 mismatch: 0x{val:08X}"
+    print(f"  reg36=0x{val:08X}")
+    return True
+
+def test_26_psp_kdb_completion(dev):
+    """PSP bootloader should complete KDB load (compid 0x00080000)."""
+    _prepare_psp_msg_page(dev)
+    usb, regs = _psp_regs(dev)
+    val = _psp_send_bootloader_cmd(usb, regs, 0x00080000, wait_complete=True, timeout_s=10.0)
+    print(f"  KDB reg35 completion=0x{val:08X}")
+    return True
+
+def test_27_psp_spl_completion(dev):
+    """PSP bootloader should complete SPL table load (compid 0x10000000)."""
+    _prepare_psp_msg_page(dev)
+    usb, regs = _psp_regs(dev)
+    val = _psp_send_bootloader_cmd(usb, regs, 0x10000000, wait_complete=True, timeout_s=10.0)
+    print(f"  SPL reg35 completion=0x{val:08X}")
+    return True
+
+def test_28_psp_mid_component_completions(dev):
+    """PSP bootloader should complete SYS/SOC/INTF/DBG/RAS component loads."""
+    _prepare_psp_msg_page(dev)
+    usb, regs = _psp_regs(dev)
+    compids = [0x00010000, 0x000B0000, 0x000D0000, 0x000C0000, 0x000E0000]
+    for compid in compids:
+        val = _psp_send_bootloader_cmd(usb, regs, compid, wait_complete=True, timeout_s=10.0)
+        print(f"  compid 0x{compid:08X} -> reg35 0x{val:08X}")
+    return True
+
+def test_29_psp_sosdrv_trigger(dev):
+    """PSP SOSDRV trigger write should be accepted (compid 0x00020000)."""
+    _prepare_psp_msg_page(dev)
+    usb, regs = _psp_regs(dev)
+    val = _psp_send_bootloader_cmd(usb, regs, 0x00020000, wait_complete=False)
+    print(f"  SOSDRV reg35 immediate=0x{val:08X}")
+    return True
+
+def test_30_psp_sos_alive(dev):
+    """After full component sequence, PSP sOS alive register (reg81) should become non-zero."""
+    _prepare_psp_msg_page(dev)
+    usb, regs = _psp_regs(dev)
+    pre = usb.pcie_mem_req(regs["reg81"], size=4)
+    _psp_load_sos_ladder(usb, regs)
+
+    deadline = time.time() + 10.0
+    last = pre
+    while time.time() < deadline:
+        last = usb.pcie_mem_req(regs["reg81"], size=4)
+        if last != 0:
+            print(f"  reg81 alive: 0x{last:08X}")
+            return True
+        time.sleep(0.05)
+
+    raise AssertionError(f"reg81 stayed zero (pre=0x{pre:08X}, last=0x{last:08X})")
+
+def test_31_psp_ring_ready_bit(dev):
+    """After SOS ladder, reg64 should expose sOS ready bit31 for ring setup path."""
+    _prepare_psp_msg_page(dev)
+    usb, regs = _psp_regs(dev)
+    _psp_load_sos_ladder(usb, regs)
+
+    deadline = time.time() + 10.0
+    last = 0
+    while time.time() < deadline:
+        last = usb.pcie_mem_req(regs["reg64"], size=4)
+        if last & 0x80000000:
+            print(f"  reg64 ready=0x{last:08X}")
+            return True
+        time.sleep(0.05)
+
+    raise AssertionError(f"reg64 bit31 never set, last=0x{last:08X}")
+
+def test_32_psp_ring_fence_path(dev):
+    """Exercise PSP ring fence path used by _ring_submit."""
+    _prepare_psp_msg_page(dev)
+    usb, regs = _psp_regs(dev)
+    _psp_load_sos_ladder(usb, regs)
+
+    cmd_buf = 0x800088000
+    fence_addr = 0x800089000
+    ring_addr = 0x80008A000
+    fence_val = 0x1234ABCD
+
+    # Program ring regs as in PSP._ring_create
+    usb.pcie_mem_req(regs["bar5"] + 0x16085 * 4, value=(ring_addr & 0xFFFFFFFF), size=4)  # _69 lo
+    usb.pcie_mem_req(regs["bar5"] + 0x16086 * 4, value=(ring_addr >> 32), size=4)          # _70 hi
+    usb.pcie_mem_req(regs["bar5"] + 0x16087 * 4, value=0x00010000, size=4)                  # _71 size
+    usb.pcie_mem_req(regs["reg64"], value=0x00030000, size=4)                                 # ring create cmd
+
+    # Write one ring frame to ring memory
+    frame = [
+        cmd_buf & 0xFFFFFFFF, (cmd_buf >> 32) & 0xFFFFFFFF, 0,
+        fence_addr & 0xFFFFFFFF, (fence_addr >> 32) & 0xFFFFFFFF,
+        fence_val
+    ] + [0] * 10
+    usb.pcie_mem_write(ring_addr, frame, 4)
+
+    # Kick wptr (matches observed +15 encoding in current firmware behavior)
+    usb.pcie_mem_req(regs["bar5"] + 0x16083 * 4, value=fence_val + 15, size=4)
+
+    got = usb.pcie_mem_req(fence_addr, size=4)
+    assert got == fence_val, f"fence mismatch: got 0x{got:08X}, expected 0x{fence_val:08X}"
+    print(f"  fence=0x{got:08X}")
+    return True
+
+def test_33_psp_cmd_resp_status_zero(dev):
+    """PSP command response status field should be zeroed for ring submit flow."""
+    _prepare_psp_msg_page(dev)
+    usb, regs = _psp_regs(dev)
+    _psp_load_sos_ladder(usb, regs)
+
+    cmd_resp_status_addr = 0x800088000 + 864
+    val = usb.pcie_mem_req(cmd_resp_status_addr, size=4)
+    assert val == 0, f"cmd resp status non-zero: 0x{val:08X}"
+    print("  cmd resp status is zero")
+    return True
+
+def test_34_dma_in_order_stress(dev):
+    """Stress DMA reliability with repeated in-order doorbell kicks."""
+    _, dma_target = _dma_target_ctx(dev)
+    iterations = 1 if _dma_quick_mode() else 8
+
+    for it in range(iterations):
+        pattern = bytes([((i * 29) + (it * 31) + 0x55) & 0xFF for i in range(0x10000)])
+        status = scsi_write_raw(dev, pattern, lba=0, timeout=_dma_scsi_timeout_ms())
+        assert status == 0, f"iter {it}: SCSI WRITE failed: status={status}"
+        _doorbell_kick(dev)
+
+        errors, checked = _verify_dma_pattern(dev, dma_target, pattern)
+        assert not errors, f"iter {it}: DMA mismatches after in-order kick: {errors}"
+        print(f"  iter {it}: OK ({checked} offsets)")
+    return True
+
+def test_35_dma_out_of_order_doorbell(dev):
+    """DMA should still complete when doorbell bytes are written out of order."""
+    _, dma_target = _dma_target_ctx(dev)
+    pattern = bytes([((i * 7) ^ 0xA5) & 0xFF for i in range(0x10000)])
+
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=20000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+
+    out_of_order = [(0xCE6F, 0x00), (0x0172, 0xFF), (0x0171, 0xFF), (0xCE6E, 0x00), (0x0173, 0xFF)]
+    _doorbell_kick(dev, seq=out_of_order)
+
+    errors, checked = _verify_dma_pattern(dev, dma_target, pattern)
+    assert not errors, f"DMA mismatches after out-of-order kick: {errors}"
+    print(f"  Out-of-order kick OK ({checked} offsets)")
+    return True
+
+def test_36_dma_pause_between_doorbells(dev):
+    """DMA should remain reliable with pauses between doorbell writes."""
+    _, dma_target = _dma_target_ctx(dev)
+    pattern = bytes([((i * 5) + 0x3C) & 0xFF for i in range(0x10000)])
+
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=20000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+    _doorbell_kick(dev, pause_s=0.04)
+
+    errors, checked = _verify_dma_pattern(dev, dma_target, pattern)
+    assert not errors, f"DMA mismatches with paused doorbell: {errors}"
+    print(f"  Paused doorbell OK ({checked} offsets)")
+    return True
+
+def test_37_dma_requires_kick_and_updates(dev):
+    """Consecutive uploads must always converge to latest kicked pattern."""
+    _, dma_target = _dma_target_ctx(dev)
+    quick = _dma_quick_mode()
+
+    pattern_a = bytes([((i * 9) + 0x11) & 0xFF for i in range(0x10000)])
+    print("  pattern_a write")
+    status = scsi_write_raw(dev, pattern_a, lba=0, timeout=_dma_scsi_timeout_ms())
+    assert status == 0, f"pattern_a SCSI WRITE failed: status={status}"
+    print("  pattern_a kick")
+    _doorbell_kick(dev)
+    if quick:
+        print("  pattern_a verify")
+        errors = _verify_dma_offsets(dev, dma_target, pattern_a, [0x000, 0x004, 0x1FC, 0x7FFC, 0xFFFC])
+    else:
+        errors, _ = _verify_dma_pattern(dev, dma_target, pattern_a)
+    assert not errors, f"pattern_a verify failed: {errors}"
+
+    pattern_b = bytes([((i * 11) + 0x27) & 0xFF for i in range(0x10000)])
+    print("  pattern_b write")
+    status = scsi_write_raw(dev, pattern_b, lba=0, timeout=_dma_scsi_timeout_ms())
+    assert status == 0, f"pattern_b SCSI WRITE failed: status={status}"
+    print("  pattern_b kick")
+    _doorbell_kick(dev)
+    if quick:
+        print("  pattern_b verify")
+        fresh_errors = _verify_dma_offsets(dev, dma_target, pattern_b, [0x000, 0x004, 0x1FC, 0x7FFC, 0xFFFC])
+        checked = 5
+    else:
+        fresh_errors, checked = _verify_dma_pattern(dev, dma_target, pattern_b)
+    assert not fresh_errors, f"pattern_b verify failed after doorbell: {fresh_errors}"
+
+    if quick:
+        print(f"  Consecutive update behavior OK (quick, {checked} offsets)")
+        return True
+
+    # Third update with pauses between writes must still converge.
+    pattern_c = bytes([((i * 13) + 0x3D) & 0xFF for i in range(0x10000)])
+    status = scsi_write_raw(dev, pattern_c, lba=0, timeout=_dma_scsi_timeout_ms())
+    assert status == 0, f"pattern_c SCSI WRITE failed: status={status}"
+    _doorbell_kick(dev, pause_s=0.03)
+    final_errors, checked = _verify_dma_pattern(dev, dma_target, pattern_c)
+    assert not final_errors, f"pattern_c verify failed after paused kick: {final_errors}"
+    print(f"  Consecutive update behavior OK ({checked} offsets)")
+    return True
+
+def test_38_dma_fc_boundary_scan(dev):
+    """Isolate whether corruption clusters at offsets ending in 0xFC."""
+    _, dma_target = _dma_target_ctx(dev)
+    pattern = bytes([((i * 29) + 0x55) & 0xFF for i in range(0x10000)])
+
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=20000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+    _doorbell_kick(dev)
+
+    check_offsets = [0xFC + (i * 0x100) for i in range(16)] + [0x1FC, 0x7FFC, 0xFFFC]
+    errors = []
+    for off in check_offsets:
+        val = _pcie_mem_read32_bot(dev, dma_target + off)
+        got = struct.pack('<I', val)
+        exp = pattern[off:off+4]
+        if got != exp:
+            errors.append((off, got.hex(), exp.hex()))
+    assert not errors, f"0xFC-boundary mismatches: {errors}"
+    print(f"  0xFC boundary scan OK ({len(check_offsets)} offsets)")
+    return True
+
+def test_39_dma_mod8_lane_scan(dev):
+    """Check whether corruption is lane-dependent across mod-8 offsets."""
+    _, dma_target = _dma_target_ctx(dev)
+    pattern = bytes([((i * 13) + 0x37) & 0xFF for i in range(0x10000)])
+
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=20000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+    _doorbell_kick(dev)
+
+    lane_offs = [0x000, 0x004, 0x008, 0x00C, 0x1F8, 0x1FC, 0x7FF8, 0x7FFC, 0xFFF8, 0xFFFC]
+    errors = []
+    for off in lane_offs:
+        val = _pcie_mem_read32_bot(dev, dma_target + off)
+        got = struct.pack('<I', val)
+        exp = pattern[off:off+4]
+        if got != exp:
+            errors.append((off, got.hex(), exp.hex()))
+    assert not errors, f"mod-8 lane mismatches: {errors}"
+    print(f"  mod-8 lane scan OK ({len(lane_offs)} offsets)")
+    return True
+
+def test_40_dma_random_sentinels(dev):
+    """Use random payload to detect stale fixed sentinel words."""
+    _, dma_target = _dma_target_ctx(dev)
+    pattern = os.urandom(0x10000)
+
+    status = scsi_write_raw(dev, pattern, lba=0, timeout=20000)
+    assert status == 0, f"SCSI WRITE failed: status={status}"
+    _doorbell_kick(dev)
+
+    sentinels = [0x1FC, 0x7FFC, 0xFFFC]
+    errors = []
+    for off in sentinels:
+        val = _pcie_mem_read32_bot(dev, dma_target + off)
+        got = struct.pack('<I', val)
+        exp = pattern[off:off+4]
+        if got != exp:
+            errors.append((off, got.hex(), exp.hex()))
+    assert not errors, f"random sentinel mismatches: {errors}"
+    print("  random sentinels OK")
+    return True
+
+def test_41_dma_rewrite_same_lba(dev):
+    """Back-to-back writes to same LBA must fully replace prior data."""
+    _, dma_target = _dma_target_ctx(dev)
+
+    pattern_a = bytes([((i * 3) + 0x11) & 0xFF for i in range(0x10000)])
+    status = scsi_write_raw(dev, pattern_a, lba=0, timeout=20000)
+    assert status == 0, f"pattern_a WRITE failed: status={status}"
+    _doorbell_kick(dev)
+
+    pattern_b = bytes([((i * 5) + 0x53) & 0xFF for i in range(0x10000)])
+    status = scsi_write_raw(dev, pattern_b, lba=0, timeout=20000)
+    assert status == 0, f"pattern_b WRITE failed: status={status}"
+    _doorbell_kick(dev)
+
+    check_offsets = [0x000, 0x004, 0x1FC, 0x7FFC, 0xFFFC]
+    errors = []
+    for off in check_offsets:
+        val = _pcie_mem_read32_bot(dev, dma_target + off)
+        got = struct.pack('<I', val)
+        exp = pattern_b[off:off+4]
+        if got != exp:
+            errors.append((off, got.hex(), exp.hex()))
+    assert not errors, f"rewrite mismatches: {errors}"
+    print("  same-LBA rewrite OK")
+    return True
+
 def test_25_psp_bootloader_kdb_completion(dev):
     """PSP bootloader command completion bit should return after KDB load trigger.
 
@@ -543,7 +969,7 @@ def test_26_scsi_write_pcie_strict(dev):
     check_offsets = list(range(0, 0x10000, 0x100)) + [0x1FC, 0x7FFC, 0xFFFC]
     errors = []
     for off in check_offsets:
-        val = usb.pcie_mem_req(dma_target + off, size=4)
+        val = _pcie_mem_read32_bot(dev, dma_target + off)
         got = struct.pack('<I', val)
         exp = pattern[off:off+4]
         if got != exp:
@@ -584,6 +1010,23 @@ TESTS = [
     ("22 SCSI WRITE buffer location", test_22_scsi_write_buffer_location),
     ("23 SCSI WRITE CE8x state",    test_23_scsi_write_ce8x_state),
     ("24 Firmware copy PCIe verify", test_24_firmware_copy_pcie_verify),
+    ("25 PSP reg36 message page",     test_25_psp_reg36_message_page),
+    ("26 PSP KDB completion",         test_26_psp_kdb_completion),
+    ("27 PSP SPL completion",         test_27_psp_spl_completion),
+    ("28 PSP mid comps completion",   test_28_psp_mid_component_completions),
+    ("29 PSP SOSDRV trigger",         test_29_psp_sosdrv_trigger),
+    ("30 PSP sOS alive",              test_30_psp_sos_alive),
+    ("31 PSP ring ready bit",         test_31_psp_ring_ready_bit),
+    ("32 PSP ring fence path",        test_32_psp_ring_fence_path),
+    ("33 PSP cmd resp status",        test_33_psp_cmd_resp_status_zero),
+    ("34 DMA in-order stress",        test_34_dma_in_order_stress),
+    ("35 DMA out-of-order kick",      test_35_dma_out_of_order_doorbell),
+    ("36 DMA paused kick",            test_36_dma_pause_between_doorbells),
+    ("37 DMA kick/update behavior",   test_37_dma_requires_kick_and_updates),
+    ("38 DMA 0xFC boundary scan",     test_38_dma_fc_boundary_scan),
+    ("39 DMA mod-8 lane scan",        test_39_dma_mod8_lane_scan),
+    ("40 DMA random sentinels",       test_40_dma_random_sentinels),
+    ("41 DMA same-LBA rewrite",       test_41_dma_rewrite_same_lba),
 ]
 
 def main():
