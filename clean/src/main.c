@@ -111,21 +111,16 @@ static void handle_set_address(uint8_t addr) {
     uart_puts("[A]\n");
 }
 
-/* Descriptors */
-/* USB 2.0 descriptors — 512-byte bulk endpoints, no SS companion descriptors */
+/* USB 2.0 Descriptors — no SS companion descriptors, 64-byte bulk EPs for Full Speed */
 static __code const uint8_t dev_desc[] = {
-    0x12, 0x01,       /* bLength, bDescriptorType */
-    0x00, 0x02,       /* bcdUSB: 2.00 */
-    0x00, 0x00, 0x00, /* class/subclass/protocol */
-    0x40,             /* bMaxPacketSize0: 64 */
-    0xD1, 0xAD, 0x01, 0x00, 0x01, 0x00,
-    0x01, 0x02, 0x03, 0x01,
+    0x12, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x40,
+    0xD1, 0xAD, 0x01, 0x00, 0x01, 0x00, 0x01, 0x02, 0x03, 0x01,
 };
 static __code const uint8_t cfg_desc[] = {
-    0x09, 0x02, 0x20, 0x00, 0x01, 0x01, 0x00, 0xC0, 0x00,  /* wTotalLength=32 */
+    0x09, 0x02, 0x20, 0x00, 0x01, 0x01, 0x00, 0xC0, 0x00,
     0x09, 0x04, 0x00, 0x00, 0x02, 0xFF, 0xFF, 0xFF, 0x00,
-    0x07, 0x05, 0x81, 0x02, 0x00, 0x02, 0x00,  /* EP1 IN bulk 512 */
-    0x07, 0x05, 0x02, 0x02, 0x00, 0x02, 0x00,  /* EP2 OUT bulk 512 */
+    0x07, 0x05, 0x81, 0x02, 0x40, 0x00, 0x00,
+    0x07, 0x05, 0x02, 0x02, 0x40, 0x00, 0x00,
 };
 static __code const uint8_t bos_desc[] = {
     0x05, 0x0F, 0x16, 0x00, 0x02,
@@ -384,8 +379,8 @@ static void handle_cbw(void) {
 static void handle_link_event(void) {
     uint8_t r9300 = REG_BUF_CFG_9300;
     if (r9300 & BUF_CFG_9300_SS_FAIL) {
+        /* Stock firmware doesn't force USB2 on first SS_FAIL — just ack */
         REG_BUF_CFG_9300 = BUF_CFG_9300_SS_FAIL;
-        is_usb3 = 0;
     } else if (r9300 & BUF_CFG_9300_SS_OK) {
         REG_BUF_CFG_9300 = BUF_CFG_9300_SS_OK;
         is_usb3 = 1;
@@ -574,8 +569,8 @@ static void hw_init(void) {
 
     /* CPU / link / timer boot config */
     REG_CPU_EXEC_STATUS = CPU_EXEC_STATUS_ACTIVE;
-    REG_CPU_MODE = CPU_MODE_USB2;          /* USB 2.0 HS — no SS negotiation */
-    REG_LINK_WIDTH_E710 = 0x1F;           /* HS link width (stock uses 0x04 for SS, 0x1F after SS fail) */
+    REG_CPU_MODE = CPU_MODE_USB2;
+    REG_LINK_WIDTH_E710 = LINK_RECOVERY_MODE;
     REG_CPU_EXEC_STATUS_2 = CPU_EXEC_STATUS_2_INT;
     REG_TIMER_CTRL_CC3B = 0x0C;
     REG_LINK_CTRL_E717 = 0x01;
@@ -749,7 +744,7 @@ static void hw_init(void) {
 
     /* USB PHY init */
     REG_USB_PHY_CTRL_91C3 = 0x00;
-    REG_USB_PHY_CTRL_91C0 = USB_PHY_91C0_PHY_ON;  /* 0x10: HS only, no SS link */
+    REG_USB_PHY_CTRL_91C0 = USB_PHY_91C0_PHY_ON;  /* 0x10: no SS */
 
     /* DMA / transfer controllers */
     REG_INT_DMA_CTRL = 0x04;
