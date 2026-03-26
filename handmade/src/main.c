@@ -181,8 +181,11 @@ void int0_isr(void) __interrupt(0) {
   uint8_t periph_status;
   periph_status = REG_USB_PERIPH_STATUS;
 
-  if (periph_status & USB_PERIPH_CONTROL) handle_usb_control();
-  else {
+  if (periph_status & USB_PERIPH_BUS_RESET) {
+    uart_puts("[UNHANDLED RESET]\n");
+  } else if (periph_status & USB_PERIPH_CONTROL) {
+    handle_usb_control();
+  } else {
     uart_puts("[int0] ");
     uart_puthex(periph_status);
     uart_puts("\n");
@@ -209,6 +212,9 @@ void main(void) {
 
   // enable USB high speed mode
   REG_USB_PHY_CTRL_91C0 = 0x10;
+
+  // enable bulk mode, bulk transfer gets -9 and not -7 with this
+  REG_USB_EP0_CONFIG |= USB_EP0_CONFIG_READY;
 
   uart_puts("[GO]\n");
 

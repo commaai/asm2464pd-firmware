@@ -43,5 +43,17 @@ class TestDevice:
     ctrl_write(dev, 0xF000, 0x00)
     assert ctrl_read(dev, 0xF000)[0] == 0x00
 
+  def test_bulk_e8(self, dev):
+    """Send an E8 no-data CBW over bulk OUT, read CSW back over bulk IN."""
+    import struct
+    dev._tag += 1
+    cbw = struct.pack('<IIIBBB', 0x43425355, dev._tag, 0, 0x80, 0, 16) + b'\xE8' + b'\x00' * 15
+    dev._bulk_out(0x02, cbw)
+    csw = dev._bulk_in(0x81, 13)
+    sig, tag, residue, status = struct.unpack('<IIIB', csw)
+    assert sig == 0x53425355, f"bad CSW sig 0x{sig:08X}"
+    assert tag == dev._tag, f"CSW tag mismatch: got {tag}, expected {dev._tag}"
+    assert status == 0, f"CSW status {status}"
+
 if __name__ == "__main__":
   pytest.main([__file__, "-v"])
