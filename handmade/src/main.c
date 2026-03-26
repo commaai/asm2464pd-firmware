@@ -48,10 +48,12 @@ static __code const uint8_t dev_desc[] = {
   0xD1, 0xAD, 0x01, 0x00, 0x01, 0x00, 0x01, 0x02, 0x03, 0x01,
 };
 static __code const uint8_t cfg_desc[] = {
-  0x09, 0x02, 0x20, 0x00, 0x01, 0x01, 0x00, 0xC0, 0x00,
-  0x09, 0x04, 0x00, 0x00, 0x02, 0xFF, 0xFF, 0xFF, 0x00,
-  0x07, 0x05, 0x81, 0x02, 0x40, 0x00, 0x00,
-  0x07, 0x05, 0x02, 0x02, 0x40, 0x00, 0x00,
+  0x09, 0x02, 0x2E, 0x00, 0x01, 0x01, 0x00, 0xC0, 0x00,  /* wTotalLength=46 */
+  0x09, 0x04, 0x00, 0x00, 0x04, 0xFF, 0xFF, 0xFF, 0x00,  /* bNumEndpoints=4 */
+  0x07, 0x05, 0x81, 0x02, 0x40, 0x00, 0x00,  /* EP1 IN bulk 64 */
+  0x07, 0x05, 0x02, 0x02, 0x40, 0x00, 0x00,  /* EP2 OUT bulk 64 */
+  0x07, 0x05, 0x83, 0x02, 0x40, 0x00, 0x00,  /* EP3 IN bulk 64 */
+  0x07, 0x05, 0x04, 0x02, 0x40, 0x00, 0x00,  /* EP4 OUT bulk 64 */
 };
 static __code const uint8_t bos_desc[] = {
   0x05, 0x0F, 0x16, 0x00, 0x02,
@@ -110,16 +112,14 @@ static void handle_usb_control(void) {
       REG_USB_INT_MASK_9090 = USB_INT_MASK_GLOBAL | (wValL & 0x7F);
       // does set address
       REG_USB_EP_CTRL_91D0 = 0x02;
+      // enable USB bulk mode
+      REG_USB_MSC_CFG = 0x00;
+      // enable bulk OUT (host -> device) endpoint
+      //REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
       send_zlp_ack();
     } else if (bmReq == USB_SETUP_DIR_DEV_TO_HOST && bReq == USB_REQ_GET_DESCRIPTOR) {
       handle_get_descriptor(wValH, wValL, wLenL);
     } else if (bmReq == USB_SETUP_DIR_HOST_TO_DEV && bReq == USB_REQ_SET_CONFIGURATION) {
-      // enable USB bulk mode
-      REG_USB_MSC_CFG = 0x00;
-      // enable bulk OUT (host -> device) endpoint
-      REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
-      // enable BULK OUT interrupt
-      REG_BULK_DMA_HANDSHAKE = 0;
       send_zlp_ack();
       uart_puts("[SET CONFIG]\n");
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_RECIP_INTERFACE) && bReq == USB_REQ_SET_INTERFACE) {
@@ -157,17 +157,17 @@ void handle_usb_bulk(void) {
   uart_puthex(bulk_cfg1);
   uart_puts("]\n");
   if (bulk_cfg1 & USB_EP_CFG1_BULK_OUT_COMPLETE) {
-    // enable bulk OUT (host -> device) endpoint
+    // dump what's at 0x7000
+    uart_puts("[7000=");
+    uart_puthex(XDATA_REG8(0x7000)); uart_puthex(XDATA_REG8(0x7001));
+    uart_puthex(XDATA_REG8(0x7002)); uart_puthex(XDATA_REG8(0x7003));
+    uart_puts("]\n");
+    // re-arm OUT + handshake
     REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
-    // enable BULK OUT interrupt
-    REG_BULK_DMA_HANDSHAKE = 0;
   } else if (bulk_cfg1 & USB_EP_CFG1_BULK_IN_START) {
-    // bulk in needed
+    // bulk in needed — send data from D800
     REG_USB_MSC_LENGTH = 0xd;
     REG_USB_BULK_DMA_TRIGGER = 0x1;
-    REG_USB_EP_CFG2 |= USB_EP_CFG2_ARM_IN;
-  } else if (bulk_cfg1 & USB_EP_CFG1_BULK_IN_COMPLETE) {
-    // just ack complete
   } else {
     // don't ack
     return;
@@ -182,14 +182,12 @@ void int0_isr(void) __interrupt(0) {
 
   if (periph_status & USB_PERIPH_BUS_RESET) {
     uart_puts("[UNHANDLED RESET]\n");
-  } else if (periph_status & USB_PERIPH_CONTROL) {
-    handle_usb_control();
-  } else if (periph_status & USB_PERIPH_BULK_DATA) {
+  }
+  if (periph_status & USB_PERIPH_BULK_DATA) {
     handle_usb_bulk();
-  } else {
-    uart_puts("[int0] ");
-    uart_puthex(periph_status);
-    uart_puts("\n");
+  }
+  if (periph_status & USB_PERIPH_CONTROL) {
+    handle_usb_control();
   }
 }
 
@@ -222,5 +220,8 @@ void main(void) {
   // enable interrupts and chill
   TCON = 0x04;  /* IT0=0 (level-triggered INT0) */
   IE = IE_EA | IE_EX0 | IE_EX1 | IE_ET0;
-  while (1) { }
+
+  while (1) {
+    // DO NOT PUT ANYTHING HERE, EVERYTHING SHOULD BE HANDLED IN INTERRUPTS
+  }
 }

@@ -108,6 +108,13 @@ open('$@', 'wb').write(body_len + body + magic + checksum + crc)"
 
 wrapped: $(BUILD_DIR)/firmware_wrapped.bin
 
+nflash: $(BUILD_DIR)/firmware_wrapped.bin
+	@echo "Resetting to bootloader..."
+	@python3 ../ftdi_debug.py -bn
+	@echo "Flashing firmware to device..."
+	@python3 ../flash.py $<
+	@python3 ../ftdi_debug.py -rn
+
 # Flash to device
 flash: $(BUILD_DIR)/firmware_wrapped.bin
 	@echo "Resetting to bootloader..."
