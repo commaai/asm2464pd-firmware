@@ -116,14 +116,10 @@ static void handle_usb_control(void) {
     } else if (bmReq == USB_SETUP_DIR_HOST_TO_DEV && bReq == USB_REQ_SET_CONFIGURATION) {
       // enable USB bulk mode
       REG_USB_MSC_CFG = 0x00;
-
-      // arm bulk endpoint (IN+OUT)
-      REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_IN | USB_EP_CFG2_ARM_OUT;
-
-      // set length of IN to 13 (this def has to be in interrupt)
-      REG_USB_MSC_LENGTH = 0xd;
-      REG_USB_BULK_DMA_TRIGGER = 0x1;
-
+      // enable bulk OUT (host -> device) endpoint
+      REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
+      // enable BULK OUT interrupt
+      REG_BULK_DMA_HANDSHAKE = 0;
       send_zlp_ack();
       uart_puts("[SET CONFIG]\n");
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_RECIP_INTERFACE) && bReq == USB_REQ_SET_INTERFACE) {
@@ -154,6 +150,32 @@ static void handle_usb_control(void) {
   }
 }
 
+void handle_usb_bulk(void) {
+  uint8_t bulk_cfg1;
+  bulk_cfg1 = REG_USB_EP_CFG1;
+  uart_puts("[BULK ");
+  uart_puthex(bulk_cfg1);
+  uart_puts("]\n");
+  if (bulk_cfg1 & USB_EP_CFG1_BULK_OUT_COMPLETE) {
+    // enable bulk OUT (host -> device) endpoint
+    REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
+    // enable BULK OUT interrupt
+    REG_BULK_DMA_HANDSHAKE = 0;
+  } else if (bulk_cfg1 & USB_EP_CFG1_BULK_IN_START) {
+    // bulk in needed
+    REG_USB_MSC_LENGTH = 0xd;
+    REG_USB_BULK_DMA_TRIGGER = 0x1;
+    REG_USB_EP_CFG2 |= USB_EP_CFG2_ARM_IN;
+  } else if (bulk_cfg1 & USB_EP_CFG1_BULK_IN_COMPLETE) {
+    // just ack complete
+  } else {
+    // don't ack
+    return;
+  }
+  // ack
+  REG_USB_EP_CFG1 = bulk_cfg1;
+}
+
 void int0_isr(void) __interrupt(0) {
   uint8_t periph_status;
   periph_status = REG_USB_PERIPH_STATUS;
@@ -162,6 +184,8 @@ void int0_isr(void) __interrupt(0) {
     uart_puts("[UNHANDLED RESET]\n");
   } else if (periph_status & USB_PERIPH_CONTROL) {
     handle_usb_control();
+  } else if (periph_status & USB_PERIPH_BULK_DATA) {
+    handle_usb_bulk();
   } else {
     uart_puts("[int0] ");
     uart_puthex(periph_status);
@@ -184,33 +208,19 @@ void main(void) {
   // without this, it doesn't get an interrupt
   REG_INT_STATUS_C800 = INT_STATUS_GLOBAL;
 
-  // this enables a lot of int1
-  //REG_INT_ENABLE = 0xff;
-
   // without this, no USB interrupts
   REG_USB_CONFIG = USB_CONFIG_MSC_INIT;
 
   // enable USB high speed mode
   REG_USB_PHY_CTRL_91C0 = 0x10;
 
+  // enable BULK interrupt. mislabeled
+  REG_USB_EP0_LEN_H = 0xf0;
+
   uart_puts("[GO]\n");
 
   // enable interrupts and chill
   TCON = 0x04;  /* IT0=0 (level-triggered INT0) */
   IE = IE_EA | IE_EX0 | IE_EX1 | IE_ET0;
-  while (1) {
-    /*uint8_t t;
-    t = REG_USB_EP_CFG1;
-    if (t) {
-      uart_puts("REG_USB_EP_CFG1: ");
-      uart_puthex(REG_USB_EP_CFG1);
-      uart_puts("\n");
-    }*/
-    /*uart_puthex(REG_USB_EP_CFG1);
-    uart_puts(" ");
-    uart_puthex(REG_USB_EP_CFG2);
-    uart_puts("\n");
-    volatile int i;
-    for (int i=0; i < 10000; i++);*/
-  }
+  while (1) { }
 }

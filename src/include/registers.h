@@ -399,9 +399,14 @@
 #define   USB_EP_CFG1_STATE_MACH  0x08  // Bit 3: State machine event
 #define   USB_EP_CFG1_ARM_IN      0x08  // Write: Arm bulk IN endpoint
 #define   USB_EP_CFG1_ARM_OUT     0x02  // Write: Arm bulk OUT endpoint / ack
+
+#define   USB_EP_CFG1_BULK_OUT_COMPLETE  0x02
+#define   USB_EP_CFG1_BULK_IN_START      0x04
+#define   USB_EP_CFG1_BULK_IN_COMPLETE   0x08
+
 #define REG_USB_EP_CFG2         XDATA_REG8(0x9094)
-#define   USB_EP_CFG2_ARM_IN      0x02  // Write with CFG1=0x08 to arm bulk IN
-#define   USB_EP_CFG2_ARM_OUT     0x10  // Write with CFG1=0x02 to arm bulk OUT
+#define   USB_EP_CFG2_ARM_IN      0x02  // Bit 1: Arm bulk IN endpoint (write)
+#define   USB_EP_CFG2_ARM_OUT     0x10  // Bit 4: Arm bulk OUT endpoint (write)
 /*
  * USB Endpoint Ready/Status Masks (0x9096-0x909E)
  * These 9 registers (0x9096-0x909E) control endpoint ready state.

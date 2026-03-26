@@ -3,7 +3,7 @@
 Tests for ASM2464PD handmade firmware.
 Uses USB3 from tinygrad to open the device, then vendor control transfers for register access.
 """
-import ctypes, pytest, struct
+import ctypes, pytest, struct, unittest
 from tinygrad.runtime.support.usb import USB3
 from tinygrad.runtime.autogen import libusb
 
@@ -43,7 +43,6 @@ class TestDevice:
     assert ctrl_read(dev, 0xF000)[0] == 0x00
 
   def test_bulk_out(self, dev):
-    """Send an E8 no-data CBW over bulk OUT, read CSW back over bulk IN."""
     dev._tag += 1
     cbw = struct.pack('<IIIBBB', 0x43425355, dev._tag, 0, 0x80, 0, 16) + b'\xE8' + b'\x00' * 15
     dev._bulk_out(0x02, cbw)
