@@ -3,7 +3,8 @@
 Tests for ASM2464PD handmade firmware.
 Uses USB3 from tinygrad to open the device, then vendor control transfers for register access.
 """
-import ctypes, struct, unittest, random, pytest
+import ctypes, struct, unittest, random, sys, pytest
+from hexdump import hexdump
 from tinygrad.runtime.support.usb import USB3
 from tinygrad.runtime.autogen import libusb
 
@@ -25,6 +26,9 @@ class TestDevice(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
     cls.dev = USB3(VID, PID, 0x81, 0x83, 0x02, 0x04, use_bot=True)
+    BLK = 0x40
+    regs = b''.join(ctrl_read(cls.dev, i, BLK) for i in range(0x9000, 0x9400, BLK))
+    print("\n"+hexdump(regs, 'return'), file=sys.stderr)
 
   def test_device_opens(self):
     assert self.dev.handle is not None
@@ -74,4 +78,3 @@ class TestDevice(unittest.TestCase):
 
 if __name__ == '__main__':
   pytest.main([__file__, "-v"])
-  #unittest.main(verbosity=3)

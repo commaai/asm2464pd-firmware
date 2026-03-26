@@ -114,13 +114,14 @@ static void handle_usb_control(void) {
       REG_USB_EP_CTRL_91D0 = 0x02;
       // enable USB bulk mode (bypass MSC)
       REG_USB_MSC_CFG = 0x00;
+      // enable bulk endpoint
+      REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
       send_zlp_ack();
     } else if (bmReq == USB_SETUP_DIR_DEV_TO_HOST && bReq == USB_REQ_GET_DESCRIPTOR) {
       handle_get_descriptor(wValH, wValL, wLenL);
     } else if (bmReq == USB_SETUP_DIR_HOST_TO_DEV && bReq == USB_REQ_SET_CONFIGURATION) {
-      // enable bulk endpoint
-      REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
       send_zlp_ack();
+      uart_puthex(REG_USB_EP_CFG1);
       uart_puts("[SET CONFIG]\n");
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_RECIP_INTERFACE) && bReq == USB_REQ_SET_INTERFACE) {
       send_zlp_ack();
@@ -150,7 +151,7 @@ static void handle_usb_control(void) {
   }
 }
 
-void handle_usb_bulk(void) {
+void handle_usb_bulk_data(void) {
   uint8_t bulk_cfg1, bulk_cfg2;
   bulk_cfg1 = REG_USB_EP_CFG1;
   bulk_cfg2 = REG_USB_EP_CFG2;
@@ -171,6 +172,7 @@ void handle_usb_bulk(void) {
     // bulk in needed — send data from D800
     REG_USB_MSC_LENGTH = 0xd;
     REG_USB_BULK_DMA_TRIGGER = 0x1;
+    //REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
   } else if (bulk_cfg1 & USB_EP_CFG1_BULK_OUT_START) {
     // ack
   } else if (bulk_cfg1 & USB_EP_CFG1_BULK_IN_START) {
@@ -189,12 +191,14 @@ void int0_isr(void) __interrupt(0) {
 
   if (periph_status & USB_PERIPH_BUS_RESET) {
     uart_puts("[UNHANDLED RESET]\n");
-  }
-  if (periph_status & USB_PERIPH_CONTROL) {
+  } else if (periph_status & USB_PERIPH_CONTROL) {
     handle_usb_control();
-  }
-  if (periph_status & USB_PERIPH_BULK_DATA) {
-    handle_usb_bulk();
+  } else if (periph_status & USB_PERIPH_BULK_DATA) {
+    handle_usb_bulk_data();
+  } else {
+    uart_puts("[UNHANDLED INT0 ");
+    uart_puthex(periph_status);
+    uart_puts("]\n");
   }
 }
 
