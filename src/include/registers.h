@@ -627,7 +627,10 @@
  *          at 0xc465. If clear → link is down → writes E710 and clears CC3B bit 1.
  */
 #define REG_USB_PHY_CTRL_91C0   XDATA_REG8(0x91C0)
+#define   USB_PHY_91C0_RESET      0x01  // Bit 0: PHY reset (toggled 0x13→0x12 during init)
+#define   USB_PHY_91C0_SS_ENABLE  0x02  // Bit 1: SS link enable (clear for HS-only mode, 0x12→0x10)
 #define   USB_PHY_91C0_LINK_UP    0x02  // Bit 1: SS link up (checked in 91D1 bit 0 handler)
+#define   USB_PHY_91C0_PHY_ON     0x10  // Bit 4: PHY powered on (always set)
 #define REG_USB_PHY_CTRL_91C1   XDATA_REG8(0x91C1)
 #define REG_USB_PHY_CTRL_91C3   XDATA_REG8(0x91C3)
 #define REG_USB_EP_CTRL_91D0    XDATA_REG8(0x91D0)
@@ -679,7 +682,18 @@
 #define REG_USB_ADDR_PARAM_2    XDATA_REG8(0x920A)  /* Address param 2 (written 0x00) */
 #define REG_USB_ADDR_PARAM_3    XDATA_REG8(0x920B)  /* Address param 3 (written 0x0A) */
 #define REG_USB_CTRL_920C       XDATA_REG8(0x920C)
+/*
+ * USB PHY Configuration (0x9241)
+ * Controls which USB PHY modes are enabled.
+ * Init sequence: write 0x10 first, then 0xD0 to enable SS+HS.
+ * For HS-only: write 0x10 then 0x50 (skip bit 7).
+ */
 #define REG_USB_PHY_CONFIG_9241 XDATA_REG8(0x9241)
+#define   USB_PHY_CFG_INIT        0x10  // Bit 4: PHY base init (always set first)
+#define   USB_PHY_CFG_HS_ENABLE   0x40  // Bit 6: High Speed PHY enable
+#define   USB_PHY_CFG_SS_ENABLE   0x80  // Bit 7: SuperSpeed PHY enable
+#define   USB_PHY_CFG_HS_ONLY     0x50  // HS mode: bits 4+6
+#define   USB_PHY_CFG_SS_HS       0xD0  // SS+HS mode: bits 4+6+7
 #define REG_USB_CTRL_924C       XDATA_REG8(0x924C)  // USB control (bit 0: endpoint ready)
 
 /*

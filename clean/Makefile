@@ -10,6 +10,9 @@ CFLAGS += --std-c99
 CFLAGS += -I$(SRC_DIR)
 CFLAGS += -I../src/include
 CFLAGS += --no-xinit-opt
+ifdef USB20
+CFLAGS += -DUSB20
+endif
 
 # Memory model settings
 LDFLAGS = --code-loc 0x0000 --code-size 0x10000
