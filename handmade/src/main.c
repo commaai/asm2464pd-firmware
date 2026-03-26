@@ -121,7 +121,6 @@ static void handle_usb_control(void) {
       handle_get_descriptor(wValH, wValL, wLenL);
     } else if (bmReq == USB_SETUP_DIR_HOST_TO_DEV && bReq == USB_REQ_SET_CONFIGURATION) {
       send_zlp_ack();
-      uart_puthex(REG_USB_EP_CFG1);
       uart_puts("[SET CONFIG]\n");
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_RECIP_INTERFACE) && bReq == USB_REQ_SET_INTERFACE) {
       send_zlp_ack();
@@ -165,14 +164,13 @@ void handle_usb_bulk_data(void) {
     uart_puthex(XDATA_REG8(0x7002)); uart_puthex(XDATA_REG8(0x7003));
     uart_puts("]\n");
     // handshake DMA
-    REG_BULK_DMA_HANDSHAKE = 1;
+    //REG_BULK_DMA_HANDSHAKE = 1;
     // re-arm OUT
     REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
   } else if (bulk_cfg1 & USB_EP_CFG1_BULK_IN_COMPLETE) {
     // bulk in needed — send data from D800
     REG_USB_MSC_LENGTH = 0xd;
     REG_USB_BULK_DMA_TRIGGER = 0x1;
-    //REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
   } else if (bulk_cfg1 & USB_EP_CFG1_BULK_OUT_START) {
     // ack
   } else if (bulk_cfg1 & USB_EP_CFG1_BULK_IN_START) {
@@ -195,6 +193,10 @@ void int0_isr(void) __interrupt(0) {
     handle_usb_control();
   } else if (periph_status & USB_PERIPH_BULK_DATA) {
     handle_usb_bulk_data();
+  } else if (periph_status & USB_PERIPH_EP_COMPLETE) {
+    uint8_t ep = REG_USB_EP_READY;
+    uart_puts("[EP_COMPLETE "); uart_puthex(ep); uart_puts("]\n");
+    REG_USB_EP_READY = ep;
   } else {
     uart_puts("[UNHANDLED INT0 ");
     uart_puthex(periph_status);
@@ -225,6 +227,9 @@ void main(void) {
 
   // enable BULK interrupt. mislabeled
   REG_USB_EP0_LEN_H = 0xf0;
+
+  // enables EP_COMPLETE interrupts
+  REG_USB_DATA_L = 0x00;
 
   uart_puts("[GO]\n");
 
