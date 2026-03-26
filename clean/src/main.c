@@ -43,9 +43,8 @@ static void poll_bulk_events(void);
 /*=== USB Control Transfer Helpers ===*/
 
 static void complete_usb3_status(void) {
+    while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STAT_IN)) { }
     REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
-    /* Stock firmware polls 0x9092 bit 2 until clear (0xb974) */
-    while (REG_USB_DMA_TRIGGER & USB_DMA_STATUS_COMPLETE) { }
     REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STAT_IN;
 }
 
@@ -88,13 +87,14 @@ static void arm_msc(void) {
 
 /*=== USB Request Handlers ===*/
 
-static void handle_set_address(void) {
+static void handle_set_address(uint8_t addr) {
     uint8_t tmp;
-    REG_USB_INT_MASK_9090 = 0x01;
+    tmp = REG_USB_INT_MASK_9090;
+    REG_USB_INT_MASK_9090 = (tmp & 0x80) | (addr & 0x7F);
     REG_USB_EP_CTRL_91D0 = 0x02;
 
     if (is_usb3) {
-        REG_LINK_STATUS_E716 = 0x01;
+        while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_STAT_IN)) { }
         REG_USB_ADDR_CFG_A = 0x03; REG_USB_ADDR_CFG_B = 0x03;
         REG_USB_ADDR_CFG_A = 0x07; REG_USB_ADDR_CFG_B = 0x07;
         tmp = REG_USB_ADDR_CFG_A; REG_USB_ADDR_CFG_A = tmp;
@@ -103,7 +103,8 @@ static void handle_set_address(void) {
         REG_USB_ADDR_PARAM_2 = 0x00; REG_USB_ADDR_PARAM_3 = 0x0A;
         tmp = REG_USB_ADDR_CTRL; REG_USB_ADDR_CTRL = tmp;
         REG_USB_EP_CTRL_9220 = 0x04;
-        complete_usb3_status();
+        REG_USB_DMA_TRIGGER = USB_DMA_STATUS_COMPLETE;
+        REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STAT_IN;
     } else {
         send_zlp_ack();
     }
@@ -380,14 +381,12 @@ static void handle_cbw(void) {
 static void handle_link_event(void) {
     uint8_t r9300 = REG_BUF_CFG_9300;
     if (r9300 & BUF_CFG_9300_SS_FAIL) {
-        is_usb3 = 0;
-        bulk_out_state = 0; need_cbw_process = 0; need_bulk_init = 0;
-        uart_puts("[T]\n");
+        /* Stock firmware doesn't force USB2 on first SS_FAIL — just ack */
+        REG_BUF_CFG_9300 = BUF_CFG_9300_SS_FAIL;
     } else if (r9300 & BUF_CFG_9300_SS_OK) {
+        REG_BUF_CFG_9300 = BUF_CFG_9300_SS_OK;
         is_usb3 = 1;
-        uart_puts("[3]\n");
     }
-    REG_BUF_CFG_9300 = BUF_CFG_9300_SS_OK | BUF_CFG_9300_SS_FAIL | BUF_CFG_9300_SS_EVENT;
 }
 
 /*
@@ -485,6 +484,13 @@ void int0_isr(void) __interrupt(0) {
         }
     }
 
+    /* Ack 9093 bulk-done (stock ISR 0x0fa2-0x0fb2) — clears 9101 bit 2/4 source */
+    if (periph_status & USB_PERIPH_BULK_DATA) {
+        uint8_t r9093 = REG_USB_EP_CFG1;
+        if (r9093 & USB_EP_CFG1_BULK_DONE)
+            REG_USB_EP_CFG1 = USB_EP_CFG1_BULK_DONE;
+    }
+
     if (!(periph_status & USB_PERIPH_CONTROL)) return;
     phase = REG_USB_CTRL_PHASE;
 
@@ -506,7 +512,7 @@ void int0_isr(void) __interrupt(0) {
         wLenL = REG_USB_SETUP_WLEN_L;
 
         if (bmReq == 0x00 && bReq == USB_REQ_SET_ADDRESS) {
-            handle_set_address();
+            handle_set_address(wValL);
         } else if (bmReq == 0x80 && bReq == USB_REQ_GET_DESCRIPTOR) {
             handle_get_descriptor(wValH, wValL, wLenL);
         } else if (bmReq == 0x00 && bReq == USB_REQ_SET_CONFIGURATION) {
