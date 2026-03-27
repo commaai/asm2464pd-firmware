@@ -97,9 +97,7 @@ def psp_sos(h, ip_ver, bases, vram_sz):
   rd = lambda n: smnrd(h, mp0.smn(f"{pfx}_{n}"))
   wr = lambda n, v: smnwr(h, mp0.smn(f"{pfx}_{n}"), v)
 
-  if rd("81"):
-    print("  SOS already alive"); return rd, wr, {}, 0
-
+  # Always parse the SOS blob (needed for TOC even if SOS is already alive)
   v = '_'.join(map(str, ip_ver[am.MP0_HWIP]))
   blob = bytearray(fetch(f"{FW_BASE}/psp_{v}_sos.bin", subdir="fw").read_bytes())
   buf = (ctypes.c_ubyte * len(blob)).from_buffer(blob)
@@ -113,6 +111,9 @@ def psp_sos(h, ip_ver, bases, vram_sz):
     sos_fw[d.fw_type] = blob[s:s + d.size_bytes]
 
   msg1_pa = ((vram_sz - (64 << 20)) >> 20) << 20
+
+  if rd("81"):
+    print("  SOS already alive"); return rd, wr, sos_fw, msg1_pa
   # PSP bootloader needs MC address (fb_base + paddr), not physical address
   # Read fb_base from MMHUB
   mmhub = Regs('mmhub', ip_ver.get(am.MMHUB_HWIP, ip_ver[am.GC_HWIP]), bases.get(am.MMHUB_HWIP, bases[am.GC_HWIP]))
@@ -163,7 +164,7 @@ def psp_load_sdma(h, ip_ver, bases, vram_sz, mp0r, mp0w, sos_fw, msg1):
   mc = lambda pa: fb + pa
   print(f"  fb_base=0x{fb:X}")
 
-  # destroy old ring
+  # destroy old ring if present
   if mp0r("71"): mp0w("64", am.GFX_CTRL_CMD_ID_DESTROY_RINGS); time.sleep(0.05)
   for _ in range(10000):
     if mp0r("64") & 0x80000000: break
@@ -229,21 +230,30 @@ def psp_load_sdma(h, ip_ver, bases, vram_sz, mp0r, mp0w, sos_fw, msg1):
     c.cmd.cmd_setup_tmr.bitfield.virt_phy_addr = 1; c.cmd.cmd_setup_tmr.buf_size = tmr_sz
     submit(bytes(c)); print(f"  TMR ok @ 0x{tp:X}")
 
-  # SDMA firmware only
-  sdv = ip_ver[am.SDMA0_HWIP]
-  sb = bytearray(fetch(f"{FW_BASE}/sdma_{sdv[0]}_{sdv[1]}_{sdv[2]}.bin", subdir="fw").read_bytes())
-  sc = (ctypes.c_ubyte * len(sb)).from_buffer(sb)
-  sh = am.struct_common_firmware_header.from_address(ctypes.addressof(sc))
-  hdr_t = f"struct_sdma_firmware_header_v{sh.header_version_major}_{sh.header_version_minor}"
-  sdma_hdr = getattr(am, hdr_t).from_address(ctypes.addressof(sc))
-  if sh.header_version_major == 2:
-    load_ip(sb[sdma_hdr.ctl_ucode_offset:sdma_hdr.ctl_ucode_offset + sdma_hdr.ctl_ucode_size_bytes], am.GFX_FW_TYPE_SDMA_UCODE_TH1)
-    load_ip(sb[sh.ucode_array_offset_bytes:sh.ucode_array_offset_bytes + sdma_hdr.ctx_ucode_size_bytes], am.GFX_FW_TYPE_SDMA_UCODE_TH0)
-  elif sh.header_version_major == 1:
-    load_ip(sb[sh.ucode_array_offset_bytes:sh.ucode_array_offset_bytes + sh.ucode_size_bytes], am.GFX_FW_TYPE_SDMA0)
-  else:
-    load_ip(sb[sh.ucode_array_offset_bytes:sh.ucode_array_offset_bytes + sdma_hdr.ucode_size_bytes], am.GFX_FW_TYPE_SDMA_UCODE_TH0)
-  print("  SDMA fw ok")
+  # Load all IP firmware needed for SDMA (GC block must be unclocked via RLC autoload)
+  # Use tinygrad's AMFirmware to get the correct firmware descriptors
+  from tinygrad.runtime.support.am.amdev import AMFirmware
+  class FakeAdev:
+    def __init__(self, ip_ver): self.ip_ver = ip_ver; self.devfmt = "gpu"
+  fw_obj = AMFirmware(FakeAdev(ip_ver))
+  for fw_types, fw_bytes in fw_obj.descs:
+    for fw_type in fw_types:
+      name = am.enum_psp_gfx_fw_type.get(fw_type, f"{fw_type}")
+      print(f"  {name} ({len(fw_bytes)}B)", end=' ', flush=True)
+      load_ip(fw_bytes, fw_type)
+      print("ok")
+
+  # Load register list from SOS (needed for RLC autoload)
+  if am.PSP_FW_TYPE_PSP_RL in sos_fw:
+    rl = bytes(sos_fw[am.PSP_FW_TYPE_PSP_RL])
+    print(f"  REG_LIST ({len(rl)}B)", end=' ', flush=True)
+    load_ip(rl, am.GFX_FW_TYPE_REG_LIST)
+    print("ok")
+
+  # RLC autoload — unclocks GC block (including SDMA)
+  print("  RLC autoload", end=' ', flush=True)
+  submit(bytes(am.struct_psp_gfx_cmd_resp(cmd_id=am.GFX_CMD_ID_AUTOLOAD_RLC)))
+  print("ok")
 
   return mc, palloc
 
@@ -332,6 +342,14 @@ def sdma_dma_test(h, ip_ver, bases, mc, palloc):
     rb_priv=1, rb_vmid=0, **{wptr_poll_field: 1})
   smnwr(h, sdma.smn("regSDMA0_QUEUE0_RB_CNTL"), rb_cntl)
   smnwr(h, sdma.smn("regSDMA0_QUEUE0_IB_CNTL"), sdma._r["regSDMA0_QUEUE0_IB_CNTL"].encode(ib_enable=1))
+  # Verify ring config
+  print(f"  RB_CNTL=0x{smnrd(h, sdma.smn('regSDMA0_QUEUE0_RB_CNTL')):08X}")
+  print(f"  RB_BASE=0x{smnrd(h, sdma.smn('regSDMA0_QUEUE0_RB_BASE')):08X}:{smnrd(h, sdma.smn('regSDMA0_QUEUE0_RB_BASE_HI')):08X}")
+  print(f"  SDMA0_CNTL=0x{smnrd(h, sdma.smn('regSDMA0_CNTL')):08X}")
+  eng = "F32" if ip_ver[am.SDMA0_HWIP] < (7,0,0) else "MCU"
+  print(f"  SDMA0_{eng}_CNTL=0x{smnrd(h, sdma.smn(f'regSDMA0_{eng}_CNTL')):08X}")
+  try: print(f"  STATUS=0x{smnrd(h, sdma.smn('regSDMA0_STATUS_REG')):08X}")
+  except: pass
   print("  SDMA ring ok")
 
   # Test pattern in VRAM
