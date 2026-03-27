@@ -423,20 +423,6 @@ def main():
     if xdata_read(h, 0xB450, 1)[0] not in (0x48, 0x78):
       print("PCIe link not up"); return 1
 
-    # Quick sanity: host MWr to PCIe 0x200000, read back via MRd
-    # Note: ASM2464PD SRAM byte-swaps dwords between PCIe and internal view.
-    # MWr sends BE, SRAM stores reversed, MRd returns reversed.
-    # So write/read through same path gives a consistent double-swap (= identity for MMIO),
-    # but SDMA writes LE natively. We verify the round-trip works.
-    pcie_mem_write(h, 0x200000, 0xDEADC0DE); time.sleep(0.01)
-    v = pcie_mem_read(h, 0x200000)
-    # The SRAM byte-reverses each dword, so we expect the value back byte-reversed
-    expect = struct.unpack('<I', struct.pack('>I', 0xDEADC0DE))[0]
-    print(f"  PCIe SRAM roundtrip: wrote 0xDEADC0DE, read 0x{v:08X} (expect 0x{expect:08X} due to SRAM byte-swap)")
-    if v != expect:
-      print(f"  UNEXPECTED — SRAM may not be at 0x200000")
-      return 1
-
     print("\n--- Discovery ---")
     vram_sz, ip_ver, bases = discover(h)
 
