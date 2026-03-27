@@ -129,9 +129,12 @@ static void handle_usb_control(void) {
       uint16_t addr = ((uint16_t)wValH << 8) | wValL;
       uint8_t bank = REG_USB_SETUP_WIDX_H;
       uint8_t vi;
-      if (bank) DPX = bank;
-      for (vi = 0; vi < wLenL; vi++) DESC_BUF[vi] = XDATA_REG8(addr + vi);
-      if (bank) DPX = 0x00;
+      for (vi = 0; vi < wLenL; vi++) {
+        if (bank) DPX = bank;
+        uint8_t val = XDATA_REG8(addr + vi);
+        if (bank) DPX = 0x00;
+        DESC_BUF[vi] = val;
+      }
       send_control_data(wLenL);
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_TYPE_VENDOR) && bReq == 0xE5) {
       /* Vendor write XDATA via control.  wValue=addr, wIndex low=val.
