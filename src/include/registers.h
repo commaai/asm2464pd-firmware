@@ -837,8 +837,10 @@
 #define REG_PCIE_ADDR_HIGH_2    XDATA_REG8V(0xB21E)  // Upper address byte 2 (64-bit addressing)
 #define REG_PCIE_ADDR_HIGH_3    XDATA_REG8V(0xB21F)  // Upper address byte 3 (64-bit addressing)
 #define REG_PCIE_DATA           XDATA_REG8V(0xB220)
+#define REG_PCIE_DATA_0         XDATA_REG8V(0xB220)
 #define REG_PCIE_DATA_1         XDATA_REG8V(0xB221)  // Data register byte 1
 #define REG_PCIE_DATA_2         XDATA_REG8V(0xB222)  // Data register byte 2
+#define REG_PCIE_DATA_3         XDATA_REG8V(0xB223)  // Data register byte 3
 /*
  * PCIe Extended Status (0xB223)
  * Bit 0: PLL lock / CDR lock indicator.

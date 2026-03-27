@@ -58,19 +58,8 @@ def xdata_write_bytes(handle, base, data):
         xdata_write(handle, base + i, b)
 
 # =============================================================================
-# PCIe TLP engine via B2xx registers
+# PCIe TLP engine via 0xF0 control message
 # =============================================================================
-
-# B2xx register addresses
-B210 = 0xB210  # TLP format/type
-B217 = 0xB217  # Byte enable
-B218 = 0xB218  # Address byte 0 (MSB)
-B21C = 0xB21C  # Upper address (64-bit)
-B220 = 0xB220  # Data bytes (big-endian)
-B22A = 0xB22A  # Completion header
-B254 = 0xB254  # Trigger
-B284 = 0xB284  # Completion type
-B296 = 0xB296  # Status
 
 # TLP format/type codes
 CFGRD0 = 0x04  # Config Read Type 0 (local, bus 0)
@@ -82,88 +71,57 @@ MWR32  = 0x60  # Memory Write 32-bit
 
 
 def pcie_request(handle, fmt_type, address, value=None, size=4, verbose=False, retries=10):
-    """Send a PCIe TLP via the B2xx engine, poll for completion, return result.
+    """Send a PCIe TLP via 0xF0 control message.
 
-    Matches tinygrad's ASM24Controller.pcie_request exactly:
-      1. Write B220-B223 (data, for writes)
-      2. Write B218-B21B (address, big-endian, dword-aligned)
-      3. Write B21C-B21F (upper 32 bits of address)
-      4. Write B217 (byte enable)
-      5. Write B210 (fmt_type)
-      6. Write B254 = 0x0F (trigger)
-      7. Write B296 = 0x04 (arm status)
-      8. Poll B296 until bit 1 set
-      9. Read B220-B223 for completion data (reads only)
+    OUT phase (0x40): SETUP wValue = fmt_type | (byte_enable << 8).
+      DATA payload (12 bytes): addr_lo[4] LE + addr_hi[4] LE + value[4] BE.
+      Firmware writes B210/B217 from wValue, then programs B218-B21F and
+      B220-B223 from payload, clears stale status, arms, and triggers.
+
+    IN phase (0xC0): Firmware polls B296 on-chip in tight loop, returns 8 bytes:
+      [0-3] B220-B223 completion data, [4-5] B22A-B22B completion header,
+      [6] B284 completion type, [7] status (0=ok, 1=UR, 0xFF=timeout).
     """
     masked = address & 0xFFFFFFFC
     offset = address & 0x3
     assert size + offset <= 4
-
-    # Step 1: data payload (writes only)
-    if value is not None:
-        shifted = (value << (8 * offset)) & 0xFFFFFFFF
-        xdata_write_bytes(handle, B220, struct.pack('>I', shifted))
-
-    # Step 2: address (big-endian)
-    xdata_write_bytes(handle, B218, struct.pack('>I', masked))
-
-    # Step 3: upper address
-    xdata_write_bytes(handle, B21C, struct.pack('>I', address >> 32))
-
-    # Step 4: byte enable
     be = ((1 << size) - 1) << offset
-    xdata_write(handle, B217, be)
+    shifted = ((value << (8 * offset)) & 0xFFFFFFFF) if value is not None else 0
 
-    # Step 5: format/type
-    xdata_write(handle, B210, fmt_type)
+    # OUT: addr_lo[4] LE + addr_hi[4] LE + value[4] BE
+    payload = struct.pack('<II', masked, address >> 32) + struct.pack('>I', shifted)
+    buf_out = (ctypes.c_ubyte * 12)(*payload)
+    ret = libusb.libusb_control_transfer(handle, 0x40, 0xF0, fmt_type | (be << 8), 0, buf_out, 12, 5000)
+    if ret < 0:
+        raise IOError(f"F0 OUT failed: {ret}")
 
-    # Step 6: trigger
-    xdata_write(handle, B254, 0x0F)
-
-    # Step 7: arm status
-    xdata_write(handle, B296, 0x04)
-
-    # Write fast path — no completion expected
-    is_write = ((fmt_type & 0b11011111) == 0b01000000) or ((fmt_type & 0b10111000) == 0b00110000)
+    # Posted writes: no completion expected
+    is_write = ((fmt_type & 0xDF) == 0x40) or ((fmt_type & 0xB8) == 0x30)
     if is_write:
         return None
 
-    # Step 8: poll B296 for completion (bit 1)
-    for _ in range(5000):
-        stat = xdata_read(handle, B296, 1)[0]
-        if stat & 0x02:
-            break
-        if stat & 0x01:
-            # Error — clear and retry
-            xdata_write(handle, B296, 0x01)
-            if retries > 0:
-                return pcie_request(handle, fmt_type, address, value, size, verbose, retries - 1)
-            raise RuntimeError(f"PCIe request error (B296=0x{stat:02X}), no retries left")
-    else:
-        raise TimeoutError(f"PCIe completion timeout (B296=0x{stat:02X})")
+    # IN: poll + read 8-byte result
+    buf_in = (ctypes.c_ubyte * 8)()
+    ret = libusb.libusb_control_transfer(handle, 0xC0, 0xF0, 0, 0, buf_in, 8, 5000)
+    if ret < 0:
+        raise IOError(f"F0 IN failed: {ret}")
 
-    # Step 9: validate completion
-    b284 = xdata_read(handle, B284, 1)[0]
-    cpl_hdr = struct.unpack('>H', xdata_read(handle, B22A, 2))[0]
-    cpl_status = (cpl_hdr >> 13) & 0x07
-    cpl_count = cpl_hdr & 0xFFF
+    status = buf_in[7]
+    if status == 0x01:
+        # Unsupported Request — retry
+        if retries > 0:
+            return pcie_request(handle, fmt_type, address, value, size, verbose, retries - 1)
+        raise RuntimeError(f"Unsupported Request at 0x{address:08X} (fmt=0x{fmt_type:02X})")
+    if status == 0xFF:
+        raise TimeoutError(f"PCIe completion timeout at 0x{address:08X} (fmt=0x{fmt_type:02X})")
 
-    is_cfg = (fmt_type & 0xBE) == 0x04
-    expected_count = 4 if is_cfg else size
-    if cpl_status != 0:
-        status_names = {1: "Unsupported Request", 2: "Config Retry", 4: "Completer Abort"}
-        raise RuntimeError(f"PCIe {status_names.get(cpl_status, f'error {cpl_status}')} "
-                           f"at 0x{address:08X} (fmt=0x{fmt_type:02X})")
-
-    # Step 10: read completion data
-    if value is None:
-        raw = struct.unpack('>I', xdata_read(handle, B220, 4))[0]
-        result = (raw >> (8 * offset)) & ((1 << (8 * size)) - 1)
-        if verbose:
-            print(f"  PCIe {'cfg' if is_cfg else 'mem'} read 0x{address:08X} = 0x{result:0{size*2}X}")
-        return result
-
-    return None
+    # Extract completion data
+    raw = struct.unpack('>I', bytes(buf_in[0:4]))[0]
+    result = (raw >> (8 * offset)) & ((1 << (8 * size)) - 1)
+    if verbose:
+        is_cfg = (fmt_type & 0xBE) == 0x04
+        print(f"  PCIe {'cfg' if is_cfg else 'mem'} read 0x{address:08X} = 0x{result:0{size*2}X}")
+    return result
 
 
 def pcie_cfg_read(handle, byte_addr, bus=0, dev=0, fn=0, size=4, verbose=False):
