@@ -124,35 +124,25 @@ static void handle_usb_control(void) {
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_RECIP_INTERFACE) && bReq == USB_REQ_SET_INTERFACE) {
       send_zlp_ack();
     } else if (bmReq == (USB_SETUP_DIR_DEV_TO_HOST | USB_SETUP_TYPE_VENDOR) && bReq == 0xE4) {
-      /* Vendor read XDATA via control */
+      /* Vendor read XDATA via control.  wValue=addr, wLength=size.
+       * wIndex high byte selects bank (0=normal, 1=PHY/switch via DPX). */
       uint16_t addr = ((uint16_t)wValH << 8) | wValL;
+      uint8_t bank = REG_USB_SETUP_WIDX_H;
       uint8_t vi;
+      if (bank) DPX = bank;
       for (vi = 0; vi < wLenL; vi++) DESC_BUF[vi] = XDATA_REG8(addr + vi);
+      if (bank) DPX = 0x00;
       send_control_data(wLenL);
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_TYPE_VENDOR) && bReq == 0xE5) {
-      /* Vendor write XDATA via control */
+      /* Vendor write XDATA via control.  wValue=addr, wIndex low=val.
+       * wIndex high byte selects bank (0=normal, 1=PHY/switch via DPX). */
       uint16_t addr = ((uint16_t)wValH << 8) | wValL;
-      XDATA_REG8(addr) = REG_USB_SETUP_WIDX_L;
-      send_zlp_ack();
-    } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_TYPE_VENDOR) && bReq == 0xEF) {
-      /* Vendor write XDATA bank 1 via control — for PHY switch config.
-       * wValue = 16-bit XDATA address, wIndex low = byte value.
-       * Sets DPX=1, writes, restores DPX=0. */
-      uint16_t addr = ((uint16_t)wValH << 8) | wValL;
+      uint8_t bank = REG_USB_SETUP_WIDX_H;
       uint8_t val = REG_USB_SETUP_WIDX_L;
-      DPX = 0x01;
+      if (bank) DPX = bank;
       XDATA_REG8(addr) = val;
-      DPX = 0x00;
+      if (bank) DPX = 0x00;
       send_zlp_ack();
-    } else if (bmReq == (USB_SETUP_DIR_DEV_TO_HOST | USB_SETUP_TYPE_VENDOR) && bReq == 0xEF) {
-      /* Vendor read XDATA bank 1 via control.
-       * wValue = 16-bit XDATA address, wLength = size. */
-      uint16_t addr = ((uint16_t)wValH << 8) | wValL;
-      uint8_t vi;
-      DPX = 0x01;
-      for (vi = 0; vi < wLenL; vi++) DESC_BUF[vi] = XDATA_REG8(addr + vi);
-      DPX = 0x00;
-      send_control_data(wLenL);
     } else {
       uart_puts("[C ");
       uart_puthex(bmReq);

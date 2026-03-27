@@ -285,26 +285,25 @@ class ASM2464PD:
             raise IOError(f"E5 write(0x{addr:04X}, 0x{val:02X}) failed: {ret}")
 
     def bank1_write(self, addr, val):
-        """Write single byte to XDATA bank 1 via 0xEF vendor control transfer.
-        Bank 1 accesses internal PHY/switch registers not visible in normal XDATA."""
+        """Write byte to XDATA bank 1 via E5 with wIndex high=1 (DPX bank select)."""
         self._write_count += 1
         if self.verbose:
             print(f"  B1W 0x{addr:04X} = 0x{val:02X}")
         if self.dry_run:
             return
-        ret = libusb.libusb_control_transfer(self.dev.handle, 0x40, 0xEF, addr, val, None, 0, 1000)
+        ret = libusb.libusb_control_transfer(self.dev.handle, 0x40, 0xE5, addr, val | (1 << 8), None, 0, 1000)
         if ret < 0:
-            raise IOError(f"EF bank1_write(0x{addr:04X}, 0x{val:02X}) failed: {ret}")
+            raise IOError(f"E5 bank1_write(0x{addr:04X}, 0x{val:02X}) failed: {ret}")
 
     def bank1_read(self, addr, size=1):
-        """Read bytes from XDATA bank 1 via 0xEF vendor control transfer."""
+        """Read bytes from XDATA bank 1 via E4 with wIndex high=1 (DPX bank select)."""
         self._read_count += 1
         if self.dry_run:
             return bytes(size)
         buf = (ctypes.c_ubyte * size)()
-        ret = libusb.libusb_control_transfer(self.dev.handle, 0xC0, 0xEF, addr, 0, buf, size, 1000)
+        ret = libusb.libusb_control_transfer(self.dev.handle, 0xC0, 0xE4, addr, 1 << 8, buf, size, 1000)
         if ret < 0:
-            raise IOError(f"EF bank1_read(0x{addr:04X}, {size}) failed: {ret}")
+            raise IOError(f"E4 bank1_read(0x{addr:04X}, {size}) failed: {ret}")
         data = bytes(buf[:ret])
         if self.verbose:
             print(f"  B1R 0x{addr:04X} = {data.hex()}")
