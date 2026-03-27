@@ -7,6 +7,7 @@
 #include "registers.h"
 #include "globals.h"
 
+__sfr __at(0x93) DPX;   /* DPTR bank select — DPX=1 accesses internal PHY regs */
 __sfr __at(0xA8) IE;
 __sfr __at(0x88) TCON;
 #define IE_EA   0x80
@@ -103,10 +104,6 @@ static void handle_usb_control(void) {
     wValL = REG_USB_SETUP_WVAL_L; wValH = REG_USB_SETUP_WVAL_H;
     wLenL = REG_USB_SETUP_WLEN_L;
 
-    uart_puts("[C ");
-    uart_puthex(bReq);
-    uart_puts("]\n");
-
     if (bmReq == USB_SETUP_DIR_HOST_TO_DEV && bReq == USB_REQ_SET_ADDRESS) {
       // the USB_INT_MASK_GLOBAL enabled bulk mode, this makes it not get -1
       REG_USB_INT_MASK_9090 = USB_INT_MASK_GLOBAL | (wValL & 0x7F);
@@ -127,22 +124,118 @@ static void handle_usb_control(void) {
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_RECIP_INTERFACE) && bReq == USB_REQ_SET_INTERFACE) {
       send_zlp_ack();
     } else if (bmReq == (USB_SETUP_DIR_DEV_TO_HOST | USB_SETUP_TYPE_VENDOR) && bReq == 0xE4) {
-      /* Vendor read XDATA via control */
+      /* Vendor read XDATA via control.  wValue=addr, wLength=size.
+       * wIndex high byte selects bank (0=normal, 1=PHY/switch via DPX). */
       uint16_t addr = ((uint16_t)wValH << 8) | wValL;
+      uint8_t bank = REG_USB_SETUP_WIDX_H;
       uint8_t vi;
-      for (vi = 0; vi < wLenL; vi++) DESC_BUF[vi] = XDATA_REG8(addr + vi);
+      for (vi = 0; vi < wLenL; vi++) {
+        if (bank) DPX = bank;
+        uint8_t val = XDATA_REG8(addr + vi);
+        if (bank) DPX = 0x00;
+        DESC_BUF[vi] = val;
+      }
       send_control_data(wLenL);
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_TYPE_VENDOR) && bReq == 0xE5) {
-      /* Vendor write XDATA via control */
+      /* Vendor write XDATA via control.  wValue=addr, wIndex low=val.
+       * wIndex high byte selects bank (0=normal, 1=PHY/switch via DPX). */
       uint16_t addr = ((uint16_t)wValH << 8) | wValL;
-      XDATA_REG8(addr) = REG_USB_SETUP_WIDX_L;
+      uint8_t bank = REG_USB_SETUP_WIDX_H;
+      uint8_t val = REG_USB_SETUP_WIDX_L;
+      if (bank) DPX = bank;
+      XDATA_REG8(addr) = val;
+      if (bank) DPX = 0x00;
       send_zlp_ack();
+    } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_TYPE_VENDOR) && bReq == 0xF0) {
+      /* PCIe TLP request — OUT phase: set fmt_type + byte_enable from wValue.
+       * DATA_OUT will carry the address and value.
+       * wValue = fmt_type | (byte_enable << 8) */
+      REG_PCIE_FMT_TYPE = wValL;
+      REG_PCIE_BYTE_EN  = wValH;
+      /* Don't send ZLP — wait for DATA_OUT phase */
+    } else if (bmReq == (USB_SETUP_DIR_DEV_TO_HOST | USB_SETUP_TYPE_VENDOR) && bReq == 0xF0) {
+      /* PCIe TLP result — IN phase: poll B296 on-chip, return completion data.
+       * The OUT phase already cleared, triggered, and armed B296. */
+      uint8_t ret_status = 0xFF; // timeout fallthrough
+      uint16_t t;
+      for (t = 0; t < 50000; t++) {
+        uint8_t s = REG_PCIE_STATUS;
+        if (s & PCIE_STATUS_COMPLETE) {
+          ret_status = 0;
+          break;
+        }
+        if (s & PCIE_STATUS_ERROR) {
+          REG_PCIE_STATUS = PCIE_STATUS_ERROR;
+          ret_status = 1;
+          break;
+        }
+      }
+      DESC_BUF[0] = REG_PCIE_DATA_0;
+      DESC_BUF[1] = REG_PCIE_DATA_1;
+      DESC_BUF[2] = REG_PCIE_DATA_2;
+      DESC_BUF[3] = REG_PCIE_DATA_3;
+      DESC_BUF[4] = REG_PCIE_LINK_STATUS_8;
+      DESC_BUF[5] = REG_PCIE_CPL_STATUS;
+      DESC_BUF[6] = REG_PCIE_COMPL_STATUS;
+      DESC_BUF[7] = ret_status;
+      send_control_data(8);
     } else {
-      send_zlp_ack();
+      uart_puts("[C ");
+      uart_puthex(bmReq);
+      uart_puts(" ");
+      uart_puthex(bReq);
+      uart_puts(" ");
+      uart_puthex(wLenL);
+      uart_puts("]\n");
+      if (wLenL == 0) send_zlp_ack();
     }
   } else if (phase & USB_CTRL_PHASE_STAT_OUT) {
     REG_USB_DMA_TRIGGER = USB_DMA_RECV;
     REG_USB_CTRL_PHASE = USB_CTRL_PHASE_STAT_OUT;
+  } else if (phase & USB_CTRL_PHASE_DATA_IN) {
+    if (REG_USB_SETUP_BREQ == 0xF0) {
+      /* PCIe TLP DATA_OUT: 12 bytes at DESC_BUF (0x9E00).
+       *   [0-3]  address low, little-endian
+       *   [4-7]  address high, little-endian
+       *   [8-11] value, big-endian (writes only)
+       * fmt_type/byte_enable already written to B210/B217 in SETUP phase. */
+
+      /* Write value to B220-B223 if write request (data payload present) */
+      if (REG_PCIE_FMT_TYPE & PCIE_FMT_HAS_DATA) {
+        REG_PCIE_DATA_0     = DESC_BUF[8];
+        REG_PCIE_DATA_1     = DESC_BUF[9];
+        REG_PCIE_DATA_2     = DESC_BUF[10];
+        REG_PCIE_DATA_3     = DESC_BUF[11];
+      }
+      /* Address: LE to BE swap into B218-B21F */
+      REG_PCIE_ADDR_0      = DESC_BUF[3];
+      REG_PCIE_ADDR_1      = DESC_BUF[2];
+      REG_PCIE_ADDR_2      = DESC_BUF[1];
+      REG_PCIE_ADDR_3      = DESC_BUF[0];
+      REG_PCIE_ADDR_HIGH   = DESC_BUF[7];
+      REG_PCIE_ADDR_HIGH_1 = DESC_BUF[6];
+      REG_PCIE_ADDR_HIGH_2 = DESC_BUF[5];
+      REG_PCIE_ADDR_HIGH_3 = DESC_BUF[4];
+      /* Stock sequence: clear error, clear completion, arm, then trigger */
+      REG_PCIE_STATUS  = PCIE_STATUS_ERROR;
+      REG_PCIE_STATUS  = PCIE_STATUS_COMPLETE;
+      REG_PCIE_STATUS  = PCIE_STATUS_KICK;
+      REG_PCIE_TRIGGER = PCIE_TRIGGER_EXEC;
+      // TODO: there's no while loop for wait on the write path. can this happen too fast?
+      send_zlp_ack();
+    }
+    if (REG_USB_SETUP_BREQ == 0xF1) {
+      // test packet
+      uart_puts("[F1 ");
+      uart_puthex(DESC_BUF[0]);
+      uart_puthex(DESC_BUF[1]);
+      uart_puthex(DESC_BUF[2]);
+      uart_puthex(DESC_BUF[3]);
+      uart_puts("]");
+      uart_puts("\n");
+      send_zlp_ack();
+    }
+    REG_USB_CTRL_PHASE = USB_CTRL_PHASE_DATA_IN;
   } else if (phase & USB_CTRL_PHASE_DATA_OUT) {
     REG_USB_CTRL_PHASE = USB_CTRL_PHASE_DATA_OUT;
   } else {
