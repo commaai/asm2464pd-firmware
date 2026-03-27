@@ -284,6 +284,37 @@ class ASM2464PD:
         if ret < 0:
             raise IOError(f"E5 write(0x{addr:04X}, 0x{val:02X}) failed: {ret}")
 
+    def bank1_write(self, addr, val):
+        """Write single byte to XDATA bank 1 via 0xEF vendor control transfer.
+        Bank 1 accesses internal PHY/switch registers not visible in normal XDATA."""
+        self._write_count += 1
+        if self.verbose:
+            print(f"  B1W 0x{addr:04X} = 0x{val:02X}")
+        if self.dry_run:
+            return
+        ret = libusb.libusb_control_transfer(self.dev.handle, 0x40, 0xEF, addr, val, None, 0, 1000)
+        if ret < 0:
+            raise IOError(f"EF bank1_write(0x{addr:04X}, 0x{val:02X}) failed: {ret}")
+
+    def bank1_read(self, addr, size=1):
+        """Read bytes from XDATA bank 1 via 0xEF vendor control transfer."""
+        self._read_count += 1
+        if self.dry_run:
+            return bytes(size)
+        buf = (ctypes.c_ubyte * size)()
+        ret = libusb.libusb_control_transfer(self.dev.handle, 0xC0, 0xEF, addr, 0, buf, size, 1000)
+        if ret < 0:
+            raise IOError(f"EF bank1_read(0x{addr:04X}, {size}) failed: {ret}")
+        data = bytes(buf[:ret])
+        if self.verbose:
+            print(f"  B1R 0x{addr:04X} = {data.hex()}")
+        return data
+
+    def bank1_or_bits(self, addr, mask):
+        """Read-modify-write in bank 1: val |= mask."""
+        old = self.bank1_read(addr, 1)[0]
+        self.bank1_write(addr, old | mask)
+
     def rmw(self, addr, clear_mask, set_mask):
         """Read-modify-write: val = (val & ~clear_mask) | set_mask."""
         val = self.read8(addr)
@@ -1070,10 +1101,12 @@ def pcie_bridge_config_init(dev):
     # CA06 clear bit 4 again, B480 set bit 0 again
     dev.clear_bits(CA06, 0x10)
     dev.set_bits(B480, 0x01)
-    # NOTE: bank-switched writes (0x4084=0x22, 0x5084=0x22, 0x6043=0x70,
-    # 0x6025|=0x80) are done via DPX=1 (SFR 0x93=1) and can only be done
-    # from firmware. They cannot be done from USB E5 writes since E5 only
-    # accesses bank 0 XDATA. These are needed for Type 1 TLP forwarding.
+    # Bank-switched PHY writes for PCIe switch TLP forwarding.
+    # These use 0xEF (bank 1 write) which sets DPX=1 on the 8051 CPU.
+    dev.bank1_write(0x4084, 0x22)  # switch port 0 PHY
+    dev.bank1_write(0x5084, 0x22)  # switch port 1 PHY
+    dev.bank1_write(0x6043, 0x70)  # TLP routing config
+    dev.bank1_or_bits(0x6025, 0x80)  # TLP routing enable (set bit 7)
     # B481
     b481 = dev.read8(B481)
     dev.write(B481, (b481 & 0xFC) | 0x03)
