@@ -46,26 +46,74 @@ def test_byteswap(h, addr, val=0x01020304):
     else:
         return f"unknown (wrote 0x{val:08X}, got 0x{rb:08X}, swap would be 0x{swapped:08X})"
 
-def test_isolation(h, addr_a, addr_b, val_a=0xAAAAAAAA, val_b=0xBBBBBBBB):
-    """Write different values to two addresses, verify they don't alias."""
+def bswap32(v):
+    return struct.unpack('<I', struct.pack('>I', v))[0]
+
+def test_isolation(h, addr_a, addr_b, val_a=0x12345678, val_b=0xCAFEBABE):
+    """Write different values to two addresses, verify they don't alias.
+    Uses non-palindrome values so byte-swap is distinguishable from aliasing."""
+    val_a_sw = bswap32(val_a)
+    val_b_sw = bswap32(val_b)
+
     pcie_mem_write(h, addr_a, val_a)
     pcie_mem_write(h, addr_b, val_b)
-    time.sleep(0.001)
+    time.sleep(0.002)
     try:
         rb_a = pcie_mem_read(h, addr_a)
         rb_b = pcie_mem_read(h, addr_b)
     except (RuntimeError, TimeoutError) as e:
         return f"error: {e}"
-    if rb_a == val_a and rb_b == val_b:
-        return "isolated"
-    elif rb_a == val_b or rb_b == val_a:
-        return f"ALIASED (a=0x{rb_a:08X} b=0x{rb_b:08X})"
+
+    # With byte-swap: if isolated, rb_a should be val_a_sw and rb_b should be val_b_sw
+    # If aliased (both see last write): rb_a == rb_b == val_b_sw (or val_b)
+    a_is_a = rb_a in (val_a, val_a_sw)
+    b_is_b = rb_b in (val_b, val_b_sw)
+    a_is_b = rb_a in (val_b, val_b_sw)
+
+    if a_is_a and b_is_b:
+        swap = "swapped" if rb_a == val_a_sw else "exact"
+        return f"isolated ({swap})"
+    elif a_is_b and b_is_b:
+        return f"ALIASED (both=0x{rb_a:08X}, last write was 0x{val_b:08X})"
     else:
-        return f"weird (a=0x{rb_a:08X} b=0x{rb_b:08X})"
+        return f"unclear (a=0x{rb_a:08X} b=0x{rb_b:08X}, expected a=0x{val_a:08X}/0x{val_a_sw:08X} b=0x{val_b:08X}/0x{val_b_sw:08X})"
+
+def verbose_mem_read(h, addr):
+    """Do a PCIe mem read and dump the raw completion bytes."""
+    from pcie.pcie_probe import pcie_request, MRD32, xdata_read
+    import ctypes
+    from tinygrad.runtime.autogen import libusb
+
+    # Do the write + trigger via normal path
+    pcie_mem_write(h, addr, 0xDEADC0DE)
+    time.sleep(0.002)
+
+    # Now do MRd manually and inspect raw result
+    masked = addr & 0xFFFFFFFC
+    be = 0x0F
+    payload = struct.pack('<II', masked, 0) + struct.pack('>I', 0)
+    buf_out = (ctypes.c_ubyte * 12)(*payload)
+    ret = libusb.libusb_control_transfer(h, 0x40, 0xF0, 0x20 | (be << 8), 0, buf_out, 12, 5000)
+
+    buf_in = (ctypes.c_ubyte * 8)()
+    ret = libusb.libusb_control_transfer(h, 0xC0, 0xF0, 0, 0, buf_in, 8, 5000)
+    raw = bytes(buf_in)
+    print(f"  addr=0x{addr:08X} raw={raw.hex()}")
+    print(f"    data[0:4]  = {raw[0:4].hex()} (B220-B223 completion data)")
+    print(f"    cpl[4:5]   = {raw[4:6].hex()} (B22A-B22B completion header)")
+    print(f"    type[6]    = 0x{raw[6]:02X} (B284 completion type)")
+    print(f"    status[7]  = 0x{raw[7]:02X} (0=ok, 1=UR, FF=timeout)")
 
 def main():
     h, ctx = usb_open()
     print(f"Opened device\n")
+
+    # Phase 0: Raw completion inspection
+    print("=== Phase 0: Raw completion data ===")
+    print("MRd to various addresses — inspecting completion bytes:")
+    for addr in [0x200000, 0x000000, 0x10000000]:
+        verbose_mem_read(h, addr)
+    print()
 
     # Phase 1: Scan for responsive addresses
     print("=== Phase 1: Address range scan ===")
@@ -139,36 +187,70 @@ def main():
     result = test_byteswap(h, 0x200000, 0xDEADBEEF)
     print(f"  0x200000 with 0xDEADBEEF: {result}")
 
-    # Phase 5: Find upper bound of SRAM
-    print(f"\n=== Phase 5: SRAM size probe ===")
-    # Binary search for the upper bound
-    # First write a marker at 0x200000 and check if high addresses alias back
-    pcie_mem_write(h, 0x200000, 0x12345678)
-    time.sleep(0.001)
-    for size_log2 in range(17, 25):  # 128KB to 16MB
+    # Phase 5: Verify reads aren't stale — does reading different addrs give different results?
+    print(f"\n=== Phase 5: Stale read check ===")
+    print("Writing unique values, then reading in different order...")
+    # Write 0x200000 = 0x11111111, 0x200004 = 0x22222222, then read both
+    pcie_mem_write(h, 0x200000, 0x11111111)
+    time.sleep(0.002)
+    rb1 = pcie_mem_read(h, 0x200000)
+    print(f"  Write 0x200000=0x11111111, read 0x200000: 0x{rb1:08X}")
+
+    pcie_mem_write(h, 0x200004, 0x22222222)
+    time.sleep(0.002)
+    rb2 = pcie_mem_read(h, 0x200004)
+    print(f"  Write 0x200004=0x22222222, read 0x200004: 0x{rb2:08X}")
+
+    # Now re-read 0x200000 — if it's real storage, it should still be 0x11111111 (or swapped)
+    rb1_again = pcie_mem_read(h, 0x200000)
+    print(f"  Re-read 0x200000: 0x{rb1_again:08X}")
+    if rb1_again == rb1:
+        print(f"  -> 0x200000 retained its value (real storage or consistent alias)")
+    elif rb1_again == rb2:
+        print(f"  -> 0x200000 now reads as 0x200004's value — SINGLE REGISTER, not RAM")
+    else:
+        print(f"  -> unexpected value")
+
+    # Phase 6: Read without prior write — does address matter?
+    print(f"\n=== Phase 6: Read-only address sensitivity ===")
+    print("Reading different addresses WITHOUT writing first...")
+    # Write once, then read multiple addrs
+    pcie_mem_write(h, 0x200000, 0xFEEDFACE)
+    time.sleep(0.002)
+    for addr in [0x200000, 0x200004, 0x200100, 0x300000, 0x000000]:
+        try:
+            v = pcie_mem_read(h, addr)
+            print(f"  read 0x{addr:08X}: 0x{v:08X}")
+        except (RuntimeError, TimeoutError) as e:
+            print(f"  read 0x{addr:08X}: {e}")
+
+    # Phase 7: SRAM size probe with unique non-palindrome markers
+    print(f"\n=== Phase 7: SRAM size probe ===")
+    marker = 0x12345678
+    marker_sw = bswap32(marker)
+    poison = 0xCAFEBABE
+    poison_sw = bswap32(poison)
+    pcie_mem_write(h, 0x200000, marker)
+    time.sleep(0.002)
+    for size_log2 in range(2, 25):  # 4 bytes to 16MB
         test_addr = 0x200000 + (1 << size_log2)
-        pcie_mem_write(h, test_addr, 0xAAAAAAAA)
-        time.sleep(0.001)
-        # Check if 0x200000 was corrupted (alias)
+        pcie_mem_write(h, test_addr, poison)
+        time.sleep(0.002)
         rb = pcie_mem_read(h, 0x200000)
-        swapped_marker = struct.unpack('<I', struct.pack('>I', 0x12345678))[0]
-        if rb in (0x12345678, swapped_marker):
-            aliased = False
-        elif rb == 0xAAAAAAAA or rb == struct.unpack('<I', struct.pack('>I', 0xAAAAAAAA))[0]:
-            aliased = True
-        else:
-            aliased = None  # unclear
         sz = 1 << size_log2
-        sz_str = f"{sz // 1024}KB" if sz < 1024*1024 else f"{sz // (1024*1024)}MB"
-        if aliased is True:
-            print(f"  +{sz_str} (0x{test_addr:08X}): ALIASED with 0x200000 — SRAM < {sz_str}")
+        if sz < 1024: sz_str = f"{sz}B"
+        elif sz < 1024*1024: sz_str = f"{sz // 1024}KB"
+        else: sz_str = f"{sz // (1024*1024)}MB"
+
+        if rb in (marker, marker_sw):
+            print(f"  +{sz_str} (0x{test_addr:08X}): base preserved (0x{rb:08X}) — independent")
+        elif rb in (poison, poison_sw):
+            print(f"  +{sz_str} (0x{test_addr:08X}): base CLOBBERED — alias at {sz_str}")
             break
-        elif aliased is False:
-            print(f"  +{sz_str} (0x{test_addr:08X}): independent")
         else:
-            print(f"  +{sz_str} (0x{test_addr:08X}): unclear (base=0x{rb:08X})")
-        # Re-write marker
-        pcie_mem_write(h, 0x200000, 0x12345678)
+            print(f"  +{sz_str} (0x{test_addr:08X}): base=0x{rb:08X} — unclear")
+        # Re-write marker for next iteration
+        pcie_mem_write(h, 0x200000, marker)
 
     usb_close(h, ctx)
 
