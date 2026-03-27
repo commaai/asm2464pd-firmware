@@ -852,7 +852,39 @@
 // PCIe TLP registers (0xB210-0xB284)
 /* Raw byte access to B210-B21B request header window (12 bytes). */
 #define REG_PCIE_TLP_BYTE(off)  XDATA_REG8V(0xB210 + (off))
+/*
+ * PCIe TLP Format/Type (0xB210)
+ *
+ * PCIe TLP format/type byte encoding (PCIe Base Spec 3.0, Table 2-3):
+ *   Bits [7:5] = Fmt (Format):
+ *     000 = 3DW header, no data payload
+ *     001 = 4DW header, no data payload
+ *     010 = 3DW header, with data payload
+ *     011 = 4DW header, with data payload
+ *   Bits [4:0] = Type:
+ *     00000 = Memory Read/Write (MRd/MWr)
+ *     00100 = Config Read/Write Type 0 (CfgRd0/CfgWr0)
+ *     00101 = Config Read/Write Type 1 (CfgRd1/CfgWr1)
+ *
+ * Bit 6 (0x40) = data payload present (i.e., write operation)
+ * Bit 5 (0x20) = 4DW header (64-bit addressing)
+ *
+ * Use PCIE_FMT_HAS_DATA to test if a TLP type is a write.
+ */
 #define REG_PCIE_FMT_TYPE       XDATA_REG8V(0xB210)
+#define   PCIE_FMT_HAS_DATA       0x40  /* Bit 6: TLP carries a data payload (write) */
+#define   PCIE_FMT_4DW_HDR        0x20  /* Bit 5: 4DW header (64-bit address) */
+/* Memory Read/Write (Type 0x00) */
+#define   PCIE_FMT_MEM_READ       0x00  /* MRd:   3DW header, no data, 32-bit addr */
+#define   PCIE_FMT_MEM_WRITE      0x40  /* MWr:   3DW header, with data, 32-bit addr */
+#define   PCIE_FMT_MEM_READ64     0x20  /* MRd64: 4DW header, no data, 64-bit addr */
+#define   PCIE_FMT_MEM_WRITE64    0x60  /* MWr64: 4DW header, with data, 64-bit addr */
+/* Config Read/Write Type 0 (targets device on local bus) */
+#define   PCIE_FMT_CFG_READ_0     0x04  /* CfgRd0: 3DW header, no data */
+#define   PCIE_FMT_CFG_WRITE_0    0x44  /* CfgWr0: 3DW header, with data */
+/* Config Read/Write Type 1 (forwarded by bridges to downstream bus) */
+#define   PCIE_FMT_CFG_READ_1     0x05  /* CfgRd1: 3DW header, no data */
+#define   PCIE_FMT_CFG_WRITE_1    0x45  /* CfgWr1: 3DW header, with data */
 #define REG_PCIE_TLP_CTRL       XDATA_REG8V(0xB213)
 #define REG_PCIE_TLP_LENGTH     XDATA_REG8V(0xB216)
 #define REG_PCIE_BYTE_EN        XDATA_REG8V(0xB217)
@@ -878,7 +910,44 @@
  */
 #define REG_PCIE_EXT_STATUS     XDATA_REG8V(0xB223)
 #define   PCIE_EXT_STATUS_PLL_LOCK 0x01  // Bit 0: PLL/CDR lock confirmed
+/*
+ * PCIe Completion Header (0xB224-0xB22D)
+ *
+ * After a non-posted TLP (MRd, CfgRd, CfgWr) completes, the hardware
+ * writes the completion TLP header into these registers.
+ *
+ * B22A:B22B (16-bit, big-endian) — Completion Status + Byte Count:
+ *   Bits [15:13] = Completion Status (PCIe Base Spec 3.0, Table 2-33):
+ *     000 (0) = Successful Completion (SC)
+ *     001 (1) = Unsupported Request (UR) — no device claimed the address
+ *     010 (2) = Configuration Request Retry Status (CRS)
+ *     100 (4) = Completer Abort (CA) — device internal error
+ *   Bit  [12]   = reserved
+ *   Bits [11:0]  = Byte Count — number of data bytes in completion
+ *                  (always 4 for config requests, equals request size for mem)
+ *
+ * B284 — Completion Type:
+ *   Bit 0: CplD indicator — set if completion carries data (reads).
+ *          For config reads: bit 0 should be SET (CplD).
+ *          For config writes: bit 0 should be CLEAR (Cpl, no data).
+ *          For memory reads to unclaimed addresses, the hardware may set
+ *          PCIE_STATUS_COMPLETE in B296 even though B22A reports UR.
+ *          Always check the completion status field in B22A:B22B.
+ *
+ * IMPORTANT: B296 PCIE_STATUS_COMPLETE only indicates the TLP engine
+ * finished processing — it does NOT mean the request succeeded.
+ * The completion status in B22A bits [15:13] must be checked to detect
+ * Unsupported Request (UR) errors from unclaimed PCIe addresses.
+ */
 #define REG_PCIE_TLP_CPL_HEADER XDATA_REG32(0xB224)
+#define REG_PCIE_CPL_HDR_HI     XDATA_REG8V(0xB22A)   /* Completion header high: status[7:5], bytecount[3:0] (upper) */
+#define REG_PCIE_CPL_HDR_LO     XDATA_REG8V(0xB22B)   /* Completion header low: bytecount[7:0] (lower) */
+#define   PCIE_CPL_STATUS_MASK    0xE0  /* Bits [7:5] of B22A = completion status [15:13] */
+#define   PCIE_CPL_STATUS_SC      0x00  /* Successful Completion */
+#define   PCIE_CPL_STATUS_UR      0x20  /* Unsupported Request */
+#define   PCIE_CPL_STATUS_CRS     0x40  /* Config Request Retry */
+#define   PCIE_CPL_STATUS_CA      0x80  /* Completer Abort */
+/* Legacy aliases */
 #define REG_PCIE_LINK_STATUS    XDATA_REG16V(0xB22A)
 #define REG_PCIE_CPL_STATUS     XDATA_REG8V(0xB22B)
 #define REG_PCIE_LINK_STATUS_LO XDATA_REG8V(0xB22A)
@@ -920,7 +989,13 @@
 #define REG_PCIE_DMA_BUF_D      XDATA_REG8(0xB26F)   // DMA buffer config D
 #define REG_PCIE_DMA_CTRL_B281  XDATA_REG8(0xB281)   // DMA control
 #define REG_PCIE_PM_ENTER       XDATA_REG8(0xB255)
+/*
+ * PCIe Completion Type (0xB284)
+ * Bit 0: CplD — completion carries data (set for reads, clear for writes).
+ * See B22A:B22B documentation above for full completion validation.
+ */
 #define REG_PCIE_COMPL_STATUS   XDATA_REG8(0xB284)
+#define   PCIE_COMPL_HAS_DATA     0x01  /* Bit 0: Completion carries data (CplD) */
 #define REG_PCIE_POWER_B294     XDATA_REG8(0xB294)  /* PCIe power control */
 // PCIe status registers (0xB296-0xB298)
 #define REG_PCIE_STATUS         XDATA_REG8V(0xB296)
@@ -2014,43 +2089,6 @@
 // System Control (0xEF00-0xEFFF)
 //=============================================================================
 #define REG_CRITICAL_CTRL       XDATA_REG8(0xEF4E)
-
-//=============================================================================
-// PCIe TLP Format/Type Codes (for REG_PCIE_FMT_TYPE at 0xB210)
-//=============================================================================
-/*
- * PCIe TLP format/type byte encoding (PCIe Base Spec 3.0, Table 2-3):
- *   Bits [7:5] = Fmt (Format):
- *     000 = 3DW header, no data payload
- *     001 = 4DW header, no data payload
- *     010 = 3DW header, with data payload
- *     011 = 4DW header, with data payload
- *   Bits [4:0] = Type:
- *     00000 = Memory Read/Write (MRd/MWr)
- *     00100 = Config Read/Write Type 0 (CfgRd0/CfgWr0)
- *     00101 = Config Read/Write Type 1 (CfgRd1/CfgWr1)
- *
- * Bit 6 (0x40) = data payload present (i.e., write operation)
- * Bit 5 (0x20) = 4DW header (64-bit addressing)
- *
- * Use PCIE_FMT_HAS_DATA to test if a TLP type is a write.
- */
-#define PCIE_FMT_HAS_DATA       0x40  /* Bit 6: TLP carries a data payload (write) */
-#define PCIE_FMT_4DW_HDR        0x20  /* Bit 5: 4DW header (64-bit address) */
-
-/* Memory Read/Write (Type 0x00) */
-#define PCIE_FMT_MEM_READ       0x00  /* MRd:   3DW header, no data, 32-bit addr */
-#define PCIE_FMT_MEM_WRITE      0x40  /* MWr:   3DW header, with data, 32-bit addr */
-#define PCIE_FMT_MEM_READ64     0x20  /* MRd64: 4DW header, no data, 64-bit addr */
-#define PCIE_FMT_MEM_WRITE64    0x60  /* MWr64: 4DW header, with data, 64-bit addr */
-
-/* Config Read/Write Type 0 (targets device on local bus) */
-#define PCIE_FMT_CFG_READ_0     0x04  /* CfgRd0: 3DW header, no data */
-#define PCIE_FMT_CFG_WRITE_0    0x44  /* CfgWr0: 3DW header, with data */
-
-/* Config Read/Write Type 1 (forwarded by bridges to downstream bus) */
-#define PCIE_FMT_CFG_READ_1     0x05  /* CfgRd1: 3DW header, no data */
-#define PCIE_FMT_CFG_WRITE_1    0x45  /* CfgWr1: 3DW header, with data */
 
 //=============================================================================
 // Bank-Selected Registers (0x0xxx-0x2xxx)
