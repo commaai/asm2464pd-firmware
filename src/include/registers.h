@@ -10,12 +10,17 @@
  * Organized by functional block in address order.
  *
  * Address Space Layout:
- *   0x7000-0x7FFF  USB bulk OUT landing buffer (read-only to CPU, written by HW)
- *   0x8000-0x8FFF  Writable XDATA (NOT aliased with 0xF000)
- *   0x9000-0x93FF  USB Interface
- *   0xA000-0xAFFF  Writable XDATA
- *   0xB000-0xB1FF  NVMe Admin Queues
- *   0xB200-0xB4FF  PCIe Passthrough / Tunnel
+ *   0x0000-0x5FFF  Working memory, globals, tables
+ *   0x6000-0x6FFF  Reserved
+ *   0x7000-0x7FFF  Flash buffer (4KB, read-only to CPU, written by USB/flash HW)
+ *   0x8000-0x8FFF  USB data buffer (4KB window into SRAM at PCI 0x00200000+)
+ *   0x9000-0x9FFF  MMIO: USB controller
+ *   0xA000-0xAFFF  NVMe IOSQ (4KB window into SRAM at PCI 0x00820000+)
+ *   0xB000-0xB1FF  NVMe Admin Submission/Completion Queues (ASQ/ACQ)
+ *   0xB200-0xB29F  PCIe TLP Engine (fmt/type, address, data, trigger)
+ *   0xB2A0-0xB2DF  PCIe TLP Engine (secondary port, mirrors B200-B29F)
+ *   0xB300-0xB3DF  PCIe TLP Engine (port 2/3 mirrors)
+ *   0xB400-0xB4FF  PCIe Link / Bridge Config (LTSSM, PERST, lane ctrl)
  *   0xC000-0xC0FF  UART Controller
  *   0xC200-0xC2FF  Link/PHY Control
  *   0xC400-0xC5FF  NVMe / MSC Interface
@@ -24,14 +29,30 @@
  *   0xCA00-0xCAFF  CPU Mode
  *   0xCC00-0xCCFF  Timer / CPU Control
  *   0xCE00-0xCEFF  SCSI DMA / Transfer Control
- *   0xD800-0xDFFF  USB Endpoint Buffer (MSC data/CSW)
+ *   0xD000-0xD3FF  MSC Command/Data Buffer (1KB, aliases at 0xD400)
+ *   0xD800-0xDFFF  USB Endpoint Buffer (MSC data/CSW, aliases at 0xE000)
  *   0xE300-0xE3FF  PHY Completion / Debug
  *   0xE400-0xE4FF  Command Engine
  *   0xE600-0xE6FF  Debug/Interrupt
  *   0xE700-0xE7FF  System Status / Link Control
  *   0xEC00-0xECFF  NVMe Event
  *   0xEF00-0xEFFF  System Control
- *   0xF000-0xFFFF  Writable XDATA (NOT aliased with 0x8000)
+ *   0xF000-0xFFFF  NVMe data buffer (4KB window into SRAM at PCI 0x00200000+)
+ *
+ * Internal SRAM (PCI address space, accessible via DMA engines):
+ *   0x00200000  Data buffer (~6 MB) — GPU can DMA to/from here
+ *   0x00820000  Queue region — NVMe completion queue descriptors
+ *
+ * XDATA windows into SRAM:
+ *   0x8000 is a window into SRAM at PCI 0x200000+ (offset unknown)
+ *   0xF000 is a window into SRAM at PCI 0x200000+ (offset unknown)
+ *   0xA000 is a window into SRAM at PCI 0x820000+ (confirmed: CE00 DMA
+ *          completion descriptors appear here after CE00=0x03 trigger)
+ *   0x8000 and 0xF000 are NOT aliased (different offsets into SRAM).
+ *   The window base offset register has not been found — sweeping all
+ *   MMIO registers (0x9000-0xEFFF, 0x0000-0x5FFF) did not reveal a
+ *   register that moves the F000 window when changed.  The offset may
+ *   be fixed in hardware or controlled by an SFR not accessible via XDATA.
  *
  * DMA Paths for USB Data:
  *   EP0 Control (0x9092): descriptor/control transfers via 0x9E00 buffer
