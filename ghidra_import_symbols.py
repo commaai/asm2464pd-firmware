@@ -1137,7 +1137,7 @@ def add_registers():
         (0x90A1, "REG_USB_BULK_DMA_TRIGGER"),
         (0x90E0, "REG_USB_SPEED"),
         (0x90E2, "REG_USB_MODE"),
-        (0x90E3, "REG_USB_EP_STATUS_90E3"),
+        (0x90E3, "REG_USB_BULK_EP_CMD"),
         (0x9100, "REG_USB_LINK_STATUS"),
         (0x9101, "REG_USB_PERIPH_STATUS"),
         (0x9105, "REG_USB_PHY_STATUS_9105"),

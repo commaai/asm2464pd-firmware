@@ -170,10 +170,10 @@ static void handle_set_config(void) {
     t = REG_USB_EP0_CONFIG; REG_USB_EP0_CONFIG = t;
     t = REG_USB_EP0_CONFIG; REG_USB_EP0_CONFIG = t;
     REG_USB_EP_CFG2 = 0x01; REG_USB_EP_CFG2 = 0x08;
-    REG_USB_EP_STATUS_90E3 = 0x02;
+    REG_USB_BULK_EP_CMD = 0x02;
     t = REG_USB_EP_CTRL_905F; REG_USB_EP_CTRL_905F = t;
     t = REG_USB_EP_CTRL_905D; REG_USB_EP_CTRL_905D = t;
-    REG_USB_EP_STATUS_90E3 = 0x01; REG_USB_CTRL_90A0 = 0x01;
+    REG_USB_BULK_EP_CMD = 0x01; REG_USB_CTRL_90A0 = 0x01;
     REG_USB_INT_MASK_9090 |= USB_INT_MASK_GLOBAL;
     t = REG_USB_STATUS; REG_USB_STATUS = t;
     t = REG_USB_CTRL_924C; REG_USB_CTRL_924C = t;
@@ -210,7 +210,7 @@ static void do_bulk_init(void) {
     /* EP reconfig + activate */
     t = REG_USB_EP_CTRL_905F; REG_USB_EP_CTRL_905F = t;
     t = REG_USB_EP_CTRL_905D; REG_USB_EP_CTRL_905D = t;
-    REG_USB_EP_STATUS_90E3 = 0x01; REG_USB_CTRL_90A0 = 0x01;
+    REG_USB_BULK_EP_CMD = 0x01; REG_USB_CTRL_90A0 = 0x01;
     REG_USB_STATUS = 0x01; REG_USB_CTRL_924C = 0x05;
 
     /* Clear endpoint buffer D800-DE5F */
@@ -228,7 +228,7 @@ static void do_bulk_init(void) {
     t = REG_USB_EP0_CONFIG; REG_USB_EP0_CONFIG = t;
     REG_USB_EP_CFG2 = 0x01; REG_USB_EP_CFG2 = 0x08;
     REG_USB_EP_CTRL_905F |= USB_EP_CTRL_905F_BIT3;
-    REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_CTRL_90A0 = 0x01;
+    REG_USB_BULK_EP_CMD = 0x02; REG_USB_CTRL_90A0 = 0x01;
 
     /* Arm MSC for first CBW */
     REG_USB_STATUS = 0x00;
@@ -263,7 +263,7 @@ static void do_bulk_init(void) {
     t = REG_USB_EP0_CONFIG; REG_USB_EP0_CONFIG = t;
     REG_USB_EP_CFG2 = 0x01; REG_USB_EP_CFG2 = 0x08;
     t = REG_USB_EP_CTRL_905F; REG_USB_EP_CTRL_905F = t;
-    REG_USB_EP_STATUS_90E3 = 0x02;
+    REG_USB_BULK_EP_CMD = 0x02;
 
     uart_puts("[rdy]\n");
 }
@@ -286,7 +286,7 @@ static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
 
     /* Clear stale EP_COMPLETE */
     if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) {
-        REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+        REG_USB_BULK_EP_CMD = 0x02; REG_USB_EP_READY = 0x01;
     }
 
     REG_USB_MSC_LENGTH = len;
@@ -307,7 +307,7 @@ static void sw_dma_bulk_in(uint16_t addr, uint8_t len) {
 
     /* Wait for EP_COMPLETE (9101 bit 5) */
     while (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) { }
-    REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+    REG_USB_BULK_EP_CMD = 0x02; REG_USB_EP_READY = 0x01;
 
     REG_DMA_CONFIG = DMA_CONFIG_DISABLE;
     REG_USB_MSC_LENGTH = 0x0D;  /* CSW length */
@@ -456,7 +456,7 @@ static void handle_usb_reset(void) {
 static void poll_bulk_events(void) {
     uint8_t st = REG_USB_PERIPH_STATUS;
     if (st & USB_PERIPH_EP_COMPLETE) {
-        REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+        REG_USB_BULK_EP_CMD = 0x02; REG_USB_EP_READY = 0x01;
     }
     if (st & USB_PERIPH_CBW_RECEIVED) need_cbw_process = 1;
 }

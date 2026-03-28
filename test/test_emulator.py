@@ -1059,11 +1059,11 @@ class TestVendorCommandStateMachine:
         vendor_flag = emu.memory.xdata[0x0003]
         assert vendor_flag & 0x08, f"[{fw_name}] Vendor flag bit 3 should be set, got 0x{vendor_flag:02X}"
 
-    def test_status_register_written_during_e4(self, firmware_emulator):
-        """Test that 0x90E3 is written with 0x02 during E4 processing."""
+    def test_bulk_ep_cmd_written_during_e4(self, firmware_emulator):
+        """Test that REG_USB_BULK_EP_CMD (0x90E3) is written with 0x02 (ACK) during E4 processing."""
         emu, fw_name = firmware_emulator
 
-        # Track writes to 0x90E3
+        # Track writes to 0x90E3 (REG_USB_BULK_EP_CMD)
         writes_90e3 = []
         def track_90e3(addr, val):
             writes_90e3.append(val)
@@ -1072,7 +1072,7 @@ class TestVendorCommandStateMachine:
         emu.hw.inject_usb_command(0xE4, 0x1000, size=1)
         emu.run(max_cycles=50000)
 
-        assert 0x02 in writes_90e3, f"[{fw_name}] 0x90E3 should be written with 0x02, writes: {writes_90e3}"
+        assert 0x02 in writes_90e3, f"[{fw_name}] REG_USB_BULK_EP_CMD should be written with 0x02 (ACK), writes: {writes_90e3}"
 
 
 class TestDMATriggerSequence:

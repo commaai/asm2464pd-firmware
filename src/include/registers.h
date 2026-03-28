@@ -324,6 +324,19 @@
 #define REG_USB_EP_BUF_HI       XDATA_REG8(0x905B)
 #define REG_USB_EP_BUF_LO       XDATA_REG8(0x905C)
 #define REG_USB_EP_CTRL_905D    XDATA_REG8(0x905D)  /* USB endpoint control 1 */
+/*
+ * USB Endpoint Routing Control (0x905E)
+ * Controls whether bulk OUT data is routed through the MSC engine or raw EP path.
+ *
+ *   Bit 0 = 1: Raw bulk mode — bulk OUT data triggers USB_PERIPH_BULK_DATA
+ *               (9101 bit 2) and goes to 0x7000 as raw bytes.
+ *   Bit 0 = 0: MSC/CBW mode — bulk OUT data is intercepted by the MSC engine,
+ *               parsed as a CBW, and the parsed fields are deposited at
+ *               0x911B-0x912E.  Triggers USB_PERIPH_CBW_RECEIVED (9101 bit 6).
+ *
+ * Stock firmware clears bit 0 (905E &= 0xFE) during MSC engine init (0xB212).
+ * Must be cleared before MSC/CBW reception will work.
+ */
 #define REG_USB_EP_MGMT         XDATA_REG8(0x905E)
 #define REG_USB_EP_CTRL_905F    XDATA_REG8(0x905F)  /* USB endpoint control 2 */
 #define   USB_EP_CTRL_905F_BIT3   0x08  // Bit 3: Endpoint enable flag
@@ -458,7 +471,16 @@
 #define REG_USB_EP_MODE_909C    XDATA_REG8(0x909C)  /* EP mode 5 (init: 0xFF) */
 #define REG_USB_EP_MODE_909D    XDATA_REG8(0x909D)  /* EP mode 6 (init: 0xFF) */
 #define REG_USB_STATUS_909E     XDATA_REG8(0x909E)  /* EP status (init: 0x03) */
-#define REG_USB_CTRL_90A0       XDATA_REG8(0x90A0)  /* Bulk strobe (auto-clears after write) */
+/*
+ * Bulk Endpoint Commit Strobe (0x90A0)
+ * Write 0x01 to finalize/commit a bulk endpoint command.
+ * Auto-clears after write (reads back 0x00).
+ *
+ * Always paired with REG_USB_BULK_EP_CMD (0x90E3):
+ *   90E3=0x01 + 90A0=0x01 → activate endpoint engine
+ *   90E3=0x02 + 90A0=0x01 → full DMA engine reset after transfer
+ */
+#define REG_USB_CTRL_90A0       XDATA_REG8(0x90A0)  /* Bulk EP commit strobe (auto-clears) */
 /*
  * Bulk DMA Trigger (0x90A1)
  * Write 0x01 to trigger bulk data transfer.
@@ -499,23 +521,62 @@
  */
 #define REG_USB_SW_DMA_TRIGGER  XDATA_REG8(0x90E1)
 /*
- * MSC Engine Gate Register (0x90E2)
- * CRITICAL for C42C bulk IN to work. Acts as a gate in the stock ISR:
- *   - Stock ISR checks 90E2 bit 0 before processing CBW_RECEIVED (9101 bit 6)
- *   - If 90E2=0, ISR exits without processing CBW (first pass)
- *   - 90E2 gets set to 0x01 via the EP_COMPLETE (bit 5) → 9096 path
- *   - On second ISR entry, 90E2=1, CBW processing proceeds
+ * MSC CBW Gate Register (0x90E2)
+ * Gates firmware access to received CBW data.  The stock ISR checks bit 0
+ * before processing a CBW_RECEIVED event (9101 bit 6):
+ *   - If 90E2=0, ISR skips CBW processing (hardware still receiving)
+ *   - If 90E2=1, ISR proceeds to read CBW from 0x911B-0x912E
+ *   - After processing, firmware writes 90E2=0x01 to re-arm the gate
+ *
+ * CRITICAL for C42C bulk IN to work — must be set to 0x01 during MSC init.
  *
  * Written to 0x01 during:
  *   - MSC engine init at 0xB20C (stock 0xB1C5 function)
  *   - ISR CBW second-pass entry at 0x1023/0x100D
+ *   - After each CBW is consumed (re-arm for next CBW)
  *
  * Volatile: does NOT retain value after hardware processing.
  * Must be written at the right time relative to C42C and hardware state.
  * Reading it back after C42C or DMA operations may return 0x00.
  */
 #define REG_USB_MODE            XDATA_REG8(0x90E2)
-#define REG_USB_EP_STATUS_90E3  XDATA_REG8(0x90E3)
+/*
+ * Bulk Endpoint Command Register (0x90E3) — WRITE-ONLY
+ *
+ * Controls the USB bulk endpoint engine and MSC CBW routing.
+ * NOT a status register — it is a command register that configures
+ * how the hardware handles bulk transfers.
+ *
+ * Commands:
+ *   0x01 = ACTIVATE: Initialize/activate the bulk endpoint engine.
+ *          MUST be paired with REG_USB_CTRL_90A0 = 0x01 (commit strobe).
+ *          Always preceded by 905F/905D configuration.
+ *          Used during: SET_CONFIGURATION, do_bulk_init, nvme_queue_init.
+ *
+ *   0x02 = ACK/ARM: Two distinct uses depending on context:
+ *
+ *          (a) During init / SET_CONFIG:
+ *              Arms the MSC engine for CBW reception.  After this write,
+ *              bulk OUT data is routed through the MSC parser which
+ *              deposits the parsed CBW fields at 0x911B-0x912E (tag,
+ *              transfer length, opcode, etc.) instead of raw data at 0x7000.
+ *              This is what enables USB_PERIPH_CBW_RECEIVED (9101 bit 6).
+ *
+ *          (b) After EP_COMPLETE event:
+ *              Acknowledges a completed bulk transfer and clears the
+ *              endpoint completion status.  Usually paired with
+ *              REG_USB_EP_READY = 0x01 to re-arm the endpoint.
+ *              Optionally followed by 90A0=0x01 for full DMA reset.
+ *
+ * Stock firmware usage patterns:
+ *   90E3=0x01; 90A0=0x01;            — activate endpoint engine
+ *   90E3=0x02; EP_READY=0x01;        — ack completion, re-arm endpoint
+ *   90E3=0x02; EP_READY=0x01; 90A0=0x01; — full transfer ack + DMA reset
+ *   90E3=0x02;                       — arm MSC for CBW (during init)
+ */
+#define REG_USB_BULK_EP_CMD     XDATA_REG8(0x90E3)
+#define   USB_BULK_EP_CMD_ACTIVATE  0x01  /* Activate endpoint engine (pair with 90A0=0x01) */
+#define   USB_BULK_EP_CMD_ACK       0x02  /* Ack transfer completion / arm MSC for CBW */
 
 /*
  * USB Link Status and Speed Registers (0x9100-0x912F)

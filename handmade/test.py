@@ -54,12 +54,15 @@ class TestDevice(unittest.TestCase):
     assert ctrl_read(self.dev, 0xF000)[0] == 0x00
 
   def test_bulk_out(self, check=True):
-    self.dev._tag += 1
     test = random.randint(0, 0x7FFF) | 0xC0DE0000
     cbw = struct.pack('<IIIBBB', test, self.dev._tag, 0, 0x80, 0, 16) + b'\xE8' + b'\x00' * 15
     self.dev._bulk_out(0x02, cbw)
     # CBW lands at 0x7000 — check test matches
     if check: self.assertEqual(struct.unpack('<I', ctrl_read(self.dev, 0x7000, size=4))[0], test)
+
+  def test_large_bulk_out(self):
+    self.dev._bulk_out(0x02, bytes(range(0xa0, 0xc0)))
+    hexdump(ctrl_read(self.dev, 0x7000, size=0x40))
 
   def test_bulk_in(self, check=True):
     # Write test data to D800 — firmware's BULK_IN_START handler will send it
