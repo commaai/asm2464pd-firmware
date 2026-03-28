@@ -1186,14 +1186,40 @@
 #define REG_VENDOR_CTRL_C362    XDATA_REG8(0xC362)  /* Vendor control 2 (bit 6/7 = read control) */
 
 //=============================================================================
-// NVMe Interface Registers (0xC400-0xC5FF)
+// NVMe / DMA Interface Registers (0xC400-0xC5FF)
 //=============================================================================
+/*
+ * DMA Controller (0xC400-0xC42D)
+ *
+ * Copies data from the USB bulk OUT buffer (0x7000) to the PCIe BAR (0xF000).
+ * Empirically verified trigger sequence:
+ *
+ *   1. Set transfer descriptor (C420-C42D):
+ *        C420=0x00  C421=0x01  C422=0x02  C423=0x00
+ *        C424=0x00  C425=0x00  C426=0x00  C427=<sector_count>
+ *        C428=0x30  C429=0x00  C42A=0x00  C42B=0x00
+ *        C42C=0x00  C42D=0x00
+ *
+ *   2. Arm and trigger:
+ *        C400=1  C401=1  C402=1  C404=1  C406=1
+ *
+ *   3. After DMA completes, 0x7000 is locked (reads as 0x55).
+ *      Unlock by writing C42A=0x01 (REG_NVME_DOORBELL).
+ *
+ * C427 (REG_NVME_DMA_ADDR_C427) = sector count: 0x01 = 512 bytes, 0x08 = 4096 bytes.
+ * C406 is the final trigger; it is not clearable by CPU write.
+ * C402 and C406 are undocumented in stock firmware (not referenced by ghidra decompilation).
+ * C404 is written with value 2 in stock firmware flash init routines.
+ */
 // NVMe DMA control (0xC4ED-0xC4EF)
 #define REG_NVME_DMA_CTRL_ED    XDATA_REG8(0xC4ED)  // NVMe DMA control
 #define REG_NVME_DMA_ADDR_LO    XDATA_REG8(0xC4EE)  // NVMe DMA address low
 #define REG_NVME_DMA_ADDR_HI    XDATA_REG8(0xC4EF)  // NVMe DMA address high
-#define REG_NVME_CTRL           XDATA_REG8(0xC400)
-#define REG_NVME_STATUS         XDATA_REG8(0xC401)
+#define REG_NVME_CTRL           XDATA_REG8(0xC400)   /* DMA arm bit 0 (write 1 to arm) */
+#define REG_NVME_STATUS         XDATA_REG8(0xC401)   /* DMA arm bit 1 (write 1 to arm) */
+#define REG_NVME_DMA_ARM2       XDATA_REG8(0xC402)   /* DMA arm bit 2 (write 1 to arm) */
+#define REG_NVME_DMA_ARM3       XDATA_REG8(0xC404)   /* DMA arm bit 3 (write 1 to arm; stock writes 2) */
+#define REG_NVME_DMA_TRIGGER    XDATA_REG8(0xC406)   /* DMA trigger (write 1 to fire; not CPU-clearable) */
 #define REG_NVME_CTRL_STATUS    XDATA_REG8(0xC412)
 #define   NVME_CTRL_WRITE_DIR    0x01  // Bit 0: 1=WRITE (host→device), 0=READ
 #define   NVME_CTRL_DMA_START    0x02  // Bit 1: Start DMA transfer
@@ -1227,8 +1253,8 @@
 #define REG_NVME_LBA_MID        XDATA_REG8(0xC423)
 #define REG_NVME_LBA_HIGH       XDATA_REG8(0xC424)
 #define REG_NVME_COUNT_LOW      XDATA_REG8(0xC425)
-#define REG_NVME_DMA_ADDR_C426  XDATA_REG8(0xC426)  /* DMA sector count / buffer addr high */
-#define REG_NVME_DMA_ADDR_C427  XDATA_REG8(0xC427)  /* DMA sector count / buffer addr low */
+#define REG_NVME_DMA_ADDR_C426  XDATA_REG8(0xC426)  /* DMA descriptor byte 6 */
+#define REG_NVME_DMA_ADDR_C427  XDATA_REG8(0xC427)  /* DMA sector count (0x01=512B, 0x08=4096B) */
 #define REG_NVME_COUNT_HIGH     XDATA_REG8(0xC426)  /* Alias for compatibility */
 #define REG_NVME_ERROR          XDATA_REG8(0xC427)  /* Alias for compatibility */
 #define REG_NVME_QUEUE_CFG      XDATA_REG8(0xC428)
@@ -1238,9 +1264,13 @@
 #define   NVME_CMD_PARAM_TYPE    0xE0  // Bits 5-7: Command parameter type
 /*
  * NVMe/MSC Doorbell (0xC42A)
- * Part of 900B/C42A "doorbell dance" for bulk IN transfers.
+ * Multi-purpose register used for bulk IN transfer setup AND DMA buffer unlock.
  *
- * Pre-trigger ramp up (before C42C write):
+ * DMA buffer unlock (empirically verified):
+ *   After a DMA trigger (C406=1), the 0x7000 bulk OUT buffer is locked
+ *   (reads as 0x55). Writing C42A=0x01 unlocks it for the next transfer.
+ *
+ * Bulk IN pre-trigger ramp up (before C42C write):
  *   C42A |= 0x01, |= 0x02, |= 0x04, |= 0x08, |= 0x10
  * Post-trigger teardown:
  *   C42A &= ~0x01, &= ~0x02, &= ~0x04, &= ~0x08, &= ~0x10
@@ -1253,7 +1283,7 @@
  * the MSC init dance reads and modifies bits in specific order.
  */
 #define REG_NVME_DOORBELL       XDATA_REG8(0xC42A)
-#define   NVME_DOORBELL_BIT0      0x01  // Bit 0: MSC/queue doorbell
+#define   NVME_DOORBELL_DMA_UNLOCK 0x01  // Bit 0: DMA buffer unlock / MSC doorbell
 #define   NVME_DOORBELL_BIT1      0x02  // Bit 1: Queue config
 #define   NVME_DOORBELL_BIT2      0x04  // Bit 2: Queue config
 #define   NVME_DOORBELL_BIT3      0x08  // Bit 3: Queue config
