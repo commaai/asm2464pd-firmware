@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal PCIe bringup for ASM2464PD."""
+"""Minimal PCIe bringup for ASM2464PD — 42 writes."""
 
 import ctypes, sys, time
 from tinygrad.runtime.support.usb import USB3
@@ -50,87 +50,53 @@ def main():
     dev = ASM2464PD()
     dev.open()
     try:
-        # === Power ===
-        dev.set_bits(0xC656, 0x20)                       # 1  REG_HDDPC_CTRL: enable PCIE_3V3 (bit 5)
-        dev.set_bits(0xC65B, 0x20)                       # 2  REG_PHY_EXT_5B: PHY mode for 3.3V output
-        dev.set_bits(0xC659, 0x01)                       # 3  REG_PCIE_LANE_CTRL: enable 12V (bit 0)
+        # === Power: enable 3.3V and 12V ===
+        dev.set_bits(0xC656, 0x20)                       # REG_HDDPC_CTRL: enable PCIE_3V3 (bit 5)
+        dev.set_bits(0xC659, 0x01)                       # REG_PCIE_LANE_CTRL: enable 12V (bit 0)
 
-        # === PERST: CfgWr0 to 0x00D00014 ===
-        dev.write(0xB455, 0x02)                          # 4  REG_PCIE_LTSSM_B455: clear link detect
-        dev.write(0xB455, 0x04)                          # 5  REG_PCIE_LTSSM_B455: arm link detect
-        dev.write(0xB2D5, 0x01)                          # 6  REG_PCIE_CTRL_B2D5: enable config routing
-        dev.write(0xB296, 0x08)                          # 7  REG_PCIE_STATUS: reset TLP engine
-        for i in range(12): dev.write(0xB210+i, 0x00)   # 8  clear TLP header (12 writes)
-        dev.write(0xB210, 0x40)                          # 9  REG_PCIE_FMT_TYPE: CfgWr0
-        dev.write(0xB213, 0x01)                          # 10 REG_PCIE_TLP_CTRL: 1 DW
-        dev.write(0xB217, 0x0F)                          # 11 REG_PCIE_BYTE_EN: all 4 bytes
-        dev.write(0xB216, 0x20)                          # 12 REG_PCIE_TLP_LENGTH
-        dev.write(0xB218, 0x00)                          # 13 addr[7:0]
-        dev.write(0xB219, 0xD0)                          # 14 addr[15:8]
-        dev.write(0xB21A, 0x00)                          # 15 addr[23:16]
-        dev.write(0xB21B, 0x14)                          # 16 addr[31:24]
-        dev.write(0xB220, 0x00)                          # 17 data[0]
-        dev.write(0xB221, 0x46)                          # 18 data[1]
-        dev.write(0xB222, 0x40)                          # 19 data[2]
-        dev.write(0xB223, 0x01)                          # 20 data[3]
-        dev.write(0xB296, 0x01)                          # 21 clear error
-        dev.write(0xB296, 0x02)                          # 22 clear completion
-        dev.write(0xB296, 0x04)                          # 23 arm busy
-        dev.write(0xB254, 0x0F)                          # 24 REG_PCIE_TRIGGER: execute
-        for _ in range(100):                             #    poll busy
+        # === CfgWr0 TLP to 0x00D00014 (link speed config, required for TLP routing) ===
+        dev.write(0xB296, 0x08)                          # REG_PCIE_STATUS: reset TLP engine
+        for i in range(12): dev.write(0xB210+i, 0x00)   # clear TLP header window (12 writes)
+        dev.write(0xB210, 0x40)                          # REG_PCIE_FMT_TYPE: CfgWr0
+        dev.write(0xB213, 0x01)                          # REG_PCIE_TLP_CTRL: 1 DW
+        dev.write(0xB217, 0x0F)                          # REG_PCIE_BYTE_EN: all 4 bytes enabled
+        dev.write(0xB216, 0x20)                          # REG_PCIE_TLP_LENGTH
+        dev.write(0xB218, 0x00)                          # REG_PCIE_ADDR_0: addr = 0x1400D000
+        dev.write(0xB219, 0xD0)                          # REG_PCIE_ADDR_1
+        dev.write(0xB21A, 0x00)                          # REG_PCIE_ADDR_2
+        dev.write(0xB21B, 0x14)                          # REG_PCIE_ADDR_3
+        dev.write(0xB220, 0x00)                          # REG_PCIE_DATA_0: data = 0x01404600
+        dev.write(0xB221, 0x46)                          # REG_PCIE_DATA_1
+        dev.write(0xB222, 0x40)                          # REG_PCIE_DATA_2
+        dev.write(0xB223, 0x01)                          # REG_PCIE_DATA_3
+        dev.write(0xB296, 0x01)                          # REG_PCIE_STATUS: clear error flag
+        dev.write(0xB296, 0x02)                          # REG_PCIE_STATUS: clear completion flag
+        dev.write(0xB296, 0x04)                          # REG_PCIE_STATUS: arm busy flag
+        dev.write(0xB254, 0x0F)                          # REG_PCIE_TRIGGER: execute TLP
+        for _ in range(100):                             # poll for TLP completion
             if dev.read8(0xB296) & 0x04: break
             time.sleep(0.001)
-        dev.write(0xB296, 0x04)                          # 25 clear busy
+        dev.write(0xB296, 0x04)                          # clear busy flag
 
-        # === PERST deassert ===
-        dev.clear_bits(0xB480, 0x01)                     # 26 deassert PERST#
+        # === Deassert PERST# ===
+        dev.clear_bits(0xB480, 0x01)                     # REG_PCIE_PERST_CTRL: release device from reset
 
-        # === Gen3 retraining ===
-        dev.write(0xCA06, (dev.read8(0xCA06) & 0x1F) | 0x20)  # 27 REG_CPU_MODE_NEXT: Gen3
-        dev.set_bits(0xB403, 0x01)                       # 28 REG_TUNNEL_CTRL_B403: enable
-        # lane_config(0x0C) inlined
-        dev.clear_bits(0xB402, 0x02)                     # 29 REG_PCIE_CTRL_B402: disable during reconfig
-        dev.clear_bits(0xB402, 0x02)                     # 30 (redundant, matches stock)
-        current = dev.read8(0xB434) & 0x0F               #    read current lane mask
-        counter = 0x01
-        for _ in range(4):                               # 31-34 progressive lane disable
-            if current == 0x0C: break
-            new = current & (0x0C | (counter ^ 0x0F))
-            current = new
-            b434 = dev.read8(0xB434)
-            dev.write(0xB434, new | (b434 & 0xF0))
-            time.sleep(0.01)
-            counter = (counter << 1) & 0xFF
-        dev.set_bits(0xB401, 0x01)                       # 35 REG_PCIE_TUNNEL_CTRL: pulse enable
-        dev.write(0xB401, dev.read8(0xB401) & 0xFE)     # 36 REG_PCIE_TUNNEL_CTRL: pulse disable
-        b436 = dev.read8(0xB436)
-        dev.write(0xB436, (b436 & 0xF0) | (0x0C & 0x0E)) # 37 REG_PCIE_LANE_CONFIG: low nibble
-        b404 = dev.read8(0xB404)
-        upper = ((b404 & 0x0F) ^ 0x0F) << 4
-        b436 = dev.read8(0xB436)
-        dev.write(0xB436, (b436 & 0x0F) | (upper & 0xF0)) # 38 REG_PCIE_LANE_CONFIG: high nibble
-        # end lane_config
-
-        dev.write(0xE710, (dev.read8(0xE710) & 0xE0) | 0x1F)  # 39 REG_LINK_WIDTH: all lanes for EQ
-        dev.write(0xE751, 0x01)                          # 40 REG_PHY_POLL: equalization mode
-        # E764 training trigger
-        dev.write(0xE764, (dev.read8(0xE764) & 0xF7) | 0x08)  # 41 set bit 3
-        dev.write(0xE764, dev.read8(0xE764) & 0xFB)     # 42 clear bit 2
-        dev.write(0xE764, dev.read8(0xE764) & 0xFE)     # 43 clear bit 0
-        dev.write(0xE764, (dev.read8(0xE764) & 0xFD) | 0x02)  # 44 set bit 1 (start training)
-        # poll RXPLL
-        for _ in range(200):
-            if dev.read8(0xE762) & 0x10: break
+        # === Gen3 link training ===
+        dev.set_bits(0xB403, 0x01)                       # REG_TUNNEL_CTRL_B403: enable tunnel
+        dev.write(0xE764, (dev.read8(0xE764) & 0xF7) | 0x08)  # REG_PHY_TIMER_CTRL: set bit 3 (training prep)
+        dev.write(0xE764, (dev.read8(0xE764) & 0xFD) | 0x02)  # REG_PHY_TIMER_CTRL: set bit 1 (start training)
+        for _ in range(200):                             # poll RXPLL for link training completion
+            if dev.read8(0xE762) & 0x10: break           # REG_PHY_RXPLL_STATUS bit 4 = trained
             time.sleep(0.01)
 
-        # === Post-train ===
-        dev.clear_bits(0xB430, 0x01)                     # 45 REG_TUNNEL_LINK_STATE: clear
-        dev.bank1_or_bits(0x6025, 0x80)                  # 46 TLP routing enable
-        dev.write(0xB455, 0x02)                          # 47 clear link detect
-        dev.write(0xB455, 0x04)                          # 48 arm link detect
-        dev.write(0xB2D5, 0x01)                          # 49 config routing
-        dev.write(0xB296, 0x08)                          # 50 reset TLP engine
-        for _ in range(200):                             #    poll link detect
+        # === Post-train: enable TLP forwarding ===
+        dev.clear_bits(0xB430, 0x01)                     # REG_TUNNEL_LINK_STATE: clear link-up bit
+        dev.bank1_or_bits(0x6025, 0x80)                  # bank1 0x6025 bit 7: TLP routing enable
+        dev.write(0xB455, 0x02)                          # REG_PCIE_LTSSM_B455: clear link detect flag
+        dev.write(0xB455, 0x04)                          # REG_PCIE_LTSSM_B455: arm link detect
+        dev.write(0xB2D5, 0x01)                          # REG_PCIE_CTRL_B2D5: enable config routing
+        dev.write(0xB296, 0x08)                          # REG_PCIE_STATUS: reset TLP engine
+        for _ in range(200):                             # poll for downstream device detection
             if dev.read8(0xB455) & 0x02:
                 dev.write(0xB455, 0x02); break
             time.sleep(0.005)
