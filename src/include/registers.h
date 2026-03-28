@@ -10,12 +10,17 @@
  * Organized by functional block in address order.
  *
  * Address Space Layout:
- *   0x7000-0x7FFF  USB bulk OUT landing buffer (read-only to CPU, written by HW)
- *   0x8000-0x8FFF  Writable XDATA (NOT aliased with 0xF000)
- *   0x9000-0x93FF  USB Interface
- *   0xA000-0xAFFF  Writable XDATA
- *   0xB000-0xB1FF  NVMe Admin Queues
- *   0xB200-0xB4FF  PCIe Passthrough / Tunnel
+ *   0x0000-0x5FFF  Working memory, globals, tables
+ *   0x6000-0x6FFF  Reserved
+ *   0x7000-0x7FFF  Flash buffer (4KB, read-only to CPU, written by USB/flash HW)
+ *   0x8000-0x8FFF  USB data buffer (4KB window into SRAM at PCI 0x00200000+)
+ *   0x9000-0x9FFF  MMIO: USB controller
+ *   0xA000-0xAFFF  NVMe IOSQ (4KB window into SRAM at PCI 0x00820000+)
+ *   0xB000-0xB1FF  NVMe Admin Submission/Completion Queues (ASQ/ACQ)
+ *   0xB200-0xB29F  PCIe TLP Engine (fmt/type, address, data, trigger)
+ *   0xB2A0-0xB2DF  PCIe TLP Engine (secondary port, mirrors B200-B29F)
+ *   0xB300-0xB3DF  PCIe TLP Engine (port 2/3 mirrors)
+ *   0xB400-0xB4FF  PCIe Link / Bridge Config (LTSSM, PERST, lane ctrl)
  *   0xC000-0xC0FF  UART Controller
  *   0xC200-0xC2FF  Link/PHY Control
  *   0xC400-0xC5FF  NVMe / MSC Interface
@@ -24,14 +29,30 @@
  *   0xCA00-0xCAFF  CPU Mode
  *   0xCC00-0xCCFF  Timer / CPU Control
  *   0xCE00-0xCEFF  SCSI DMA / Transfer Control
- *   0xD800-0xDFFF  USB Endpoint Buffer (MSC data/CSW)
+ *   0xD000-0xD3FF  MSC Command/Data Buffer (1KB, aliases at 0xD400)
+ *   0xD800-0xDFFF  USB Endpoint Buffer (MSC data/CSW, aliases at 0xE000)
  *   0xE300-0xE3FF  PHY Completion / Debug
  *   0xE400-0xE4FF  Command Engine
  *   0xE600-0xE6FF  Debug/Interrupt
  *   0xE700-0xE7FF  System Status / Link Control
  *   0xEC00-0xECFF  NVMe Event
  *   0xEF00-0xEFFF  System Control
- *   0xF000-0xFFFF  Writable XDATA (NOT aliased with 0x8000)
+ *   0xF000-0xFFFF  NVMe data buffer (4KB window into SRAM at PCI 0x00200000+)
+ *
+ * Internal SRAM (PCI address space, accessible via DMA engines):
+ *   0x00200000  Data buffer (~6 MB) — GPU can DMA to/from here
+ *   0x00820000  Queue region — NVMe completion queue descriptors
+ *
+ * XDATA windows into SRAM:
+ *   0x8000 is a window into SRAM at PCI 0x200000+ (offset unknown)
+ *   0xF000 is a window into SRAM at PCI 0x200000+ (offset unknown)
+ *   0xA000 is a window into SRAM at PCI 0x820000+ (confirmed: CE00 DMA
+ *          completion descriptors appear here after CE00=0x03 trigger)
+ *   0x8000 and 0xF000 are NOT aliased (different offsets into SRAM).
+ *   The window base offset register has not been found — sweeping all
+ *   MMIO registers (0x9000-0xEFFF, 0x0000-0x5FFF) did not reveal a
+ *   register that moves the F000 window when changed.  The offset may
+ *   be fixed in hardware or controlled by an SFR not accessible via XDATA.
  *
  * DMA Paths for USB Data:
  *   EP0 Control (0x9092): descriptor/control transfers via 0x9E00 buffer
@@ -250,6 +271,9 @@
  *   Phase 11: full ramp up + teardown (re-arm MSC engine)
  */
 #define REG_USB_MSC_CFG         XDATA_REG8(0x900B)
+#define   USB_MSC_CFG_ENABLE      0x01  // Bit 0: MSC engine enable
+#define   USB_MSC_CFG_BULK_PATH   0x02  // Bit 1: MSC bulk data path enable
+#define   USB_MSC_CFG_DMA_PATH    0x04  // Bit 2: MSC DMA path enable
 #define REG_USB_ALT_SETTING_L   XDATA_REG8(0x900C)  /* Alt setting wValue low (written by SET_INTERFACE) */
 #define REG_USB_ALT_SETTING_H   XDATA_REG8(0x900D)  /* Alt setting wValue high */
 #define REG_USB_ALT_SETTING2_L  XDATA_REG8(0x900E)  /* Alt setting wValue low (duplicate) */
@@ -828,7 +852,39 @@
 // PCIe TLP registers (0xB210-0xB284)
 /* Raw byte access to B210-B21B request header window (12 bytes). */
 #define REG_PCIE_TLP_BYTE(off)  XDATA_REG8V(0xB210 + (off))
+/*
+ * PCIe TLP Format/Type (0xB210)
+ *
+ * PCIe TLP format/type byte encoding (PCIe Base Spec 3.0, Table 2-3):
+ *   Bits [7:5] = Fmt (Format):
+ *     000 = 3DW header, no data payload
+ *     001 = 4DW header, no data payload
+ *     010 = 3DW header, with data payload
+ *     011 = 4DW header, with data payload
+ *   Bits [4:0] = Type:
+ *     00000 = Memory Read/Write (MRd/MWr)
+ *     00100 = Config Read/Write Type 0 (CfgRd0/CfgWr0)
+ *     00101 = Config Read/Write Type 1 (CfgRd1/CfgWr1)
+ *
+ * Bit 6 (0x40) = data payload present (i.e., write operation)
+ * Bit 5 (0x20) = 4DW header (64-bit addressing)
+ *
+ * Use PCIE_FMT_HAS_DATA to test if a TLP type is a write.
+ */
 #define REG_PCIE_FMT_TYPE       XDATA_REG8V(0xB210)
+#define   PCIE_FMT_HAS_DATA       0x40  /* Bit 6: TLP carries a data payload (write) */
+#define   PCIE_FMT_4DW_HDR        0x20  /* Bit 5: 4DW header (64-bit address) */
+/* Memory Read/Write (Type 0x00) */
+#define   PCIE_FMT_MEM_READ       0x00  /* MRd:   3DW header, no data, 32-bit addr */
+#define   PCIE_FMT_MEM_WRITE      0x40  /* MWr:   3DW header, with data, 32-bit addr */
+#define   PCIE_FMT_MEM_READ64     0x20  /* MRd64: 4DW header, no data, 64-bit addr */
+#define   PCIE_FMT_MEM_WRITE64    0x60  /* MWr64: 4DW header, with data, 64-bit addr */
+/* Config Read/Write Type 0 (targets device on local bus) */
+#define   PCIE_FMT_CFG_READ_0     0x04  /* CfgRd0: 3DW header, no data */
+#define   PCIE_FMT_CFG_WRITE_0    0x44  /* CfgWr0: 3DW header, with data */
+/* Config Read/Write Type 1 (forwarded by bridges to downstream bus) */
+#define   PCIE_FMT_CFG_READ_1     0x05  /* CfgRd1: 3DW header, no data */
+#define   PCIE_FMT_CFG_WRITE_1    0x45  /* CfgWr1: 3DW header, with data */
 #define REG_PCIE_TLP_CTRL       XDATA_REG8V(0xB213)
 #define REG_PCIE_TLP_LENGTH     XDATA_REG8V(0xB216)
 #define REG_PCIE_BYTE_EN        XDATA_REG8V(0xB217)
@@ -854,10 +910,48 @@
  */
 #define REG_PCIE_EXT_STATUS     XDATA_REG8V(0xB223)
 #define   PCIE_EXT_STATUS_PLL_LOCK 0x01  // Bit 0: PLL/CDR lock confirmed
+/*
+ * PCIe Completion Header (0xB224-0xB22D)
+ *
+ * After a non-posted TLP (MRd, CfgRd, CfgWr) completes, the hardware
+ * writes the completion TLP header into these registers.
+ *
+ * B22A:B22B (16-bit, big-endian) — Completion Status + Byte Count:
+ *   Bits [15:13] = Completion Status (PCIe Base Spec 3.0, Table 2-33):
+ *     000 (0) = Successful Completion (SC)
+ *     001 (1) = Unsupported Request (UR) — no device claimed the address
+ *     010 (2) = Configuration Request Retry Status (CRS)
+ *     100 (4) = Completer Abort (CA) — device internal error
+ *   Bit  [12]   = reserved
+ *   Bits [11:0]  = Byte Count — number of data bytes in completion
+ *                  (always 4 for config requests, equals request size for mem)
+ *
+ * B284 — Completion Type:
+ *   Bit 0: CplD indicator — set if completion carries data (reads).
+ *          For config reads: bit 0 should be SET (CplD).
+ *          For config writes: bit 0 should be CLEAR (Cpl, no data).
+ *          For memory reads to unclaimed addresses, the hardware may set
+ *          PCIE_STATUS_COMPLETE in B296 even though B22A reports UR.
+ *          Always check the completion status field in B22A:B22B.
+ *
+ * IMPORTANT: B296 PCIE_STATUS_COMPLETE only indicates the TLP engine
+ * finished processing — it does NOT mean the request succeeded.
+ * The completion status in B22A bits [15:13] must be checked to detect
+ * Unsupported Request (UR) errors from unclaimed PCIe addresses.
+ */
 #define REG_PCIE_TLP_CPL_HEADER XDATA_REG32(0xB224)
+#define REG_PCIE_CPL_HDR_HI     XDATA_REG8V(0xB22A)   /* Completion header high: status[7:5], bytecount[3:0] (upper) */
+#define REG_PCIE_CPL_HDR_LO     XDATA_REG8V(0xB22B)   /* Completion header low: bytecount[7:0] (lower) */
+#define   PCIE_CPL_STATUS_MASK    0xE0  /* Bits [7:5] of B22A = completion status [15:13] */
+#define   PCIE_CPL_STATUS_SC      0x00  /* Successful Completion */
+#define   PCIE_CPL_STATUS_UR      0x20  /* Unsupported Request */
+#define   PCIE_CPL_STATUS_CRS     0x40  /* Config Request Retry */
+#define   PCIE_CPL_STATUS_CA      0x80  /* Completer Abort */
+/* Legacy aliases */
 #define REG_PCIE_LINK_STATUS    XDATA_REG16V(0xB22A)
-#define REG_PCIE_LINK_STATUS_8  XDATA_REG8V(0xB22A)
 #define REG_PCIE_CPL_STATUS     XDATA_REG8V(0xB22B)
+#define REG_PCIE_LINK_STATUS_LO XDATA_REG8V(0xB22A)
+#define REG_PCIE_LINK_STATUS_HI XDATA_REG8V(0xB22B)
 #define REG_PCIE_CPL_DATA       XDATA_REG8V(0xB22C)
 #define REG_PCIE_CPL_DATA_ALT   XDATA_REG8V(0xB22D)
 
@@ -895,7 +989,13 @@
 #define REG_PCIE_DMA_BUF_D      XDATA_REG8(0xB26F)   // DMA buffer config D
 #define REG_PCIE_DMA_CTRL_B281  XDATA_REG8(0xB281)   // DMA control
 #define REG_PCIE_PM_ENTER       XDATA_REG8(0xB255)
+/*
+ * PCIe Completion Type (0xB284)
+ * Bit 0: CplD — completion carries data (set for reads, clear for writes).
+ * See B22A:B22B documentation above for full completion validation.
+ */
 #define REG_PCIE_COMPL_STATUS   XDATA_REG8(0xB284)
+#define   PCIE_COMPL_HAS_DATA     0x01  /* Bit 0: Completion carries data (CplD) */
 #define REG_PCIE_POWER_B294     XDATA_REG8(0xB294)  /* PCIe power control */
 // PCIe status registers (0xB296-0xB298)
 #define REG_PCIE_STATUS         XDATA_REG8V(0xB296)
@@ -1641,6 +1741,24 @@
  */
 #define REG_SCSI_DMA_CTRL       XDATA_REG8(0xCE00)  /* Write 0x03 to start, poll 0x00 for done */
 #define REG_SCSI_DMA_PARAM      XDATA_REG8(0xCE01)  /* DMA parameter (upper 2 bits | tag value) */
+/*
+ * SCSI DMA SRAM Write Pointer (0xCE10-0xCE13)
+ * 32-bit PCI address, big-endian byte order.
+ * This is the SRAM address that CE00=0x03 writes to.
+ * Auto-increments by 0x4000 per CE00=0x03 trigger.
+ * Writable — can be set to target a specific SRAM offset.
+ * Must be 0x00 in CE01 for CE00=0x03 to generate a completion.
+ *
+ * Observed: the completion queue entry at 0xA000 dw6 (offset 0x18)
+ * matches this value (also big-endian PCI address).
+ *
+ * Example: to target PCI 0x00200000:
+ *   CE10=0x00, CE11=0x20, CE12=0x00, CE13=0x00
+ */
+#define REG_SCSI_DMA_SRAM_PTR_0 XDATA_REG8(0xCE10)  /* SRAM write pointer byte 0 (BE: MSB) */
+#define REG_SCSI_DMA_SRAM_PTR_1 XDATA_REG8(0xCE11)  /* SRAM write pointer byte 1 */
+#define REG_SCSI_DMA_SRAM_PTR_2 XDATA_REG8(0xCE12)  /* SRAM write pointer byte 2 */
+#define REG_SCSI_DMA_SRAM_PTR_3 XDATA_REG8(0xCE13)  /* SRAM write pointer byte 3 (BE: LSB) */
 #define REG_SCSI_DMA_CFG_CE36   XDATA_REG8(0xCE36)  // SCSI DMA config 0xCE36
 #define REG_SCSI_DMA_TAG_CE3A   XDATA_REG8(0xCE3A)  // SCSI DMA tag storage
 
@@ -1971,43 +2089,6 @@
 // System Control (0xEF00-0xEFFF)
 //=============================================================================
 #define REG_CRITICAL_CTRL       XDATA_REG8(0xEF4E)
-
-//=============================================================================
-// PCIe TLP Format/Type Codes (for REG_PCIE_FMT_TYPE at 0xB210)
-//=============================================================================
-/*
- * PCIe TLP format/type byte encoding (PCIe Base Spec 3.0, Table 2-3):
- *   Bits [7:5] = Fmt (Format):
- *     000 = 3DW header, no data payload
- *     001 = 4DW header, no data payload
- *     010 = 3DW header, with data payload
- *     011 = 4DW header, with data payload
- *   Bits [4:0] = Type:
- *     00000 = Memory Read/Write (MRd/MWr)
- *     00100 = Config Read/Write Type 0 (CfgRd0/CfgWr0)
- *     00101 = Config Read/Write Type 1 (CfgRd1/CfgWr1)
- *
- * Bit 6 (0x40) = data payload present (i.e., write operation)
- * Bit 5 (0x20) = 4DW header (64-bit addressing)
- *
- * Use PCIE_FMT_HAS_DATA to test if a TLP type is a write.
- */
-#define PCIE_FMT_HAS_DATA       0x40  /* Bit 6: TLP carries a data payload (write) */
-#define PCIE_FMT_4DW_HDR        0x20  /* Bit 5: 4DW header (64-bit address) */
-
-/* Memory Read/Write (Type 0x00) */
-#define PCIE_FMT_MEM_READ       0x00  /* MRd:   3DW header, no data, 32-bit addr */
-#define PCIE_FMT_MEM_WRITE      0x40  /* MWr:   3DW header, with data, 32-bit addr */
-#define PCIE_FMT_MEM_READ64     0x20  /* MRd64: 4DW header, no data, 64-bit addr */
-#define PCIE_FMT_MEM_WRITE64    0x60  /* MWr64: 4DW header, with data, 64-bit addr */
-
-/* Config Read/Write Type 0 (targets device on local bus) */
-#define PCIE_FMT_CFG_READ_0     0x04  /* CfgRd0: 3DW header, no data */
-#define PCIE_FMT_CFG_WRITE_0    0x44  /* CfgWr0: 3DW header, with data */
-
-/* Config Read/Write Type 1 (forwarded by bridges to downstream bus) */
-#define PCIE_FMT_CFG_READ_1     0x05  /* CfgRd1: 3DW header, no data */
-#define PCIE_FMT_CFG_WRITE_1    0x45  /* CfgWr1: 3DW header, with data */
 
 //=============================================================================
 // Bank-Selected Registers (0x0xxx-0x2xxx)

@@ -66,8 +66,10 @@ CFGRD0 = 0x04  # Config Read Type 0 (local, bus 0)
 CFGRD1 = 0x05  # Config Read Type 1 (routed, bus > 0)
 CFGWR0 = 0x44  # Config Write Type 0
 CFGWR1 = 0x45  # Config Write Type 1
-MRD32  = 0x20  # Memory Read 32-bit
-MWR32  = 0x60  # Memory Write 32-bit
+MRD32  = 0x00  # Memory Read 3DW (32-bit address)
+MWR32  = 0x40  # Memory Write 3DW (32-bit address)
+MRD64  = 0x20  # Memory Read 4DW (64-bit address)
+MWR64  = 0x60  # Memory Write 4DW (64-bit address)
 
 
 def pcie_request(handle, fmt_type, address, value=None, size=4, verbose=False, retries=10):
@@ -106,20 +108,51 @@ def pcie_request(handle, fmt_type, address, value=None, size=4, verbose=False, r
     if ret < 0:
         raise IOError(f"F0 IN failed: {ret}")
 
-    status = buf_in[7]
-    if status == 0x01:
-        # Unsupported Request — retry
+    fw_status = buf_in[7]
+    if fw_status == 0x01:
+        # Firmware saw B296 error bit — retry (link glitch)
         if retries > 0:
             return pcie_request(handle, fmt_type, address, value, size, verbose, retries - 1)
         raise RuntimeError(f"Unsupported Request at 0x{address:08X} (fmt=0x{fmt_type:02X})")
-    if status == 0xFF:
+    if fw_status == 0xFF:
         raise TimeoutError(f"PCIe completion timeout at 0x{address:08X} (fmt=0x{fmt_type:02X})")
+
+    # Validate PCIe completion header (B22A:B22B) and completion type (B284)
+    is_cfg = (fmt_type & 0xBE) == 0x04
+    cpl_header = struct.unpack('>H', bytes(buf_in[4:6]))[0]
+    b284 = buf_in[6]
+    cpl_status = (cpl_header >> 13) & 0x7
+    cpl_byte_count = cpl_header & 0xFFF
+    expected_bc = 4 if is_cfg else size
+
+    CPL_STATUS_MAP = {
+        0b001: f"Unsupported Request at 0x{address:08X}",
+        0b010: f"Configuration Request Retry Status at 0x{address:08X}",
+        0b100: f"Completer Abort at 0x{address:08X}",
+    }
+
+    if cpl_status:
+        msg = CPL_STATUS_MAP.get(cpl_status, f"Reserved completion status 0b{cpl_status:03b} at 0x{address:08X}")
+        if cpl_status == 0b001 and retries > 0:
+            return pcie_request(handle, fmt_type, address, value, size, verbose, retries - 1)
+        raise RuntimeError(msg)
+
+    # For config requests, validate B284 consistency:
+    #   reads should have B284 bit 0 set (CplD), writes should not (Cpl)
+    if is_cfg:
+        if value is None and not (b284 & 0x01):
+            raise RuntimeError(f"Config read at 0x{address:08X}: expected CplD (B284 bit 0), got 0x{b284:02X}")
+        if value is not None and (b284 & 0x01):
+            raise RuntimeError(f"Config write at 0x{address:08X}: unexpected CplD (B284=0x{b284:02X})")
+
+    if cpl_byte_count != expected_bc:
+        raise RuntimeError(f"Completion byte count mismatch at 0x{address:08X}: "
+                           f"expected {expected_bc}, got {cpl_byte_count}")
 
     # Extract completion data
     raw = struct.unpack('>I', bytes(buf_in[0:4]))[0]
     result = (raw >> (8 * offset)) & ((1 << (8 * size)) - 1)
     if verbose:
-        is_cfg = (fmt_type & 0xBE) == 0x04
         print(f"  PCIe {'cfg' if is_cfg else 'mem'} read 0x{address:08X} = 0x{result:0{size*2}X}")
     return result
 
@@ -141,13 +174,15 @@ def pcie_cfg_write(handle, byte_addr, value, bus=0, dev=0, fn=0, size=4, verbose
 
 
 def pcie_mem_read(handle, address, size=4, verbose=False):
-    """PCIe memory read (32-bit address)."""
-    return pcie_request(handle, MRD32, address, size=size, verbose=verbose)
+    """PCIe memory read (auto 3DW/4DW based on address)."""
+    fmt = MRD64 if address > 0xFFFFFFFF else MRD32
+    return pcie_request(handle, fmt, address, size=size, verbose=verbose)
 
 
 def pcie_mem_write(handle, address, value, size=4, verbose=False):
-    """PCIe memory write (32-bit address)."""
-    return pcie_request(handle, MWR32, address, value=value, size=size, verbose=verbose)
+    """PCIe memory write (auto 3DW/4DW based on address)."""
+    fmt = MWR64 if address > 0xFFFFFFFF else MWR32
+    return pcie_request(handle, fmt, address, value=value, size=size, verbose=verbose)
 
 
 # =============================================================================
