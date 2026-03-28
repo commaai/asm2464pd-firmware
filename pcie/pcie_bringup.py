@@ -385,9 +385,9 @@ def phy_soft_reset(dev):
     dev.write(CA70, 0x00)
     # E780 = 0x00
     dev.write(E780, 0x00)
-    # E716 = 0x00, then 0x03
-    dev.write(E716, 0x00)
-    dev.write(E716, 0x03)
+    # E716 = 0x00, then 0x03 (kills USB3)
+    #dev.write(E716, 0x00)
+    #dev.write(E716, 0x03)
     # Timer wait + E712 polling
     dev.write(CC11, 0x04)
     dev.write(CC11, 0x02)
@@ -551,14 +551,14 @@ def pcie_pre_init(dev):
     pcie_link_controller_init(dev)
     phy_soft_reset(dev)
     # C233 &= 0xFC
-    dev.clear_bits(C233, 0x03)
+    #dev.clear_bits(C233, 0x03)
     # C233 = (C233 & 0xFB) | 0x04
-    c233 = dev.read8(C233)
-    dev.write(C233, (c233 & 0xFB) | 0x04)
+    #c233 = dev.read8(C233)
+    #dev.write(C233, (c233 & 0xFB) | 0x04)
     # Timer wait ~20 ticks mode 2
-    timer_wait(dev, 0x00, 0x14, 0x02)
+    #timer_wait(dev, 0x00, 0x14, 0x02)
     # C233 &= 0xFB
-    dev.clear_bits(C233, 0x04)
+    #dev.clear_bits(C233, 0x04)
     # Timer start + E712 poll
     dev.write(CC11, 0x04)
     dev.write(CC11, 0x02)
@@ -696,13 +696,13 @@ def pcie_tunnel_setup_reinit(dev):
     pcie_link_controller_reinit(dev)
     phy_soft_reset(dev)
     # C233 &= 0xFC
-    dev.clear_bits(C233, 0x03)
+    #dev.clear_bits(C233, 0x03)
     # C233 = (C233 & 0xFB) | 0x04
-    c233 = dev.read8(C233)
-    dev.write(C233, (c233 & 0xFB) | 0x04)
-    timer_wait(dev, 0x00, 0x14, 0x02)
+    #c233 = dev.read8(C233)
+    #dev.write(C233, (c233 & 0xFB) | 0x04)
+    #timer_wait(dev, 0x00, 0x14, 0x02)
     # C233 &= 0xFB
-    dev.clear_bits(C233, 0x04)
+    #dev.clear_bits(C233, 0x04)
     # Timer start + E712 poll
     dev.write(CC11, 0x04)
     dev.write(CC11, 0x02)
