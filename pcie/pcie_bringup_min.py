@@ -66,21 +66,23 @@ def main():
         # verify firmware set B213
         assert dev.read8(0xB213) == 0x01, f"B213=0x{dev.read8(0xB213):02X}, firmware didn't set TLP_CTRL"
 
-        # === Power + Deassert PERST# ===
-        dev.write(0xB480, 0x01)                          # 0. assert PERST#
-        dev.write(0xC656, 0x20)                          # 1. enable 3.3V
-        dev.write(0xC659, 0x01)                          # 2. enable 12V
+        # === PCIe setup + Assert PERST# to force clean state ===
+        dev.clear_bits(0xB430, 0x01)                     # clear tunnel link state
+        dev.bank1_or_bits(0x6025, 0x80)                  # TLP routing enable
+        dev.set_bits(0xB480, 0x01)                       # assert PERST#
 
-        # === Gen3 link training ===
-        dev.write(0xE764, 0x1E)                          # 4. training trigger
-        poll(dev, 0xE762, 0x10, mask=0x10, name="RXPLL lock")
+        # === Power ===
+        dev.set_bits(0xC656, 0x20)                       # enable 3.3V
+        dev.set_bits(0xC659, 0x01)                       # enable 12V
 
-        # === Post-train ===
-        dev.write(0xB430, 0x04)                          # 5. set tunnel link state
-        dev.bank1_or_bits(0x6025, 0x80)                  # 6. TLP routing enable
-        dev.write(0xB480, 0x00)                          # 3. deassert PERST#
+        # === Training ===
+        dev.write(0xE764, 0x1E)                          # training trigger
 
+        # === Wait for link ===
         poll(dev, 0xB450, 0x78, name="LTSSM Gen3 L0")
+
+        # === Re-assert/deassert PERST# to re-enumerate through bridge ===
+        dev.clear_bits(0xB480, 0x01)                     # deassert PERST#
 
         # === Status (reads don't count) ===
         print(f"\nTotal: {dev._wc} writes, {dev._rc} reads")
