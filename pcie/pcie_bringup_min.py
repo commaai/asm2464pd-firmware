@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal PCIe bringup for ASM2464PD — 42 writes."""
+"""Minimal PCIe bringup for ASM2464PD — 16 writes."""
 
 import ctypes, sys, time
 from tinygrad.runtime.support.usb import USB3
@@ -54,29 +54,14 @@ def main():
         dev.set_bits(0xC656, 0x20)                       # REG_HDDPC_CTRL: enable PCIE_3V3 (bit 5)
         dev.set_bits(0xC659, 0x01)                       # REG_PCIE_LANE_CTRL: enable 12V (bit 0)
 
-        # === CfgWr0 TLP to 0x00D00014 (link speed config, required for TLP routing) ===
-        dev.write(0xB296, 0x08)                          # REG_PCIE_STATUS: reset TLP engine
-        for i in range(12): dev.write(0xB210+i, 0x00)   # clear TLP header window (12 writes)
-        dev.write(0xB210, 0x40)                          # REG_PCIE_FMT_TYPE: CfgWr0
+        # === Kick TLP engine (required for downstream TLP routing) ===
         dev.write(0xB213, 0x01)                          # REG_PCIE_TLP_CTRL: 1 DW
-        dev.write(0xB217, 0x0F)                          # REG_PCIE_BYTE_EN: all 4 bytes enabled
-        dev.write(0xB216, 0x20)                          # REG_PCIE_TLP_LENGTH
-        dev.write(0xB218, 0x00)                          # REG_PCIE_ADDR_0: addr = 0x1400D000
-        dev.write(0xB219, 0xD0)                          # REG_PCIE_ADDR_1
-        dev.write(0xB21A, 0x00)                          # REG_PCIE_ADDR_2
-        dev.write(0xB21B, 0x14)                          # REG_PCIE_ADDR_3
-        dev.write(0xB220, 0x00)                          # REG_PCIE_DATA_0: data = 0x01404600
-        dev.write(0xB221, 0x46)                          # REG_PCIE_DATA_1
-        dev.write(0xB222, 0x40)                          # REG_PCIE_DATA_2
-        dev.write(0xB223, 0x01)                          # REG_PCIE_DATA_3
-        dev.write(0xB296, 0x01)                          # REG_PCIE_STATUS: clear error flag
-        dev.write(0xB296, 0x02)                          # REG_PCIE_STATUS: clear completion flag
         dev.write(0xB296, 0x04)                          # REG_PCIE_STATUS: arm busy flag
-        dev.write(0xB254, 0x0F)                          # REG_PCIE_TRIGGER: execute TLP
-        for _ in range(100):                             # poll for TLP completion
+        dev.write(0xB254, 0x0F)                          # REG_PCIE_TRIGGER: execute
+        for _ in range(100):                             # poll for completion
             if dev.read8(0xB296) & 0x04: break
             time.sleep(0.001)
-        dev.write(0xB296, 0x04)                          # clear busy flag
+        dev.write(0xB296, 0x04)                          # REG_PCIE_STATUS: clear busy flag
 
         # === Deassert PERST# ===
         dev.clear_bits(0xB480, 0x01)                     # REG_PCIE_PERST_CTRL: release device from reset
