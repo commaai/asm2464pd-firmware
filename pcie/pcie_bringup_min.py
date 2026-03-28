@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal PCIe bringup for ASM2464PD — 16 writes."""
+"""Minimal PCIe bringup for ASM2464PD."""
 
 import ctypes, sys, time
 from tinygrad.runtime.support.usb import USB3
@@ -50,61 +50,55 @@ def main():
     dev = ASM2464PD()
     dev.open()
     try:
-        # === Power: enable 3.3V and 12V ===
-        dev.set_bits(0xC656, 0x20)                       # REG_HDDPC_CTRL: enable PCIE_3V3 (bit 5)
-        dev.set_bits(0xC659, 0x01)                       # REG_PCIE_LANE_CTRL: enable 12V (bit 0)
+        # verify firmware set B213
+        assert dev.read8(0xB213) == 0x01, f"B213=0x{dev.read8(0xB213):02X}, firmware didn't set TLP_CTRL"
 
-        # === Kick TLP engine (required for downstream TLP routing) ===
-        dev.write(0xB213, 0x01)                          # REG_PCIE_TLP_CTRL: 1 DW
-        dev.write(0xB296, 0x04)                          # REG_PCIE_STATUS: arm busy flag
-        dev.write(0xB254, 0x0F)                          # REG_PCIE_TRIGGER: execute
-        for _ in range(100):                             # poll for completion
-            if dev.read8(0xB296) & 0x04: break
-            time.sleep(0.001)
-        dev.write(0xB296, 0x04)                          # REG_PCIE_STATUS: clear busy flag
-
-        # === Deassert PERST# ===
-        dev.clear_bits(0xB480, 0x01)                     # REG_PCIE_PERST_CTRL: release device from reset
+        # === Power + Deassert PERST# ===
+        dev.set_bits(0xC656, 0x20)                       # 1. enable 3.3V
+        dev.set_bits(0xC659, 0x01)                       # 2. enable 12V
+        dev.clear_bits(0xB480, 0x01)                     # 3. deassert PERST#
 
         # === Gen3 link training ===
-        dev.set_bits(0xB403, 0x01)                       # REG_TUNNEL_CTRL_B403: enable tunnel
-        dev.write(0xE764, (dev.read8(0xE764) & 0xF7) | 0x08)  # REG_PHY_TIMER_CTRL: set bit 3 (training prep)
-        dev.write(0xE764, (dev.read8(0xE764) & 0xFD) | 0x02)  # REG_PHY_TIMER_CTRL: set bit 1 (start training)
-        for _ in range(200):                             # poll RXPLL for link training completion
-            if dev.read8(0xE762) & 0x10: break           # REG_PHY_RXPLL_STATUS bit 4 = trained
-            time.sleep(0.01)
+        dev.write(0xE764, (dev.read8(0xE764) & 0xF7) | 0x08)  # 5. PHY training prep (set bit 3)
+        dev.write(0xE764, (dev.read8(0xE764) & 0xFD) | 0x02)  # 6. start training (set bit 1)
 
-        # === Post-train: enable TLP forwarding ===
-        dev.clear_bits(0xB430, 0x01)                     # REG_TUNNEL_LINK_STATE: clear link-up bit
-        dev.bank1_or_bits(0x6025, 0x80)                  # bank1 0x6025 bit 7: TLP routing enable
-        dev.write(0xB455, 0x02)                          # REG_PCIE_LTSSM_B455: clear link detect flag
-        dev.write(0xB455, 0x04)                          # REG_PCIE_LTSSM_B455: arm link detect
-        dev.write(0xB2D5, 0x01)                          # REG_PCIE_CTRL_B2D5: enable config routing
-        dev.write(0xB296, 0x08)                          # REG_PCIE_STATUS: reset TLP engine
-        for _ in range(200):                             # poll for downstream device detection
-            if dev.read8(0xB455) & 0x02:
-                dev.write(0xB455, 0x02); break
-            time.sleep(0.005)
+        # === Wait for RXPLL lock ===
+        t0 = time.monotonic()
+        for i in range(500):
+            if dev.read8(0xE762) & 0x10: break
+            time.sleep(0.01)
+        else:
+            raise RuntimeError(f"RXPLL never locked after {time.monotonic()-t0:.3f}s (E762=0x{dev.read8(0xE762):02X})")
+        print(f"  RXPLL locked: {(time.monotonic()-t0)*1000:.1f}ms ({i+1} polls)")
+
+        dev.set_bits(0xB403, 0x01)                       # 4. enable tunnel
+        # === Post-train (do before LTSSM poll so link stays stable) ===
+        dev.clear_bits(0xB430, 0x01)                     # 7. clear tunnel link state
+        dev.bank1_or_bits(0x6025, 0x80)                  # 8. TLP routing enable
+
+        # === Wait for LTSSM Gen3 L0 (0x78) ===
+        t0 = time.monotonic()
+        for i in range(500):
+            v = dev.read8(0xB450)
+            if v == 0x78: break
+            time.sleep(0.01)
+        else:
+            raise RuntimeError(f"LTSSM never reached Gen3 L0 after {time.monotonic()-t0:.3f}s (B450=0x{dev.read8(0xB450):02X})")
+        print(f"  LTSSM Gen3 L0: {(time.monotonic()-t0)*1000:.1f}ms ({i+1} polls)")
 
         # === Status (reads don't count) ===
         print(f"\nTotal: {dev._wc} writes, {dev._rc} reads")
-        ltssm = dev.read8(0xB450)
         print(f"\n=== PCIe Status ===")
-        print(f"  LTSSM state (B450): 0x{ltssm:02X}  {'(L0!)' if ltssm in (0x48,0x78) else ''}")
-        print(f"  Link width  (B22B): 0x{dev.read8(0xB22B):02X}")
-        print(f"  Lane enable (B434): 0x{dev.read8(0xB434):02X}")
+        print(f"  LTSSM state (B450): 0x{dev.read8(0xB450):02X}")
         print(f"  Link detect (B455): 0x{dev.read8(0xB455):02X}")
-        print(f"  Link width  (E710): 0x{dev.read8(0xE710):02X}")
-        print(f"  CPU mode    (CC30): 0x{dev.read8(0xCC30):02X}")
-        print(f"  CPU next    (CA06): 0x{dev.read8(0xCA06):02X}")
-        print(f"  PERST ctrl  (B480): 0x{dev.read8(0xB480):02X}  {'(asserted)' if dev.read8(0xB480) & 0x01 else '(deasserted)'}")
-        print(f"  12V enable  (C659): 0x{dev.read8(0xC659):02X}  {'(on)' if dev.read8(0xC659) & 0x01 else '(off)'}")
+        print(f"  PERST ctrl  (B480): 0x{dev.read8(0xB480):02X}")
+        print(f"  12V enable  (C659): 0x{dev.read8(0xC659):02X}")
         print(f"  RXPLL       (E762): 0x{dev.read8(0xE762):02X}")
+        print(f"  LINK        (E763): 0x{dev.read8(0xE763):02X}")
         print(f"  PHY timer   (E764): 0x{dev.read8(0xE764):02X}")
         print(f"  Tunnel link (B430): 0x{dev.read8(0xB430):02X}")
         print(f"  Tunnel ctrl (B403): 0x{dev.read8(0xB403):02X}")
-        print(f"  Link status: {'UP' if ltssm in (0x48,0x78) else 'DOWN'}")
-        sys.exit(0 if ltssm in (0x48, 0x78) else 1)
+        sys.exit(0)
     finally:
         dev.close()
 

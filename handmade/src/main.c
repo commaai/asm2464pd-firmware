@@ -367,6 +367,10 @@ void main(void) {
   // enables EP_COMPLETE interrupts
   REG_USB_DATA_L = 0x00;
 
+  // PCIe TLP engine values that don't change
+  REG_PCIE_TLP_CTRL   = 0x01;
+  REG_PCIE_TLP_LENGTH = 0x20;
+
   uint8_t link = REG_USB_LINK_STATUS;
   is_usb3 = (link >= USB_SPEED_SUPER) ? 1 : 0;
   uart_puts("[GO link="); uart_puthex(link); uart_puts("]\n");
