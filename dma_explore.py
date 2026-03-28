@@ -52,33 +52,9 @@ class Dev:
 def main():
     d = Dev()
 
-    # =========================================================
-    # Step 1: Init C4xx exactly as before (groups 1-9)
-    # =========================================================
-    # Group 1: C412-C415
-    d.write(0xC412, 0x03); d.write(0xC413, 0x01)
-    d.write(0xC414, 0x80); d.write(0xC415, 0x01)
-    # Group 2: C420-C42D
+    # set up transfer
     for i, v in enumerate([0x00,0x01,0x02,0x00,0x00,0x00,0x00,0x01,0x30,0x00,0x00,0x00,0x00,0x00]):
         d.write(0xC420 + i, v)
-    # Group 3: C438-C43B
-    for i in range(4): d.write(0xC438 + i, 0xFF)
-    # Group 4: C448-C44B
-    for i in range(4): d.write(0xC448 + i, 0xFF)
-    # Group 5: C471, C472-C473
-    d.write(0xC471, 0x01); d.write(0xC472, 0x00); d.write(0xC473, 0x66)
-    # Group 6: C4ED-C4EF
-    d.write(0xC4ED, 0x00); d.write(0xC4EE, 0x00); d.write(0xC4EF, 0x01)
-    # Group 7: 9310-9323
-    for i, v in enumerate([0x01,0x60,0x00,0xE3,0x01,0x60,0x00,0x00,
-                            0x01,0x60,0x00,0x00,0x00,0x03,0x00,0xE0,
-                            0x00,0xE3,0x00,0x00]):
-        d.write(0x9310 + i, v)
-    # Group 8: 9303-9305
-    d.write(0x9303, 0x33); d.write(0x9304, 0x3F); d.write(0x9305, 0x40)
-    # Group 9: CE86-CE8A
-    d.write(0xCE86, 0x08); d.write(0xCE87, 0x11)
-    d.write(0xCE88, 0x00); d.write(0xCE89, 0x03); d.write(0xCE8A, 0x05)
 
     print("Init done")
 
@@ -86,6 +62,18 @@ def main():
     # Step 2: Exact scan sequence C400-C406
     # (each iteration: seed F000=0xAA, write reg=0x01, read F000)
     # =========================================================
+    d.write(0xF000, 0xAA)
+    d.write(0xc400, 1)
+    d.write(0xc401, 1)
+    d.write(0xc402, 1)
+    #d.write(0xc403, 1)
+    d.write(0xc404, 1)
+    #d.write(0xc405, 1)
+    d.write(0xc406, 1)
+
+    time.sleep(0.01)
+
+    """
     print("\nExact scan sequence:")
     for reg in range(0xC400, 0xC407):
         d.write(0xF000, 0xAA)
@@ -98,6 +86,7 @@ def main():
             print(f"  0x{reg:04X}=0x01: *** F000 = 0x{f:02X}")
         else:
             print(f"  0x{reg:04X}=0x01: F000 = 0xAA (no change)")
+    """
 
     d.dump(0xF000, 32, "F000 final")
     d.dump(0x7000, 16, "0x7000 reference")
