@@ -125,7 +125,7 @@ class USBDevicePassthrough:
     REG_USB_INT_FLAGS = 0x9101
     REG_USB_INT_PENDING = 0xC802
     REG_USB_EP_READY = 0x9096
-    REG_USB_EP_STATUS = 0x90E3
+    REG_USB_BULK_EP_CMD = 0x90E3
 
     # Target address registers (for vendor commands)
     REG_TARGET_ADDR_HI = 0xCEB2

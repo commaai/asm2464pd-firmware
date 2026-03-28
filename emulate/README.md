@@ -96,7 +96,7 @@ determines which addresses to read based on its own descriptor tables.
 | 0x9101   | USB interrupt flags (bit 5 = vendor command path) |
 | 0x9E00-0x9E07 | USB setup packet (8 bytes) |
 | 0x910D-0x9112 | CDB data for SCSI/vendor commands |
-| 0x90E3   | USB endpoint status |
+| 0x90E3   | Bulk EP command (0x01=activate, 0x02=ack/arm CBW) |
 | 0x8000+  | USB data buffer (for responses) |
 
 ### USB Setup Packet Registers (0x9E00-0x9E07)

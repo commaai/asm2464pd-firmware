@@ -297,7 +297,7 @@ static void usb_endpoint_status_handler(void)
  * Address: 0x52a7-0x52c6 (32 bytes)
  *
  * Called to process an endpoint. Checks IDATA[0x6A] state:
- * - If == 5: write 0x02 to 0x90E3, optionally call FUN_CODE_4532, then init handler
+ * - If == 5: write 0x02 to 0x90E3 (bulk EP ack), optionally call FUN_CODE_4532, then init handler
  * - Otherwise: set transfer active flag, set bit 7 on USB config register
  *
  * Original disassembly:
@@ -307,7 +307,7 @@ static void usb_endpoint_status_handler(void)
  *   52ac: jnz 0x52c0            ; if not 5, go to 0x52C0
  *   52ae: mov dptr, #0x90e3
  *   52b1: mov a, #0x02
- *   52b3: movx @dptr, a         ; XDATA[0x90E3] = 2
+  *   52b3: movx @dptr, a         ; XDATA[0x90E3] = 2 (bulk EP ack)
  *   52b4: mov dptr, #0x0003
  *   52b7: movx a, @dptr         ; A = XDATA[0x0003]
  *   52b8: jz 0x52bd             ; if 0, skip call
@@ -328,7 +328,7 @@ void usb_ep_process(void)
     /* Check if state == 5 (add 0xFB and check if zero) */
     if (state == 5) {
         /* Write 0x02 to endpoint status register */
-        REG_USB_EP_STATUS_90E3 = 0x02;
+        REG_USB_BULK_EP_CMD = 0x02;
 
         /* Check XDATA[0x0003] */
         if (G_EP_STATUS_CTRL != 0) {
@@ -1159,7 +1159,7 @@ void usb_ep_dispatch_loop(void)
     G_EP_DISPATCH_OFFSET = 0x40;
     usb_ep_handler();
     REG_USB_STATUS_909E = 0x01;
-    REG_USB_EP_STATUS_90E3 = 0x02;
+    REG_USB_BULK_EP_CMD = 0x02;
     usb_master_handler();
 }
 
@@ -5193,7 +5193,7 @@ void pcie_vendor_handler_35b7(uint8_t param)
  *   1. Read idata 0x6A, compare with 0x05
  *   2. If 0x6A != 5, call 0x3169 and 0x320D, return
  *   3. If 0x6A == 5:
- *      - Write 0x02 to 0x90E3
+ *      - Write 0x02 to 0x90E3 (bulk EP ack / arm MSC)
  *      - Read XDATA 0x0003 (vendor command flag)
  *      - If non-zero, call 0x4583 (vendor command dispatch)
  *      - Then jump to 0x5476 (isr_usb_ep_clear_state)
@@ -5205,7 +5205,7 @@ void pcie_vendor_handler_35b7(uint8_t param)
  *   5338: jnz 0x534c          ; if != 5, goto transfer flag path
  *   533a: mov dptr, #0x90e3
  *   533d: mov a, #0x02
- *   533f: movx @dptr, a       ; Write 0x02 to 0x90E3
+  *   533f: movx @dptr, a       ; Write 0x02 to 0x90E3 (bulk EP ack)
  *   5340: mov dptr, #0x0003
  *   5343: movx a, @dptr       ; Read G_EP_STATUS_CTRL
  *   5344: jz 0x5349           ; if zero, skip dispatch
@@ -5227,7 +5227,7 @@ void usb_vendor_command_processor(void)
     }
 
     /* State == 5: Process vendor command */
-    REG_USB_EP_STATUS_90E3 = 0x02;
+    REG_USB_BULK_EP_CMD = 0x02;
 
     if (G_EP_STATUS_CTRL != 0) {
         vendor_dispatch_4583();

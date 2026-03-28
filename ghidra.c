@@ -131,7 +131,7 @@ undefined1 G_EP_DISPATCH_OFFSET;
 undefined1 REG_USB_STATUS_909E;
 undefined1 REG_USB_STATUS;
 undefined1 G_EP_DISPATCH_VAL1;
-undefined1 REG_USB_EP_STATUS_90E3;
+undefined1 REG_USB_BULK_EP_CMD;
 undefined1 G_EP_DISPATCH_VAL2;
 undefined ep_index_table;
 undefined1 REG_USB_EP_READY;
@@ -3754,7 +3754,7 @@ void ext0_isr(void)
   G_EP_DISPATCH_OFFSET = 0x40;
   usb_endpoint_handler();
   REG_USB_STATUS_909E = 1;
-  REG_USB_EP_STATUS_90E3 = 2;
+  REG_USB_BULK_EP_CMD = 2;
   usb_master_handler();
   return;
 }
@@ -3809,7 +3809,7 @@ void int_get_usb_status(void)
   G_EP_DISPATCH_OFFSET = 0x40;
   usb_endpoint_handler();
   REG_USB_STATUS_909E = 1;
-  REG_USB_EP_STATUS_90E3 = 2;
+  REG_USB_BULK_EP_CMD = 2;
   usb_master_handler();
   return;
 }
@@ -3849,7 +3849,7 @@ void usb_ep_dispatch_loop(void)
   G_EP_DISPATCH_OFFSET = 0x40;
   usb_endpoint_handler();
   REG_USB_STATUS_909E = 1;
-  REG_USB_EP_STATUS_90E3 = 2;
+  REG_USB_BULK_EP_CMD = 2;
   usb_master_handler();
   return;
 }
@@ -13704,7 +13704,7 @@ void usb_ep_process(void)
   char cVar1;
   
   if (DAT_INTMEM_6a == '\x05') {
-    REG_USB_EP_STATUS_90E3 = 2;
+    REG_USB_BULK_EP_CMD = 2;
     cVar1 = G_EP_STATUS_CTRL;
     if (cVar1 != '\0') {
       scsi_command_dispatch();
@@ -20569,7 +20569,7 @@ void nvme_queue_init_905x(void)
   REG_USB_EP_CTRL_905F = bVar1 & 0xfe;
   bVar1 = DAT_EXTMEM_905d;
   DAT_EXTMEM_905d = bVar1 & 0xfe;
-  REG_USB_EP_STATUS_90E3 = 1;
+  REG_USB_BULK_EP_CMD = 1;
   REG_USB_CTRL_90A0 = 1;
   return;
 }
@@ -20708,7 +20708,7 @@ byte nvme_queue_get_9090_mask(void)
 void nvme_queue_set_90e3_2(void)
 
 {
-  REG_USB_EP_STATUS_90E3 = 2;
+  REG_USB_BULK_EP_CMD = 2;
   return;
 }
 

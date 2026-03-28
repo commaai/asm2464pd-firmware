@@ -2929,7 +2929,7 @@ void nvme_queue_init_9e16(void)
 }
 
 /*
- * nvme_queue_init_905x - Initialize 905F/905D/90E3/90A0
+ * nvme_queue_init_905x - Initialize 905F/905D, activate bulk EP engine
  * Address: 0xa6ad-0xa6c5
  */
 void nvme_queue_init_905x(void)
@@ -2939,7 +2939,7 @@ void nvme_queue_init_905x(void)
     REG_USB_EP_CTRL_905F = val & 0xFE;
     val = REG_USB_EP_CTRL_905D;
     REG_USB_EP_CTRL_905D = val & 0xFE;
-    REG_USB_EP_STATUS_90E3 = 1;
+    REG_USB_BULK_EP_CMD = 1;
     REG_USB_CTRL_90A0 = 1;
 }
 
@@ -3029,12 +3029,12 @@ uint8_t nvme_queue_get_9090_mask(void)
 }
 
 /*
- * nvme_queue_set_90e3_2 - Set 90E3 to 2
+ * nvme_queue_set_90e3_2 - Ack bulk EP / arm MSC for CBW
  * Address: 0xa739-0xa73f
  */
 void nvme_queue_set_90e3_2(void)
 {
-    REG_USB_EP_STATUS_90E3 = 2;
+    REG_USB_BULK_EP_CMD = 2;
 }
 
 /*===========================================================================

@@ -366,10 +366,10 @@ static void handle_set_config(void) {
     REG_USB_EP_CFG2 = 0x01; REG_USB_EP_CFG2 = 0x08;
 
     /* EP status + activate */
-    REG_USB_EP_STATUS_90E3 = 0x02;
+    REG_USB_BULK_EP_CMD = 0x02;
     t = REG_USB_EP_CTRL_905F; REG_USB_EP_CTRL_905F = t;
     t = REG_USB_EP_CTRL_905D; REG_USB_EP_CTRL_905D = t;
-    REG_USB_EP_STATUS_90E3 = 0x01; REG_USB_CTRL_90A0 = 0x01;
+    REG_USB_BULK_EP_CMD = 0x01; REG_USB_CTRL_90A0 = 0x01;
 
     /* Enable global USB interrupt mask bit 7 */
     REG_USB_INT_MASK_9090 |= 0x80;
@@ -715,7 +715,7 @@ static void do_bulk_init(void) {
     /* EP reconfig + activate */
     t = REG_USB_EP_CTRL_905F; REG_USB_EP_CTRL_905F = t;
     t = REG_USB_EP_CTRL_905D; REG_USB_EP_CTRL_905D = t;
-    REG_USB_EP_STATUS_90E3 = 0x01; REG_USB_CTRL_90A0 = 0x01;
+    REG_USB_BULK_EP_CMD = 0x01; REG_USB_CTRL_90A0 = 0x01;
     REG_USB_STATUS = 0x01; REG_USB_CTRL_924C = 0x05;
 
     /* Clear endpoint buffer D800-DE5F */
@@ -733,7 +733,7 @@ static void do_bulk_init(void) {
     t = REG_USB_EP0_CONFIG; REG_USB_EP0_CONFIG = t;
     REG_USB_EP_CFG2 = 0x01; REG_USB_EP_CFG2 = 0x08;
     REG_USB_EP_CTRL_905F |= 0x08;
-    REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_CTRL_90A0 = 0x01;
+    REG_USB_BULK_EP_CMD = 0x02; REG_USB_CTRL_90A0 = 0x01;
 
     /* Arm MSC for first CBW */
     REG_USB_STATUS = 0x00;
@@ -768,7 +768,7 @@ static void do_bulk_init(void) {
     t = REG_USB_EP0_CONFIG; REG_USB_EP0_CONFIG = t;
     REG_USB_EP_CFG2 = 0x01; REG_USB_EP_CFG2 = 0x08;
     t = REG_USB_EP_CTRL_905F; REG_USB_EP_CTRL_905F = t;
-    REG_USB_EP_STATUS_90E3 = 0x02;
+    REG_USB_BULK_EP_CMD = 0x02;
 
     bulk_ready = 1;
     uart_puts("[rdy]\n");
@@ -830,7 +830,7 @@ static void send_csw(uint8_t status) {
     REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_IN;
     if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) {
         uint16_t clr;
-        REG_USB_EP_STATUS_90E3 = 0x02;
+        REG_USB_BULK_EP_CMD = 0x02;
         REG_USB_EP_READY = 0x01;
         for (clr = 0xFFFF; clr; clr--) {
             if (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) break;
@@ -844,7 +844,7 @@ static void send_csw(uint8_t status) {
     while (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) { }
 
     REG_USB_STATUS_909E = 0x01;
-    REG_USB_EP_STATUS_90E3 = 0x02;
+    REG_USB_BULK_EP_CMD = 0x02;
     REG_USB_EP_READY = 0x01;
     REG_USB_CTRL_90A0 = 0x01;
     REG_USB_BULK_DMA_TRIGGER = 0x00;
@@ -909,7 +909,7 @@ static uint8_t direct_bulk_in(uint8_t len) {
     /* Clear stale EP_COMPLETE */
     if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) {
         uint16_t clr;
-        REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+        REG_USB_BULK_EP_CMD = 0x02; REG_USB_EP_READY = 0x01;
         for (clr = 0xFFFF; clr; clr--) {
             if (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) break;
         }
@@ -953,11 +953,11 @@ static uint8_t direct_bulk_in(uint8_t len) {
      * 1. Write 0x0AF4 = 0x40 (completion indicator)
      * 2. Call 0x54A1 (state check helper - skipped here)
      * 3. Write 909E = 0x01 (acknowledge buffer status)
-     * 4. Write 90E3 = 0x02 (EP status clear)
+     * 4. Write 90E3 = 0x02 (bulk EP ack / arm MSC)
      */
 
     REG_USB_STATUS_909E = 0x01;  /* Ack buffer status */
-    REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+    REG_USB_BULK_EP_CMD = 0x02; REG_USB_EP_READY = 0x01;
     REG_USB_CTRL_90A0 = 0x01;  /* Reset DMA engine */
     REG_USB_BULK_DMA_TRIGGER = 0x00;
 
@@ -1216,12 +1216,12 @@ static void handle_cbw(void) {
             IE &= ~0x80;  /* Disable interrupts during DMA trigger */
             /* Clear stale EP_COMPLETE before triggering DMA */
             if (REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE) {
-                REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+                REG_USB_BULK_EP_CMD = 0x02; REG_USB_EP_READY = 0x01;
             }
             REG_USB_BULK_DMA_TRIGGER = 0x01;
             while (!(REG_USB_PERIPH_STATUS & USB_PERIPH_EP_COMPLETE)) { }
             /* Clear EP_COMPLETE + reset DMA engine after completion */
-            REG_USB_EP_STATUS_90E3 = 0x02; REG_USB_EP_READY = 0x01;
+            REG_USB_BULK_EP_CMD = 0x02; REG_USB_EP_READY = 0x01;
             REG_USB_STATUS_909E = 0x01;  /* Ack buffer status (stock 0x0EE9) */
             REG_USB_CTRL_90A0 = 0x01;  /* Reset DMA engine */
             REG_USB_BULK_DMA_TRIGGER = 0x00;
@@ -1465,7 +1465,7 @@ static void handle_cbw(void) {
         }
 
         REG_USB_STATUS_909E = 0x01;
-        REG_USB_EP_STATUS_90E3 = 0x02;
+        REG_USB_BULK_EP_CMD = 0x02;
         REG_USB_EP_READY = 0x01;
         REG_USB_EP_CFG1 = 0x00;
         REG_USB_EP_CFG2 = 0x00;

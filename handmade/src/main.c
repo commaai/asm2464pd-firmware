@@ -113,12 +113,18 @@ static void handle_usb_control(void) {
     } else if (bmReq == USB_SETUP_DIR_DEV_TO_HOST && bReq == USB_REQ_GET_DESCRIPTOR) {
       handle_get_descriptor(wValH, wValL, wLenL);
     } else if (bmReq == USB_SETUP_DIR_HOST_TO_DEV && bReq == USB_REQ_SET_CONFIGURATION) {
-      // enable USB bulk mode (bypass MSC)
       REG_USB_MSC_CFG = 0x00;
+      // reset this
+      REG_USB_EP_CFG1 = 0xF;
       // enable bulk endpoint (without the clear in, it'll get a spurious IN, without the clear out, it'll miss an out)
       REG_USB_EP_CFG2 = USB_EP_CFG2_CLEAR_IN;
       REG_USB_EP_CFG2 = USB_EP_CFG2_CLEAR_OUT;
-      REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
+
+      // 0x02 makes BULK_IN work
+      REG_USB_BULK_EP_CMD = 0x02;
+
+      // arm OUT
+      //REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
       send_zlp_ack();
       uart_puts("[*** SET CONFIG ***]\n");
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_RECIP_INTERFACE) && bReq == USB_REQ_SET_INTERFACE) {
@@ -258,23 +264,15 @@ void handle_usb_bulk_data(void) {
   uart_puthex(bulk_cfg1); uart_puts(" "); uart_puthex(bulk_cfg2);
   uart_puts("]\n");
   if (bulk_cfg1 & USB_EP_CFG1_BULK_OUT_COMPLETE) {
-    // dump what's at 0x7000
-    uart_puts("[7000=");
-    uart_puthex(XDATA_REG8(0x7000)); uart_puthex(XDATA_REG8(0x7001));
-    uart_puthex(XDATA_REG8(0x7002)); uart_puthex(XDATA_REG8(0x7003));
-    uart_puts("]\n");
-    // handshake DMA
-    //REG_BULK_DMA_HANDSHAKE = 1;
-    // re-arm OUT
-    REG_USB_EP_CFG2 = USB_EP_CFG2_ARM_OUT;
+    // ack?
   } else if (bulk_cfg1 & USB_EP_CFG1_BULK_IN_COMPLETE) {
     // bulk in needed — send data from D800
     REG_USB_MSC_LENGTH = 0xd;
     REG_USB_BULK_DMA_TRIGGER = 0x1;
   } else if (bulk_cfg1 & USB_EP_CFG1_BULK_OUT_START) {
-    // ack
+    // ack?
   } else if (bulk_cfg1 & USB_EP_CFG1_BULK_IN_START) {
-    // ack
+    // ack?
   } else {
     // don't ack
     return;
@@ -294,9 +292,16 @@ void int0_isr(void) __interrupt(0) {
   } else if (periph_status & USB_PERIPH_BULK_DATA) {
     handle_usb_bulk_data();
   } else if (periph_status & USB_PERIPH_EP_COMPLETE) {
+    // BULK IN
     uint8_t ep = REG_USB_EP_READY;
-    uart_puts("[EP_COMPLETE "); uart_puthex(ep); uart_puts(" "); uart_puthex(REG_USB_EP_STATUS_90E3); uart_puts("]\n");
+    uart_puts("[EP_COMPLETE "); uart_puthex(ep); uart_puts(" "); uart_puthex(REG_USB_BULK_EP_CMD); uart_puts("]\n");
     REG_USB_EP_READY = ep;
+  } else if (periph_status & USB_PERIPH_CBW_RECEIVED) {
+    // BULK OUT (but only if pointed to 0x911B)
+    uint8_t ep = REG_USB_MODE;
+    uart_puts("[CBW_RECEIVED "); uart_puthex(ep); uart_puthex(REG_USB_BULK_EP_CMD); uart_puts("]\n");
+    REG_USB_MODE = ep;
+    REG_USB_BULK_EP_CMD = 0x02;
   } else {
     uart_puts("[UNHANDLED INT0 ");
     uart_puthex(periph_status);
@@ -330,6 +335,9 @@ void main(void) {
 
   // enables EP_COMPLETE interrupts
   REG_USB_DATA_L = 0x00;
+
+  // enables CBW_RECEIVED interrupts
+  REG_USB_EP_MGMT = 0x00;
 
   uart_puts("[GO]\n");
 
