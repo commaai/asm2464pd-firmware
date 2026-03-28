@@ -210,15 +210,12 @@ static void handle_usb_control(void) {
       uart_puts("]\n");
       complete_usb3_status();
     } else if (bmReq == (USB_SETUP_DIR_HOST_TO_DEV | USB_SETUP_TYPE_VENDOR) && bReq == 0xF0) {
-      REG_PCIE_FMT_TYPE = wValL;
-      REG_PCIE_BYTE_EN  = wValH;
       if (is_usb3) {
         /* USB3: receive data, then process */
         REG_USB_EP0_LEN_L = wLenL;
         REG_USB_DMA_TRIGGER = USB_DMA_RECV;
         REG_USB_CTRL_PHASE = USB_CTRL_PHASE_DATA_OUT;
-        /* Wait for data to arrive in DESC_BUF */
-        { volatile uint8_t i; for (i = 0; i < 200; i++) ; }
+        while (!(REG_USB_CTRL_PHASE & USB_CTRL_PHASE_DATA_OUT)) { }
         if (wValL & PCIE_FMT_HAS_DATA) {
           REG_PCIE_DATA_0     = DESC_BUF[8];
           REG_PCIE_DATA_1     = DESC_BUF[9];
@@ -233,10 +230,15 @@ static void handle_usb_control(void) {
         REG_PCIE_ADDR_HIGH_1 = DESC_BUF[6];
         REG_PCIE_ADDR_HIGH_2 = DESC_BUF[5];
         REG_PCIE_ADDR_HIGH_3 = DESC_BUF[4];
-        REG_PCIE_STATUS  = PCIE_STATUS_ERROR;
-        REG_PCIE_STATUS  = PCIE_STATUS_COMPLETE;
-        REG_PCIE_STATUS  = PCIE_STATUS_KICK;
-        REG_PCIE_TRIGGER = PCIE_TRIGGER_EXEC;
+        /* Write B217/B210 LAST (matches tinygrad's pcie_prep_request order) */
+        REG_PCIE_BYTE_EN     = wValH;
+        REG_PCIE_TLP_CTRL    = 0x01;  /* B213: length = 1 DW */
+        REG_PCIE_TLP_LENGTH  = 0x20;  /* B216: TLP length field */
+        REG_PCIE_FMT_TYPE    = wValL;
+        REG_PCIE_STATUS      = PCIE_STATUS_ERROR;
+        REG_PCIE_STATUS      = PCIE_STATUS_COMPLETE;
+        REG_PCIE_STATUS      = PCIE_STATUS_KICK;
+        REG_PCIE_TRIGGER     = PCIE_TRIGGER_EXEC;
         complete_usb3_status();
       }
       /* USB2: Don't send ZLP — wait for DATA_OUT phase */

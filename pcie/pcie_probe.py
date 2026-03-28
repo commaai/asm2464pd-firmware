@@ -66,8 +66,10 @@ CFGRD0 = 0x04  # Config Read Type 0 (local, bus 0)
 CFGRD1 = 0x05  # Config Read Type 1 (routed, bus > 0)
 CFGWR0 = 0x44  # Config Write Type 0
 CFGWR1 = 0x45  # Config Write Type 1
-MRD32  = 0x20  # Memory Read 32-bit
-MWR32  = 0x60  # Memory Write 32-bit
+MRD32  = 0x00  # Memory Read 3DW (32-bit address)
+MWR32  = 0x40  # Memory Write 3DW (32-bit address)
+MRD64  = 0x20  # Memory Read 4DW (64-bit address)
+MWR64  = 0x60  # Memory Write 4DW (64-bit address)
 
 
 def pcie_request(handle, fmt_type, address, value=None, size=4, verbose=False, retries=10):
@@ -172,13 +174,15 @@ def pcie_cfg_write(handle, byte_addr, value, bus=0, dev=0, fn=0, size=4, verbose
 
 
 def pcie_mem_read(handle, address, size=4, verbose=False):
-    """PCIe memory read (32-bit address)."""
-    return pcie_request(handle, MRD32, address, size=size, verbose=verbose)
+    """PCIe memory read (auto 3DW/4DW based on address)."""
+    fmt = MRD64 if address > 0xFFFFFFFF else MRD32
+    return pcie_request(handle, fmt, address, size=size, verbose=verbose)
 
 
 def pcie_mem_write(handle, address, value, size=4, verbose=False):
-    """PCIe memory write (32-bit address)."""
-    return pcie_request(handle, MWR32, address, value=value, size=size, verbose=verbose)
+    """PCIe memory write (auto 3DW/4DW based on address)."""
+    fmt = MWR64 if address > 0xFFFFFFFF else MWR32
+    return pcie_request(handle, fmt, address, value=value, size=size, verbose=verbose)
 
 
 # =============================================================================
